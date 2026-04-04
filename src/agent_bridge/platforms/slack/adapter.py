@@ -5,9 +5,15 @@ import logging
 import re
 import time
 
-from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
-from slack_bolt.async_app import AsyncApp
-from slack_sdk.errors import SlackApiError
+try:
+    from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
+    from slack_bolt.async_app import AsyncApp
+    from slack_sdk.errors import SlackApiError
+except ImportError:
+    raise ImportError(
+        "Slack dependencies are not installed. "
+        "Install them with: pip install agent-bridge[slack]"
+    ) from None
 
 from agent_bridge.bridge import Bridge
 from agent_bridge.events import Completion, StatusUpdate, TextDelta

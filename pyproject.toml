@@ -2,19 +2,35 @@
 name = "agent-bridge"
 version = "0.1.0"
 description = "Modular bridge between chat platforms and AI agents"
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.12"
+authors = [{ name = "htkuan" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Communications :: Chat",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
 dependencies = [
-    "slack-bolt>=1.21.0",
-    "aiohttp>=3.9.0",
-    "aiofiles>=24.1.0",
     "python-dotenv>=1.0.0",
 ]
+
+[project.optional-dependencies]
+slack = ["slack-bolt>=1.21.0", "aiohttp>=3.9.0"]
+all = ["agent-bridge[slack]"]
+
+[project.urls]
+Repository = "https://github.com/htkuan/agent-bridge"
 
 [project.scripts]
 agent-bridge = "agent_bridge:main_sync"
 
 [dependency-groups]
 dev = [
+    "agent-bridge[all]",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
 ]

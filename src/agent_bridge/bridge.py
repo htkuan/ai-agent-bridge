@@ -28,10 +28,21 @@ class Bridge:
         return f"{platform}:{channel}:{thread}"
 
     def get_lock(self, session_key: str) -> asyncio.Lock:
-        """Get or create a per-session lock."""
-        if session_key not in self._locks:
-            self._locks[session_key] = asyncio.Lock()
-        return self._locks[session_key]
+        """Get or create a per-session lock (atomic via setdefault)."""
+        return self._locks.setdefault(session_key, asyncio.Lock())
+
+    def cleanup_stale_locks(self) -> int:
+        """Remove locks for sessions that no longer exist. Returns count removed."""
+        stale = [
+            key
+            for key, lock in self._locks.items()
+            if not lock.locked() and self._session_manager.get(key) is None
+        ]
+        for key in stale:
+            del self._locks[key]
+        if stale:
+            logger.info("Cleaned up %d stale session locks", len(stale))
+        return len(stale)
 
     async def handle_message(
         self,

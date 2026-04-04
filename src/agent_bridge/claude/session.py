@@ -21,23 +21,29 @@ class SessionManager:
         """Get existing session or create a new one. Returns (session_id, is_new).
 
         If the session exists but has expired, it is removed and a new one is created.
+        If the file write fails, the in-memory change is rolled back.
         """
         if key in self._sessions:
             if self._is_expired(self._sessions[key]):
                 logger.info("Session expired for key %s, creating new one", key)
                 del self._sessions[key]
             else:
+                old_last_used = self._sessions[key]["last_used"]
                 self._sessions[key]["last_used"] = _now_iso()
-                self._save()
+                if not self._save():
+                    self._sessions[key]["last_used"] = old_last_used
                 return self._sessions[key]["session_id"], False
 
         session_id = str(uuid.uuid4())
-        self._sessions[key] = {
+        new_entry = {
             "session_id": session_id,
             "created_at": _now_iso(),
             "last_used": _now_iso(),
         }
-        self._save()
+        self._sessions[key] = new_entry
+        if not self._save():
+            del self._sessions[key]
+            raise OSError(f"Failed to persist new session for key {key}")
         logger.info("Created new session %s for key %s", session_id, key)
         return session_id, True
 
@@ -53,8 +59,10 @@ class SessionManager:
     def delete(self, key: str) -> bool:
         """Delete a session mapping. Returns True if it existed."""
         if key in self._sessions:
-            del self._sessions[key]
-            self._save()
+            removed = self._sessions.pop(key)
+            if not self._save():
+                self._sessions[key] = removed
+                return False
             return True
         return False
 
@@ -91,12 +99,15 @@ class SessionManager:
         else:
             self._sessions = {}
 
-    def _save(self) -> None:
+    def _save(self) -> bool:
+        """Write sessions to disk. Returns True on success, False on failure."""
         try:
             self._store_path.parent.mkdir(parents=True, exist_ok=True)
             self._store_path.write_text(json.dumps(self._sessions, indent=2))
+            return True
         except OSError as e:
             logger.error("Failed to save session store: %s", e)
+            return False
 
 
 def _now() -> datetime:

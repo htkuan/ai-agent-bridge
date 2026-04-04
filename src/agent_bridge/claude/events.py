@@ -62,70 +62,88 @@ type Event = (
 )
 
 
-def parse_stream_line(line: str) -> Event | None:
-    """Parse a single line of Claude CLI stream-json output into a typed event."""
+def parse_stream_line(line: str) -> list[Event]:
+    """Parse a single line of Claude CLI stream-json output into typed events.
+
+    Returns a list because one JSON line may contain multiple content blocks
+    (e.g., text + thinking in the same assistant message).
+    """
     line = line.strip()
     if not line:
-        return None
+        return []
 
     try:
         data = json.loads(line)
     except json.JSONDecodeError:
         logger.warning("Failed to parse stream line: %s", line[:200])
-        return None
+        return []
 
     event_type = data.get("type")
     session_id = data.get("session_id", "")
 
     if event_type == "system" and data.get("subtype") == "init":
-        return InitEvent(
-            session_id=session_id,
-            model=data.get("model", ""),
-            tools=data.get("tools", []),
-        )
+        return [
+            InitEvent(
+                session_id=session_id,
+                model=data.get("model", ""),
+                tools=data.get("tools", []),
+            )
+        ]
 
     if event_type == "assistant":
+        events: list[Event] = []
         message = data.get("message", {})
         contents = message.get("content", [])
         for content in contents:
             content_type = content.get("type")
             if content_type == "text":
-                return AssistantTextEvent(
-                    session_id=session_id,
-                    text=content.get("text", ""),
+                events.append(
+                    AssistantTextEvent(
+                        session_id=session_id,
+                        text=content.get("text", ""),
+                    )
                 )
-            if content_type == "thinking":
-                return ThinkingEvent(
-                    session_id=session_id,
-                    thinking=content.get("thinking", ""),
+            elif content_type == "thinking":
+                events.append(
+                    ThinkingEvent(
+                        session_id=session_id,
+                        thinking=content.get("thinking", ""),
+                    )
                 )
-            if content_type == "tool_use":
-                return ToolUseEvent(
-                    session_id=session_id,
-                    tool_name=content.get("name", ""),
-                    tool_input=content.get("input", {}),
+            elif content_type == "tool_use":
+                events.append(
+                    ToolUseEvent(
+                        session_id=session_id,
+                        tool_name=content.get("name", ""),
+                        tool_input=content.get("input", {}),
+                    )
                 )
-        return None
+        return events
 
     if event_type == "user":
+        events = []
         message = data.get("message", {})
         contents = message.get("content", [])
         for content in contents:
             if content.get("type") == "tool_result":
-                return ToolResultEvent(
-                    session_id=session_id,
-                    output=content.get("content", ""),
-                    is_error=content.get("is_error", False),
+                events.append(
+                    ToolResultEvent(
+                        session_id=session_id,
+                        output=content.get("content", ""),
+                        is_error=content.get("is_error", False),
+                    )
                 )
-        return None
+        return events
 
     if event_type == "result":
-        return ResultEvent(
-            session_id=session_id,
-            result_text=data.get("result", ""),
-            cost_usd=data.get("total_cost_usd", 0.0),
-            duration_ms=data.get("duration_ms", 0),
-            is_error=data.get("is_error", False),
-        )
+        return [
+            ResultEvent(
+                session_id=session_id,
+                result_text=data.get("result", ""),
+                cost_usd=data.get("total_cost_usd", 0.0),
+                duration_ms=data.get("duration_ms", 0),
+                is_error=data.get("is_error", False),
+            )
+        ]
 
-    return None
+    return []

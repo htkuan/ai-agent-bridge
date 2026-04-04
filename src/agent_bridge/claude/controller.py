@@ -10,6 +10,9 @@ from agent_bridge.config import Config
 
 logger = logging.getLogger(__name__)
 
+# Default timeout for a single Claude invocation (seconds)
+DEFAULT_TIMEOUT_SECONDS = 300
+
 
 class ClaudeController:
     def __init__(self, config: Config) -> None:
@@ -25,9 +28,10 @@ class ClaudeController:
     ) -> AsyncIterator[Event]:
         """Run a Claude Code prompt and yield streaming events."""
         cwd = work_dir or self._config.claude_work_dir
+        timeout = self._config.claude_timeout_seconds
 
         cmd = self._build_command(session_id, prompt, is_new, context)
-        logger.info("Running claude: %s (cwd=%s)", cmd[:5], cwd)
+        logger.info("Running claude: %s (cwd=%s, timeout=%ss)", cmd[:5], cwd, timeout)
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -36,24 +40,36 @@ class ClaudeController:
             cwd=str(cwd),
         )
 
+        # Drain stderr in background to prevent buffer deadlock
+        stderr_task = asyncio.create_task(self._drain_stderr(process))
+
+        timed_out = False
         try:
-            async for event in self._read_stream(process):
+            async for event in self._read_stream_with_timeout(process, timeout):
                 yield event
+        except asyncio.TimeoutError:
+            timed_out = True
+            logger.error("Claude process timed out after %ss", timeout)
+            yield ResultEvent(
+                session_id=session_id,
+                result_text=f"Claude process timed out after {timeout}s",
+                is_error=True,
+            )
         finally:
-            # Ensure process is cleaned up
             if process.returncode is None:
                 process.terminate()
                 try:
                     await asyncio.wait_for(process.wait(), timeout=5.0)
                 except asyncio.TimeoutError:
                     process.kill()
+                    await process.wait()
 
+            stderr_text = await stderr_task
             return_code = process.returncode
-            if return_code and return_code != 0:
-                stderr_bytes = await process.stderr.read() if process.stderr else b""
-                stderr_text = stderr_bytes.decode(errors="replace").strip()
+
+            if not timed_out and return_code and return_code != 0:
                 if stderr_text:
-                    logger.error("Claude process stderr: %s", stderr_text[:500])
+                    logger.error("Claude stderr: %s", stderr_text[:500])
                 yield ResultEvent(
                     session_id=session_id,
                     result_text=f"Claude process exited with code {return_code}",
@@ -119,15 +135,31 @@ class ClaudeController:
 
         return cmd
 
-    async def _read_stream(
-        self, process: asyncio.subprocess.Process
+    async def _read_stream_with_timeout(
+        self, process: asyncio.subprocess.Process, timeout: float
     ) -> AsyncIterator[Event]:
+        """Read stdout stream with an overall timeout."""
+        deadline = asyncio.get_event_loop().time() + timeout
         assert process.stdout is not None
         while True:
-            line_bytes = await process.stdout.readline()
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                raise asyncio.TimeoutError()
+            try:
+                line_bytes = await asyncio.wait_for(
+                    process.stdout.readline(), timeout=remaining
+                )
+            except asyncio.TimeoutError:
+                raise
             if not line_bytes:
                 break
             line = line_bytes.decode(errors="replace")
-            event = parse_stream_line(line)
-            if event is not None:
+            for event in parse_stream_line(line):
                 yield event
+
+    @staticmethod
+    async def _drain_stderr(process: asyncio.subprocess.Process) -> str:
+        """Read all stderr in background to prevent pipe buffer deadlock."""
+        assert process.stderr is not None
+        stderr_bytes = await process.stderr.read()
+        return stderr_bytes.decode(errors="replace").strip()

@@ -7,6 +7,7 @@ import time
 
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 from slack_bolt.async_app import AsyncApp
+from slack_sdk.errors import SlackApiError
 
 from agent_bridge.bridge import Bridge
 from agent_bridge.claude.events import (
@@ -56,21 +57,21 @@ class SlackAdapter:
             user_info = await client.users_info(user=user_id)
             profile = user_info["user"]["profile"]
             user_name = profile.get("display_name") or profile.get("real_name") or user_id
-        except Exception:
-            logger.warning("Failed to resolve user name for %s", user_id)
+        except SlackApiError as e:
+            logger.warning("Failed to resolve user name for %s: %s", user_id, e.response["error"])
 
         channel_name = channel
         workspace_name = ""
         try:
             conv_info = await client.conversations_info(channel=channel)
             channel_name = conv_info["channel"].get("name") or channel
-        except Exception:
-            logger.warning("Failed to resolve channel name for %s", channel)
+        except SlackApiError as e:
+            logger.warning("Failed to resolve channel name for %s: %s", channel, e.response["error"])
         try:
             team_info = await client.team_info()
             workspace_name = team_info["team"].get("name", "")
-        except Exception:
-            logger.warning("Failed to resolve workspace name")
+        except SlackApiError as e:
+            logger.warning("Failed to resolve workspace name: %s", e.response["error"])
 
         # Strip bot mention from text (e.g., "<@U12345> do something" → "do something")
         text = re.sub(r"<@[A-Z0-9]+>\s*", "", text).strip()
@@ -168,15 +169,15 @@ class SlackAdapter:
                 ts=ts,
                 text=text,
             )
-        except Exception:
-            logger.exception("Failed to update Slack message")
+        except SlackApiError as e:
+            logger.warning("Failed to update Slack message %s: %s", ts, e.response["error"])
 
     async def start(self) -> None:
         self._handler = AsyncSocketModeHandler(
             self._app, self._config.slack_app_token
         )
         logger.info("Starting Slack adapter (Socket Mode)")
-        await self._handler.start_async()
+        await self._handler.connect_async()
 
     async def stop(self) -> None:
         if self._handler:

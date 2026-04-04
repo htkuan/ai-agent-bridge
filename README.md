@@ -165,11 +165,26 @@ SESSION_TTL_HOURS=72
 | `SESSION_STORE_PATH` | No | `./sessions.json` | Path to session mapping file |
 | `SESSION_TTL_HOURS` | No | `72` | Session TTL in hours; inactive sessions beyond this are expired and recreated |
 
-### Run
+### Run (Local)
 
 ```bash
 uv run agent-bridge
 ```
+
+### Run (Docker)
+
+```bash
+cp .env.example .env
+# Edit .env with your tokens (including ANTHROPIC_API_KEY for Docker)
+
+# Build and run
+docker compose up --build
+
+# Or run in background
+docker compose up -d --build
+```
+
+The `CLAUDE_WORK_DIR` in `.env` determines which local directory is mounted into the container at `/workspace` for Claude Code to operate on. Default is the current directory.
 
 ### Test
 

@@ -4,11 +4,13 @@ import asyncio
 import logging
 import signal
 
-from agent_bridge.adapters.slack import SlackAdapter
+from agent_bridge.agents.claude.config import ClaudeConfig
+from agent_bridge.agents.claude.controller import ClaudeController
 from agent_bridge.bridge import Bridge
-from agent_bridge.claude.controller import ClaudeController
-from agent_bridge.claude.session import SessionManager
-from agent_bridge.config import Config
+from agent_bridge.config import BridgeConfig
+from agent_bridge.platforms.slack.adapter import SlackAdapter
+from agent_bridge.platforms.slack.config import SlackConfig
+from agent_bridge.session import SessionManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,16 +23,21 @@ CLEANUP_INTERVAL_SECONDS = 3600
 
 
 async def main() -> None:
-    config = Config.from_env()
-    logger.info("Claude work dir: %s", config.claude_work_dir)
-    logger.info("Permission mode: %s", config.claude_permission_mode)
-    logger.info("Session TTL: %s hours", config.session_ttl_hours)
-    logger.info("Claude timeout: %s seconds", config.claude_timeout_seconds)
+    bridge_config = BridgeConfig.from_env()
+    claude_config = ClaudeConfig.from_env()
+    slack_config = SlackConfig.from_env()
 
-    session_manager = SessionManager(config.session_store_path, config.session_ttl_hours)
-    controller = ClaudeController(config)
-    bridge = Bridge(config, session_manager, controller)
-    adapter = SlackAdapter(config, bridge)
+    logger.info("Claude work dir: %s", claude_config.work_dir)
+    logger.info("Permission mode: %s", claude_config.permission_mode)
+    logger.info("Session TTL: %s hours", bridge_config.session_ttl_hours)
+    logger.info("Claude timeout: %s seconds", claude_config.timeout_seconds)
+
+    session_manager = SessionManager(
+        bridge_config.session_store_path, bridge_config.session_ttl_hours
+    )
+    controller = ClaudeController(claude_config)
+    bridge = Bridge(session_manager, controller)
+    adapter = SlackAdapter(slack_config, bridge, session_manager=session_manager)
 
     # Graceful shutdown
     shutdown_event = asyncio.Event()
@@ -54,7 +61,7 @@ async def main() -> None:
                 pass
             if not shutdown_event.is_set():
                 purged = session_manager.purge_expired()
-                stale = bridge.cleanup_stale_locks()
+                stale = adapter.cleanup_stale_locks()
                 if purged or stale:
                     logger.info(
                         "Cleanup: purged %d expired sessions, %d stale locks",

@@ -4,10 +4,12 @@ import json
 import logging
 from dataclasses import dataclass, field
 
+from agent_bridge.events import BridgeEvent, Completion, StatusUpdate, TextDelta
+
 logger = logging.getLogger(__name__)
 
 
-# --- Event dataclasses ---
+# --- Claude-specific event dataclasses (internal to this module) ---
 
 
 @dataclass
@@ -52,7 +54,7 @@ class ResultEvent:
     is_error: bool = False
 
 
-type Event = (
+type ClaudeEvent = (
     InitEvent
     | AssistantTextEvent
     | ThinkingEvent
@@ -62,7 +64,7 @@ type Event = (
 )
 
 
-def parse_stream_line(line: str) -> list[Event]:
+def parse_stream_line(line: str) -> list[ClaudeEvent]:
     """Parse a single line of Claude CLI stream-json output into typed events.
 
     Returns a list because one JSON line may contain multiple content blocks
@@ -91,7 +93,7 @@ def parse_stream_line(line: str) -> list[Event]:
         ]
 
     if event_type == "assistant":
-        events: list[Event] = []
+        events: list[ClaudeEvent] = []
         message = data.get("message", {})
         contents = message.get("content", [])
         for content in contents:
@@ -147,3 +149,27 @@ def parse_stream_line(line: str) -> list[Event]:
         ]
 
     return []
+
+
+def to_bridge_event(event: ClaudeEvent) -> BridgeEvent | None:
+    """Convert a Claude-specific event to a generic BridgeEvent.
+
+    Returns None for events that are internal to the agent (InitEvent,
+    ThinkingEvent, ToolResultEvent) and should not be exposed to the platform.
+    """
+    match event:
+        case AssistantTextEvent(text=text):
+            return TextDelta(text=text)
+        case ToolUseEvent(tool_name=name):
+            return StatusUpdate(status=f"Using {name}...")
+        case ResultEvent(
+            result_text=text,
+            is_error=err,
+            cost_usd=cost,
+            duration_ms=ms,
+        ):
+            return Completion(
+                text=text, is_error=err, cost_usd=cost, duration_ms=ms
+            )
+        case _:
+            return None

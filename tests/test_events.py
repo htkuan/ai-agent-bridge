@@ -1,6 +1,6 @@
 import json
 
-from agent_bridge.claude.events import (
+from agent_bridge.agents.claude.events import (
     AssistantTextEvent,
     InitEvent,
     ResultEvent,
@@ -8,7 +8,9 @@ from agent_bridge.claude.events import (
     ToolResultEvent,
     ToolUseEvent,
     parse_stream_line,
+    to_bridge_event,
 )
+from agent_bridge.events import Completion, StatusUpdate, TextDelta
 
 
 def test_parse_init_event():
@@ -204,3 +206,54 @@ def test_parse_assistant_empty_content():
         }
     )
     assert parse_stream_line(line) == []
+
+
+# --- to_bridge_event tests ---
+
+
+def test_bridge_event_from_text():
+    event = AssistantTextEvent(session_id="s1", text="Hello")
+    result = to_bridge_event(event)
+    assert isinstance(result, TextDelta)
+    assert result.text == "Hello"
+
+
+def test_bridge_event_from_tool_use():
+    event = ToolUseEvent(session_id="s1", tool_name="Bash", tool_input={"command": "ls"})
+    result = to_bridge_event(event)
+    assert isinstance(result, StatusUpdate)
+    assert result.status == "Using Bash..."
+
+
+def test_bridge_event_from_result():
+    event = ResultEvent(
+        session_id="s1", result_text="Done", cost_usd=0.05, duration_ms=3000
+    )
+    result = to_bridge_event(event)
+    assert isinstance(result, Completion)
+    assert result.text == "Done"
+    assert result.cost_usd == 0.05
+    assert result.duration_ms == 3000
+    assert result.is_error is False
+
+
+def test_bridge_event_from_error_result():
+    event = ResultEvent(session_id="s1", result_text="Failed", is_error=True)
+    result = to_bridge_event(event)
+    assert isinstance(result, Completion)
+    assert result.is_error is True
+
+
+def test_bridge_event_from_init_returns_none():
+    event = InitEvent(session_id="s1", model="claude-opus-4-6", tools=["Bash"])
+    assert to_bridge_event(event) is None
+
+
+def test_bridge_event_from_thinking_returns_none():
+    event = ThinkingEvent(session_id="s1", thinking="Let me think...")
+    assert to_bridge_event(event) is None
+
+
+def test_bridge_event_from_tool_result_returns_none():
+    event = ToolResultEvent(session_id="s1", output="file.txt")
+    assert to_bridge_event(event) is None

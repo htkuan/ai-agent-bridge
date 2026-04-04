@@ -5,17 +5,19 @@ import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-from agent_bridge.claude.events import Event, ResultEvent, parse_stream_line
-from agent_bridge.config import Config
+from agent_bridge.agents.claude.config import ClaudeConfig
+from agent_bridge.agents.claude.events import (
+    ResultEvent,
+    parse_stream_line,
+    to_bridge_event,
+)
+from agent_bridge.events import BridgeEvent, Completion
 
 logger = logging.getLogger(__name__)
 
-# Default timeout for a single Claude invocation (seconds)
-DEFAULT_TIMEOUT_SECONDS = 300
-
 
 class ClaudeController:
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: ClaudeConfig) -> None:
         self._config = config
 
     async def run(
@@ -25,10 +27,10 @@ class ClaudeController:
         is_new: bool,
         work_dir: Path | None = None,
         context: dict[str, str] | None = None,
-    ) -> AsyncIterator[Event]:
-        """Run a Claude Code prompt and yield streaming events."""
-        cwd = work_dir or self._config.claude_work_dir
-        timeout = self._config.claude_timeout_seconds
+    ) -> AsyncIterator[BridgeEvent]:
+        """Run a Claude Code prompt and yield streaming BridgeEvents."""
+        cwd = work_dir or self._config.work_dir
+        timeout = self._config.timeout_seconds
 
         cmd = self._build_command(session_id, prompt, is_new, context)
         logger.info("Running claude: %s (cwd=%s, timeout=%ss)", cmd[:5], cwd, timeout)
@@ -50,9 +52,8 @@ class ClaudeController:
         except asyncio.TimeoutError:
             timed_out = True
             logger.error("Claude process timed out after %ss", timeout)
-            yield ResultEvent(
-                session_id=session_id,
-                result_text=f"Claude process timed out after {timeout}s",
+            yield Completion(
+                text=f"Claude process timed out after {timeout}s",
                 is_error=True,
             )
         finally:
@@ -70,9 +71,8 @@ class ClaudeController:
             if not timed_out and return_code and return_code != 0:
                 if stderr_text:
                     logger.error("Claude stderr: %s", stderr_text[:500])
-                yield ResultEvent(
-                    session_id=session_id,
-                    result_text=f"Claude process exited with code {return_code}",
+                yield Completion(
+                    text=f"Claude process exited with code {return_code}",
                     is_error=True,
                 )
 
@@ -105,7 +105,7 @@ class ClaudeController:
         else:
             cmd.extend(["--resume", session_id])
 
-        permission_mode = self._config.claude_permission_mode
+        permission_mode = self._config.permission_mode
         if permission_mode == "dangerously-skip-permissions":
             cmd.append("--dangerously-skip-permissions")
         else:
@@ -137,8 +137,8 @@ class ClaudeController:
 
     async def _read_stream_with_timeout(
         self, process: asyncio.subprocess.Process, timeout: float
-    ) -> AsyncIterator[Event]:
-        """Read stdout stream with an overall timeout."""
+    ) -> AsyncIterator[BridgeEvent]:
+        """Read stdout stream with an overall timeout, yielding BridgeEvents."""
         deadline = asyncio.get_event_loop().time() + timeout
         assert process.stdout is not None
         while True:
@@ -154,8 +154,10 @@ class ClaudeController:
             if not line_bytes:
                 break
             line = line_bytes.decode(errors="replace")
-            for event in parse_stream_line(line):
-                yield event
+            for claude_event in parse_stream_line(line):
+                bridge_event = to_bridge_event(claude_event)
+                if bridge_event is not None:
+                    yield bridge_event
 
     @staticmethod
     async def _drain_stderr(process: asyncio.subprocess.Process) -> str:

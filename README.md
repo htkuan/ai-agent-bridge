@@ -1,111 +1,111 @@
 # Agent Bridge
 
-Bridge service that connects chat platforms to CLI AI agent tools. Currently supports **Slack** as the chat platform and **Claude Code** as the AI agent backend.
+Modular bridge service that connects **chat platforms** to **AI agents**. The architecture cleanly separates platform concerns from agent concerns, making it easy to add new platforms or agents.
 
-Users interact with Claude Code through Slack messages — the bridge handles session management, process control, and real-time streaming of responses.
+Currently supports **Slack** as the chat platform and **Claude Code** as the AI agent backend.
 
 ## Architecture
 
 ```
-┌─────────────┐
-│  Slack User  │
-│  @mention/DM │
-└──────┬───────┘
-       │ Slack Events API (Socket Mode)
-       ▼
-┌──────────────────┐
-│  Slack Adapter    │  slack-bolt async + Socket Mode
-│  adapters/slack   │  throttled message updates (1.5s)
-└──────┬───────────┘
-       │ (platform, channel, thread, user, text)
-       ▼
-┌──────────────────┐
-│  Bridge           │  per-session asyncio.Lock
-│  bridge.py        │  session key → session_id mapping
-└──────┬───────────┘
-       │
-  ┌────┴─────┐
-  ▼          ▼
-┌────────┐ ┌─────────────────┐
-│Session │ │Claude Controller │  asyncio subprocess
-│Manager │ │claude/controller │  claude -p --output-format stream-json
-│JSON    │ │                  │  --session-id / --resume
-└────────┘ └────────┬────────┘
-                    │ stdout (NDJSON stream)
-                    ▼
-           ┌────────────────┐
-           │ Event Parser    │  parse_stream_line()
-           │ claude/events   │  → typed dataclass events
-           └────────────────┘
+┌─────────────────────────┐
+│  Platform (Slack)       │  Defines session semantics (thread = session)
+│  platforms/slack/       │  Manages per-session locking & flow control
+│  - adapter.py           │  Renders agent events (stream updates, final reply)
+│  - config.py            │
+└──────────┬──────────────┘
+           │ session_key, text, context
+           ▼
+┌─────────────────────────┐
+│  Bridge                 │  Pure routing — no platform or agent knowledge
+│  bridge.py              │  session_key → session_id (via SessionManager)
+│  session.py             │  Forwards to agent, yields BridgeEvents back
+│  events.py              │  TextDelta | StatusUpdate | Completion
+│  protocols.py           │  AgentController + PlatformAdapter protocols
+└──────────┬──────────────┘
+           │ session_id, prompt, is_new, context
+           ▼
+┌─────────────────────────┐
+│  Agent (Claude Code)    │  Purely invoked: load session + input → output
+│  agents/claude/         │  Translates Claude stream-json → BridgeEvents
+│  - controller.py        │  Does not define sessions or care about rendering
+│  - events.py            │
+│  - config.py            │
+└─────────────────────────┘
 ```
+
+### Design Principles
+
+**Platform defines session semantics.** A Slack thread is a session. A Discord channel might be a session. This is platform knowledge — the bridge and agent don't care how sessions are defined.
+
+**Agent is purely invoked.** It receives `(session_id, prompt, is_new, context)`, loads the session, executes, and yields events. It doesn't know where the session came from or how results will be rendered.
+
+**Bridge is pure routing.** It resolves session keys to session IDs and forwards requests/events. No platform-specific or agent-specific logic.
+
+### Generic Event Model
+
+Platforms consume three event types — the common language between any agent and any platform:
+
+| Event | Description |
+|-------|-------------|
+| `TextDelta` | Incremental text from the agent |
+| `StatusUpdate` | Agent is performing an action (tool use, thinking, etc.) |
+| `Completion` | Agent finished responding (with cost, duration, error status) |
+
+Agent-internal events (init, thinking, tool results) are translated to these generic types within each agent module.
 
 ### Data Flow
 
 1. User sends a message in Slack (via `@mention` in channel or direct message)
-2. **Slack Adapter** receives the event, extracts channel/thread/user/text
-3. **Bridge** constructs a session key (`slack:{channel}:{thread_ts}`), acquires a per-session lock
-4. **Session Manager** looks up or creates a Claude Code session ID (UUID) for that key
-5. **Claude Controller** spawns `claude -p "prompt" --resume <session-id> --output-format stream-json`
-6. stdout is read line-by-line, each JSON line is parsed into a typed **Event**
-7. **Slack Adapter** updates the Slack message in real-time as events arrive (throttled to avoid rate limits)
+2. **Slack Adapter** receives the event, constructs a session key (`slack:{channel}:{thread_ts}`)
+3. **Slack Adapter** acquires per-session lock (prevents concurrent processing)
+4. **Bridge** resolves session key → session ID via **SessionManager**
+5. **Agent (Claude Controller)** spawns `claude -p` with the session, yields `BridgeEvent`s
+6. **Slack Adapter** renders events as real-time message updates (throttled to avoid rate limits)
 
 ### Session Management
 
-- Each Slack thread maps to one Claude Code session
-- Session context (conversation history, file state) is managed internally by Claude Code
-- The bridge only stores the mapping: `session_key → {session_id, created_at, last_used}`
+- Each Slack thread maps to one agent session (defined by the platform)
+- The bridge stores the mapping: `session_key → {session_id, created_at, last_used}`
 - Mappings are persisted in a JSON file
-- First message in a thread → `claude -p --session-id <new-uuid>` (creates session)
-- Subsequent messages → `claude -p --resume <existing-uuid>` (continues session)
-- Sessions have a configurable TTL (default 72 hours since last use) — expired sessions are automatically purged on startup and treated as new on next access
-
-### Stream Event Types
-
-The Claude CLI outputs newline-delimited JSON (NDJSON). The bridge parses these into typed events:
-
-| Event | Description |
-|-------|-------------|
-| `InitEvent` | Session initialized, includes model and available tools |
-| `AssistantTextEvent` | Text fragment from Claude's response |
-| `ThinkingEvent` | Claude's internal reasoning (extended thinking) |
-| `ToolUseEvent` | Claude is invoking a tool (Bash, Edit, Read, etc.) |
-| `ToolResultEvent` | Result returned from a tool execution |
-| `ResultEvent` | Final result with total cost, duration, error status |
+- Sessions have a configurable TTL (default 72 hours) — expired sessions are automatically purged
 
 ## Tech Stack
 
 | Component | Choice | Reason |
 |-----------|--------|--------|
-| Language | Python 3.12+ | Type union syntax (`X \| Y`), modern asyncio |
+| Language | Python 3.12+ | Type union syntax (`X \| Y`), `match` statements, modern asyncio |
 | Package manager | uv | Fast, supports pyproject.toml natively |
 | Slack SDK | [slack-bolt](https://github.com/slackapi/bolt-python) | Official Slack SDK, async support, Socket Mode |
 | Async HTTP | aiohttp | Required by slack-bolt for async Socket Mode |
-| Async file I/O | aiofiles | Non-blocking file operations |
 | Env config | python-dotenv | Load `.env` files |
 | Testing | pytest + pytest-asyncio | Standard Python testing |
-| JSON parsing | Built-in `json` module | Sufficient for NDJSON line parsing |
 | Claude CLI | `claude -p` with `--output-format stream-json` | Non-interactive mode with real-time streaming |
 
 ## Project Structure
 
 ```
 agent-bridge/
-├── pyproject.toml                  # Project config & dependencies
-├── .env.example                    # Environment variables template
+├── pyproject.toml
+├── .env.example
 ├── src/
 │   └── agent_bridge/
-│       ├── __init__.py             # Entry point: main() / main_sync()
-│       ├── config.py               # Config dataclass from env vars
-│       ├── bridge.py               # Orchestrator: session + controller + locking
-│       ├── claude/
-│       │   ├── events.py           # Stream JSON event parser & dataclasses
-│       │   ├── session.py          # Session key ↔ session_id mapping (JSON file)
-│       │   └── controller.py       # Claude Code subprocess controller
-│       └── adapters/
-│           ├── base.py             # PlatformAdapter protocol
-│           └── slack.py            # Slack adapter (bolt async + Socket Mode)
+│       ├── __init__.py             # Entry point: wires platform + bridge + agent
+│       ├── config.py               # BridgeConfig (session store, TTL)
+│       ├── bridge.py               # Pure routing: session resolve → agent call
+│       ├── events.py               # TextDelta, StatusUpdate, Completion
+│       ├── session.py              # SessionManager (key → session_id mapping)
+│       ├── protocols.py            # AgentController + PlatformAdapter protocols
+│       ├── agents/
+│       │   └── claude/
+│       │       ├── config.py       # ClaudeConfig (work_dir, permissions, timeout)
+│       │       ├── controller.py   # Claude Code subprocess controller
+│       │       └── events.py       # Claude stream-json parser + BridgeEvent converter
+│       └── platforms/
+│           └── slack/
+│               ├── config.py       # SlackConfig (bot_token, app_token)
+│               └── adapter.py      # Slack adapter (session def, locking, rendering)
 └── tests/
-    ├── test_events.py              # Stream event parsing tests
+    ├── test_events.py              # Claude event parsing + BridgeEvent conversion
     └── test_session.py             # Session manager tests
 ```
 
@@ -161,9 +161,9 @@ SESSION_TTL_HOURS=72
 | `SLACK_BOT_TOKEN` | Yes | — | Slack Bot User OAuth Token |
 | `SLACK_APP_TOKEN` | Yes | — | Slack App-Level Token (Socket Mode) |
 | `CLAUDE_WORK_DIR` | No | `.` | Working directory for Claude Code |
-| `CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude permission mode (`acceptEdits`, `dangerously-skip-permissions`, `default`, `plan`) |
+| `CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude permission mode |
 | `SESSION_STORE_PATH` | No | `./sessions.json` | Path to session mapping file |
-| `SESSION_TTL_HOURS` | No | `72` | Session TTL in hours; inactive sessions beyond this are expired and recreated |
+| `SESSION_TTL_HOURS` | No | `72` | Session TTL in hours |
 
 ### Run (Local)
 
@@ -177,14 +177,8 @@ uv run agent-bridge
 cp .env.example .env
 # Edit .env with your tokens (including ANTHROPIC_API_KEY for Docker)
 
-# Build and run
 docker compose up --build
-
-# Or run in background
-docker compose up -d --build
 ```
-
-The `CLAUDE_WORK_DIR` in `.env` determines which local directory is mounted into the container at `/workspace` for Claude Code to operate on. Default is the current directory.
 
 ### Test
 
@@ -196,28 +190,34 @@ uv run pytest tests/ -v
 
 - **Channel**: Mention the bot — `@AgentBridge help me refactor this function`
 - **DM**: Send a direct message — the bot responds in the same conversation
-- **Thread continuity**: Reply in the same Slack thread to continue the Claude Code session (context is preserved)
+- **Thread continuity**: Reply in the same Slack thread to continue the agent session
+
+## Extending
+
+### Adding a new agent
+
+Create `agents/<name>/` with `config.py`, `controller.py`, `events.py`. Implement the `AgentController` protocol — your `run()` method yields `BridgeEvent`s. Wire it up in `__init__.py`.
+
+### Adding a new platform
+
+Create `platforms/<name>/` with `config.py`, `adapter.py`. Define your own session key logic (e.g., `discord:{guild}:{channel}`), manage per-session locking, consume `BridgeEvent`s from `bridge.handle_message()`. Wire it up in `__init__.py`.
+
+Neither change requires modifying the bridge, the other agent, or the other platform.
 
 ## Design Decisions
 
 ### One-shot per message (vs. long-running process)
 
-Each user message spawns a new `claude -p` process that exits after completion, rather than maintaining a long-running process per session. Session continuity is handled by Claude Code's built-in `--resume` flag.
+Each user message spawns a new `claude -p` process that exits after completion. Session continuity is handled by Claude Code's built-in `--resume` flag.
 
-**Why**: Simpler process lifecycle, no idle resource consumption, graceful handling of crashes. The trade-off is per-message startup cost, which is acceptable for v1.
+**Why**: Simpler process lifecycle, no idle resource consumption, graceful handling of crashes.
 
-### Per-session locking
+### Per-session locking (platform-owned)
 
-An `asyncio.Lock` per session key prevents concurrent `claude` processes for the same Slack thread. If two messages arrive quickly in the same thread, the second waits for the first to complete.
-
-**Why**: Claude Code sessions don't support concurrent access. Without locking, messages could interleave and corrupt session state.
+An `asyncio.Lock` per session key prevents concurrent agent processes for the same session. This is managed by the platform adapter, not the bridge, because locking strategy may vary by platform.
 
 ### Throttled Slack updates
 
 Slack message updates are throttled to 1.5-second intervals during streaming.
 
-**Why**: Slack's API rate limits are ~1 request/second per method. Updating on every text fragment would quickly hit rate limits.
-
-### Adapter pattern
-
-The `PlatformAdapter` protocol allows adding new chat platforms (Discord, Teams, etc.) without changing the bridge or controller logic.
+**Why**: Slack's API rate limits are ~1 request/second per method.

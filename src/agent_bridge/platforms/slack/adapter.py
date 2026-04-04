@@ -10,12 +10,9 @@ from slack_bolt.async_app import AsyncApp
 from slack_sdk.errors import SlackApiError
 
 from agent_bridge.bridge import Bridge
-from agent_bridge.claude.events import (
-    AssistantTextEvent,
-    ResultEvent,
-    ToolUseEvent,
-)
-from agent_bridge.config import Config
+from agent_bridge.events import Completion, StatusUpdate, TextDelta
+from agent_bridge.platforms.slack.config import SlackConfig
+from agent_bridge.session import SessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +21,45 @@ UPDATE_THROTTLE_SECONDS = 1.5
 
 
 class SlackAdapter:
-    def __init__(self, config: Config, bridge: Bridge) -> None:
+    def __init__(
+        self,
+        config: SlackConfig,
+        bridge: Bridge,
+        session_manager: SessionManager | None = None,
+    ) -> None:
         self._config = config
         self._bridge = bridge
-        self._app = AsyncApp(token=config.slack_bot_token)
+        self._session_manager = session_manager
+        self._app = AsyncApp(token=config.bot_token)
         self._handler: AsyncSocketModeHandler | None = None
+        self._locks: dict[str, asyncio.Lock] = {}
         self._register_handlers()
+
+    # --- Session key: Slack defines thread = session ---
+
+    @staticmethod
+    def _session_key(channel: str, thread_ts: str) -> str:
+        return f"slack:{channel}:{thread_ts}"
+
+    def _get_lock(self, session_key: str) -> asyncio.Lock:
+        return self._locks.setdefault(session_key, asyncio.Lock())
+
+    def cleanup_stale_locks(self) -> int:
+        """Remove locks for sessions that no longer exist. Returns count removed."""
+        if self._session_manager is None:
+            return 0
+        stale = [
+            key
+            for key, lock in self._locks.items()
+            if not lock.locked() and self._session_manager.get(key) is None
+        ]
+        for key in stale:
+            del self._locks[key]
+        if stale:
+            logger.info("Cleaned up %d stale session locks", len(stale))
+        return len(stale)
+
+    # --- Event handlers ---
 
     def _register_handlers(self) -> None:
         @self._app.event("app_mention")
@@ -56,9 +86,13 @@ class SlackAdapter:
         try:
             user_info = await client.users_info(user=user_id)
             profile = user_info["user"]["profile"]
-            user_name = profile.get("display_name") or profile.get("real_name") or user_id
+            user_name = (
+                profile.get("display_name") or profile.get("real_name") or user_id
+            )
         except SlackApiError as e:
-            logger.warning("Failed to resolve user name for %s: %s", user_id, e.response["error"])
+            logger.warning(
+                "Failed to resolve user name for %s: %s", user_id, e.response["error"]
+            )
 
         channel_name = channel
         workspace_name = ""
@@ -66,12 +100,18 @@ class SlackAdapter:
             conv_info = await client.conversations_info(channel=channel)
             channel_name = conv_info["channel"].get("name") or channel
         except SlackApiError as e:
-            logger.warning("Failed to resolve channel name for %s: %s", channel, e.response["error"])
+            logger.warning(
+                "Failed to resolve channel name for %s: %s",
+                channel,
+                e.response["error"],
+            )
         try:
             team_info = await client.team_info()
             workspace_name = team_info["team"].get("name", "")
         except SlackApiError as e:
-            logger.warning("Failed to resolve workspace name: %s", e.response["error"])
+            logger.warning(
+                "Failed to resolve workspace name: %s", e.response["error"]
+            )
 
         # Strip bot mention from text (e.g., "<@U12345> do something" → "do something")
         text = re.sub(r"<@[A-Z0-9]+>\s*", "", text).strip()
@@ -89,8 +129,8 @@ class SlackAdapter:
             "user_name": user_name,
         }
 
-        session_key = self._bridge.session_key("slack", channel, thread_ts)
-        lock = self._bridge.get_lock(session_key)
+        session_key = self._session_key(channel, thread_ts)
+        lock = self._get_lock(session_key)
 
         # Check if session is busy and show appropriate status
         if lock.locked():
@@ -125,7 +165,7 @@ class SlackAdapter:
         text: str,
         context: dict[str, str],
     ) -> None:
-        """Stream Claude events and update the Slack message."""
+        """Stream agent events and update the Slack message."""
         accumulated_text = ""
         tool_status = ""
         last_update_time = 0.0
@@ -135,34 +175,37 @@ class SlackAdapter:
             text=text,
             context=context,
         ):
-            if isinstance(event_obj, AssistantTextEvent):
-                accumulated_text += event_obj.text
-                now = time.monotonic()
-                if now - last_update_time >= UPDATE_THROTTLE_SECONDS:
-                    await self._update_message(
-                        channel, message_ts, accumulated_text + tool_status
-                    )
-                    last_update_time = now
+            match event_obj:
+                case TextDelta(text=chunk):
+                    accumulated_text += chunk
+                    now = time.monotonic()
+                    if now - last_update_time >= UPDATE_THROTTLE_SECONDS:
+                        await self._update_message(
+                            channel, message_ts, accumulated_text + tool_status
+                        )
+                        last_update_time = now
 
-            elif isinstance(event_obj, ToolUseEvent):
-                tool_status = f"\n\n_Using {event_obj.tool_name}..._"
-                now = time.monotonic()
-                if now - last_update_time >= UPDATE_THROTTLE_SECONDS:
-                    display = accumulated_text + tool_status if accumulated_text else tool_status
-                    await self._update_message(channel, message_ts, display)
-                    last_update_time = now
+                case StatusUpdate(status=status):
+                    tool_status = f"\n\n_{status}_"
+                    now = time.monotonic()
+                    if now - last_update_time >= UPDATE_THROTTLE_SECONDS:
+                        display = (
+                            accumulated_text + tool_status
+                            if accumulated_text
+                            else tool_status
+                        )
+                        await self._update_message(channel, message_ts, display)
+                        last_update_time = now
 
-            elif isinstance(event_obj, ResultEvent):
-                final_text = event_obj.result_text or accumulated_text
-                if event_obj.is_error:
-                    final_text = f":x: Error: {final_text}"
-                if not final_text:
-                    final_text = "_No response from Claude._"
-                await self._update_message(channel, message_ts, final_text)
+                case Completion(text=final_text, is_error=is_error):
+                    final = final_text or accumulated_text
+                    if is_error:
+                        final = f":x: Error: {final}"
+                    if not final:
+                        final = "_No response from agent._"
+                    await self._update_message(channel, message_ts, final)
 
-    async def _update_message(
-        self, channel: str, ts: str, text: str
-    ) -> None:
+    async def _update_message(self, channel: str, ts: str, text: str) -> None:
         try:
             await self._app.client.chat_update(
                 channel=channel,
@@ -170,11 +213,13 @@ class SlackAdapter:
                 text=text,
             )
         except SlackApiError as e:
-            logger.warning("Failed to update Slack message %s: %s", ts, e.response["error"])
+            logger.warning(
+                "Failed to update Slack message %s: %s", ts, e.response["error"]
+            )
 
     async def start(self) -> None:
         self._handler = AsyncSocketModeHandler(
-            self._app, self._config.slack_app_token
+            self._app, self._config.app_token
         )
         logger.info("Starting Slack adapter (Socket Mode)")
         await self._handler.connect_async()

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_bridge.claude.session import SessionManager
+from agent_bridge.session import SessionManager
 
 
 def test_get_or_create_new(tmp_path: Path):

@@ -98,6 +98,7 @@ class ClaudeController:
             tagged_prompt,
             "--output-format",
             "stream-json",
+            "--verbose",
         ]
 
         if is_new:

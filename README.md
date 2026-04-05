@@ -148,22 +148,22 @@ cp .env.example .env
 Edit `.env`:
 
 ```bash
-SLACK_BOT_TOKEN=xoxb-your-bot-token
-SLACK_APP_TOKEN=xapp-your-app-level-token
-CLAUDE_WORK_DIR=/path/to/your/project
-CLAUDE_PERMISSION_MODE=acceptEdits
-SESSION_STORE_PATH=./sessions.json
-SESSION_TTL_HOURS=72
+AGENT_BRIDGE_SLACK_BOT_TOKEN=xoxb-your-bot-token
+AGENT_BRIDGE_SLACK_APP_TOKEN=xapp-your-app-level-token
+AGENT_BRIDGE_CLAUDE_WORK_DIR=/path/to/your/project
+AGENT_BRIDGE_CLAUDE_PERMISSION_MODE=acceptEdits
+AGENT_BRIDGE_SESSION_STORE_PATH=./sessions.json
+AGENT_BRIDGE_SESSION_TTL_HOURS=72
 ```
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `SLACK_BOT_TOKEN` | Yes | — | Slack Bot User OAuth Token |
-| `SLACK_APP_TOKEN` | Yes | — | Slack App-Level Token (Socket Mode) |
-| `CLAUDE_WORK_DIR` | No | `.` | Working directory for Claude Code |
-| `CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude permission mode |
-| `SESSION_STORE_PATH` | No | `./sessions.json` | Path to session mapping file |
-| `SESSION_TTL_HOURS` | No | `72` | Session TTL in hours |
+| `AGENT_BRIDGE_SLACK_BOT_TOKEN` | Yes | — | Slack Bot User OAuth Token |
+| `AGENT_BRIDGE_SLACK_APP_TOKEN` | Yes | — | Slack App-Level Token (Socket Mode) |
+| `AGENT_BRIDGE_CLAUDE_WORK_DIR` | No | `.` | Working directory for Claude Code |
+| `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude permission mode |
+| `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Path to session mapping file |
+| `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Session TTL in hours |
 
 ### Run (Local)
 

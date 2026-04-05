@@ -28,9 +28,9 @@ class ClaudeConfig:
         load_dotenv()
 
         config = cls(
-            work_dir=Path(os.environ.get("CLAUDE_WORK_DIR", ".")).resolve(),
-            permission_mode=os.environ.get("CLAUDE_PERMISSION_MODE", "acceptEdits"),
-            timeout_seconds=float(os.environ.get("CLAUDE_TIMEOUT_SECONDS", "300")),
+            work_dir=Path(os.environ.get("AGENT_BRIDGE_CLAUDE_WORK_DIR", ".")).resolve(),
+            permission_mode=os.environ.get("AGENT_BRIDGE_CLAUDE_PERMISSION_MODE", "acceptEdits"),
+            timeout_seconds=float(os.environ.get("AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS", "300")),
         )
         config._validate()
         return config

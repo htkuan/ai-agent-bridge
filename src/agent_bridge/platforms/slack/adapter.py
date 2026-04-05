@@ -12,7 +12,7 @@ try:
 except ImportError:
     raise ImportError(
         "Slack dependencies are not installed. "
-        "Install them with: pip install agent-bridge[slack]"
+        "Install them with: pip install ai-agent-bridge[slack]"
     ) from None
 
 from agent_bridge.bridge import Bridge

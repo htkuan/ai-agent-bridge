@@ -40,6 +40,7 @@ class ClaudeController:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(cwd),
+            limit=10 * 1024 * 1024,  # 10 MB line buffer (default 64 KB is too small)
         )
 
         # Drain stderr in background to prevent buffer deadlock

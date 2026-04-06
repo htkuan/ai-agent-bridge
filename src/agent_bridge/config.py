@@ -20,9 +20,9 @@ class BridgeConfig:
 
         config = cls(
             session_store_path=Path(
-                os.environ.get("SESSION_STORE_PATH", "./sessions.json")
+                os.environ.get("AGENT_BRIDGE_SESSION_STORE_PATH", "./sessions.json")
             ),
-            session_ttl_hours=float(os.environ.get("SESSION_TTL_HOURS", "72")),
+            session_ttl_hours=float(os.environ.get("AGENT_BRIDGE_SESSION_TTL_HOURS", "72")),
         )
         config._validate()
         return config

@@ -15,10 +15,11 @@ class SlackConfig:
     def from_env(cls) -> SlackConfig:
         load_dotenv()
 
-        bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
-        app_token = os.environ.get("SLACK_APP_TOKEN", "")
+        bot_token = os.environ.get("AGENT_BRIDGE_SLACK_BOT_TOKEN", "")
+        app_token = os.environ.get("AGENT_BRIDGE_SLACK_APP_TOKEN", "")
         if not bot_token or not app_token:
             raise ValueError(
-                "SLACK_BOT_TOKEN and SLACK_APP_TOKEN environment variables are required"
+                "AGENT_BRIDGE_SLACK_BOT_TOKEN and AGENT_BRIDGE_SLACK_APP_TOKEN "
+                "environment variables are required"
             )
         return cls(bot_token=bot_token, app_token=app_token)

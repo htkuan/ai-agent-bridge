@@ -17,7 +17,7 @@ except ImportError:
     ) from None
 
 from agent_bridge.bridge import Bridge
-from agent_bridge.events import Completion, StatusUpdate, TextDelta
+from agent_bridge.events import Completion, Processing, StatusUpdate, TextDelta
 from agent_bridge.platforms.slack.config import SlackConfig
 from agent_bridge.session import SessionManager
 
@@ -184,6 +184,7 @@ class SlackAdapter:
         session_key = self._session_key(channel, thread_ts)
         state = self._get_state(session_key)
 
+        # --- Gate 1: per-session serialisation ---
         # Lock guards ALL reads/writes to this session's state
         async with state.lock:
             if state.processing:
@@ -192,7 +193,7 @@ class SlackAdapter:
                     channel, user_id, thread_ts, client
                 )
                 result = await say(
-                    text=":hourglass: Queued — waiting for the previous task to finish...",
+                    text=":hourglass: Waiting for previous task to finish...",
                     thread_ts=thread_ts,
                 )
                 if state.pending is not None:
@@ -216,13 +217,8 @@ class SlackAdapter:
             context = await self._resolve_context(
                 channel, user_id, thread_ts, client
             )
-            result = await say(
-                text=":hourglass_flowing_sand: Processing...",
-                thread_ts=thread_ts,
-            )
-            message_ts = result["ts"]
             await self._stream_response(
-                channel, message_ts, session_key, text, context
+                channel, thread_ts, session_key, text, context, say
             )
 
             # Drain pending (re-acquire lock each iteration to read state safely)
@@ -234,17 +230,14 @@ class SlackAdapter:
                     pending = state.pending
                     state.pending = None
 
-                await self._update_message(
-                    pending.channel,
-                    pending.message_ts,
-                    ":hourglass_flowing_sand: Processing...",
-                )
                 await self._stream_response(
                     pending.channel,
-                    pending.message_ts,
+                    pending.thread_ts,
                     session_key,
                     pending.text,
                     pending.context,
+                    say=None,
+                    existing_message_ts=pending.message_ts,
                 )
         except Exception:
             logger.exception("Error processing session %s", session_key)
@@ -258,12 +251,20 @@ class SlackAdapter:
     async def _stream_response(
         self,
         channel: str,
-        message_ts: str,
+        thread_ts: str,
         session_key: str,
         text: str,
         context: dict[str, str],
+        say=None,
+        existing_message_ts: str | None = None,
     ) -> None:
-        """Stream agent events and update the Slack message."""
+        """Stream agent events and update the Slack message.
+
+        For new messages, ``say`` is used to post the initial reply.
+        For pending (drained) messages, ``existing_message_ts`` points
+        to the already-posted placeholder.
+        """
+        message_ts = existing_message_ts
         accumulated_text = ""
         tool_status = ""
         last_update_time = 0.0
@@ -274,10 +275,24 @@ class SlackAdapter:
             context=context,
         ):
             match event_obj:
+                case Processing():
+                    if message_ts is None and say is not None:
+                        result = await say(
+                            text=":hourglass_flowing_sand: Processing...",
+                            thread_ts=thread_ts,
+                        )
+                        message_ts = result["ts"]
+                    elif message_ts is not None:
+                        await self._update_message(
+                            channel,
+                            message_ts,
+                            ":hourglass_flowing_sand: Processing...",
+                        )
+
                 case TextDelta(text=chunk):
                     accumulated_text += chunk
                     now = time.monotonic()
-                    if now - last_update_time >= UPDATE_THROTTLE_SECONDS:
+                    if now - last_update_time >= UPDATE_THROTTLE_SECONDS and message_ts:
                         await self._update_message(
                             channel, message_ts, accumulated_text + tool_status
                         )
@@ -286,7 +301,7 @@ class SlackAdapter:
                 case StatusUpdate(status=status):
                     tool_status = f"\n\n_{status}_"
                     now = time.monotonic()
-                    if now - last_update_time >= UPDATE_THROTTLE_SECONDS:
+                    if now - last_update_time >= UPDATE_THROTTLE_SECONDS and message_ts:
                         display = (
                             accumulated_text + tool_status
                             if accumulated_text
@@ -298,10 +313,23 @@ class SlackAdapter:
                 case Completion(text=final_text, is_error=is_error):
                     final = final_text or accumulated_text
                     if is_error:
-                        final = f":x: Error: {final}"
+                        if existing_message_ts is not None:
+                            # Pending message rejected by Bridge
+                            final = (
+                                ":x: Your queued message could not be "
+                                "processed — please try again shortly."
+                            )
+                        else:
+                            final = (
+                                ":no_entry: Too many requests being "
+                                "processed, please try again later."
+                            )
                     if not final:
                         final = "_No response from agent._"
-                    await self._update_message(channel, message_ts, final)
+                    if message_ts:
+                        await self._update_message(channel, message_ts, final)
+                    elif say is not None:
+                        await say(text=final, thread_ts=thread_ts)
 
     async def _delete_message(self, channel: str, ts: str) -> None:
         try:

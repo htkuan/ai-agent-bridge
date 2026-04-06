@@ -31,12 +31,17 @@ async def main() -> None:
     logger.info("Permission mode: %s", claude_config.permission_mode)
     logger.info("Session TTL: %s hours", bridge_config.session_ttl_hours)
     logger.info("Claude timeout: %s seconds", claude_config.timeout_seconds)
+    logger.info("Max concurrent sessions: %s", bridge_config.max_concurrent_sessions)
 
     session_manager = SessionManager(
         bridge_config.session_store_path, bridge_config.session_ttl_hours
     )
     controller = ClaudeController(claude_config)
-    bridge = Bridge(session_manager, controller)
+    bridge = Bridge(
+        session_manager,
+        controller,
+        max_concurrent=bridge_config.max_concurrent_sessions,
+    )
     adapter = SlackAdapter(slack_config, bridge, session_manager=session_manager)
 
     # Graceful shutdown

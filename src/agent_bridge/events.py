@@ -4,6 +4,11 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class Processing:
+    """Processing slot acquired, agent is starting."""
+
+
+@dataclass
 class TextDelta:
     """Incremental text from the agent."""
 
@@ -29,4 +34,4 @@ class Completion:
     metadata: dict = field(default_factory=dict)
 
 
-type BridgeEvent = TextDelta | StatusUpdate | Completion
+type BridgeEvent = Processing | TextDelta | StatusUpdate | Completion

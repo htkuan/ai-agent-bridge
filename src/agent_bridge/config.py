@@ -30,5 +30,5 @@ class BridgeConfig:
     def _validate(self) -> None:
         if self.session_ttl_hours <= 0:
             raise ValueError(
-                f"SESSION_TTL_HOURS must be positive, got {self.session_ttl_hours}"
+                f"AGENT_BRIDGE_SESSION_TTL_HOURS must be positive, got {self.session_ttl_hours}"
             )

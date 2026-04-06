@@ -38,14 +38,14 @@ class ClaudeConfig:
     def _validate(self) -> None:
         if not self.work_dir.is_dir():
             raise ValueError(
-                f"CLAUDE_WORK_DIR does not exist or is not a directory: {self.work_dir}"
+                f"AGENT_BRIDGE_CLAUDE_WORK_DIR does not exist or is not a directory: {self.work_dir}"
             )
         if self.permission_mode not in VALID_PERMISSION_MODES:
             raise ValueError(
-                f"Invalid CLAUDE_PERMISSION_MODE: {self.permission_mode!r}. "
+                f"Invalid AGENT_BRIDGE_CLAUDE_PERMISSION_MODE: {self.permission_mode!r}. "
                 f"Must be one of: {', '.join(sorted(VALID_PERMISSION_MODES))}"
             )
         if self.timeout_seconds <= 0:
             raise ValueError(
-                f"CLAUDE_TIMEOUT_SECONDS must be positive, got {self.timeout_seconds}"
+                f"AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS must be positive, got {self.timeout_seconds}"
             )

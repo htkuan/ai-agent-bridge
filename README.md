@@ -171,15 +171,6 @@ AGENT_BRIDGE_SESSION_TTL_HOURS=72
 uv run agent-bridge
 ```
 
-### Run (Docker)
-
-```bash
-cp .env.example .env
-# Edit .env with your tokens (including ANTHROPIC_API_KEY for Docker)
-
-docker compose up --build
-```
-
 ### Test
 
 ```bash

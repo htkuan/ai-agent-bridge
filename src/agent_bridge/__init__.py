@@ -18,7 +18,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Interval for periodic maintenance (session purge, lock cleanup)
+# Interval for periodic maintenance (session purge, stale pending cleanup)
 CLEANUP_INTERVAL_SECONDS = 3600
 
 
@@ -61,10 +61,10 @@ async def main() -> None:
                 pass
             if not shutdown_event.is_set():
                 purged = session_manager.purge_expired()
-                stale = adapter.cleanup_stale_locks()
+                stale = adapter.cleanup_stale_sessions()
                 if purged or stale:
                     logger.info(
-                        "Cleanup: purged %d expired sessions, %d stale locks",
+                        "Cleanup: purged %d expired sessions, %d stale pending",
                         purged,
                         stale,
                     )

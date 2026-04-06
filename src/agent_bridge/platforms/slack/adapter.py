@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 import time
+from dataclasses import dataclass
 
 try:
     from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
@@ -26,6 +27,17 @@ logger = logging.getLogger(__name__)
 UPDATE_THROTTLE_SECONDS = 1.5
 
 
+@dataclass
+class _PendingMessage:
+    """A queued user message waiting to be processed."""
+
+    text: str
+    context: dict[str, str]
+    message_ts: str
+    channel: str
+    thread_ts: str
+
+
 class SlackAdapter:
     def __init__(
         self,
@@ -38,7 +50,8 @@ class SlackAdapter:
         self._session_manager = session_manager
         self._app = AsyncApp(token=config.bot_token)
         self._handler: AsyncSocketModeHandler | None = None
-        self._locks: dict[str, asyncio.Lock] = {}
+        self._processing: set[str] = set()
+        self._pending: dict[str, _PendingMessage] = {}
         self._register_handlers()
 
     # --- Session key: Slack defines thread = session ---
@@ -47,22 +60,20 @@ class SlackAdapter:
     def _session_key(channel: str, thread_ts: str) -> str:
         return f"slack:{channel}:{thread_ts}"
 
-    def _get_lock(self, session_key: str) -> asyncio.Lock:
-        return self._locks.setdefault(session_key, asyncio.Lock())
-
-    def cleanup_stale_locks(self) -> int:
-        """Remove locks for sessions that no longer exist. Returns count removed."""
+    def cleanup_stale_sessions(self) -> int:
+        """Remove pending state for expired sessions. Returns count removed."""
         if self._session_manager is None:
             return 0
         stale = [
             key
-            for key, lock in self._locks.items()
-            if not lock.locked() and self._session_manager.get(key) is None
+            for key in self._pending
+            if key not in self._processing
+            and self._session_manager.get(key) is None
         ]
         for key in stale:
-            del self._locks[key]
+            del self._pending[key]
         if stale:
-            logger.info("Cleaned up %d stale session locks", len(stale))
+            logger.info("Cleaned up %d stale pending messages", len(stale))
         return len(stale)
 
     # --- Event handlers ---
@@ -136,32 +147,63 @@ class SlackAdapter:
         }
 
         session_key = self._session_key(channel, thread_ts)
-        lock = self._get_lock(session_key)
 
-        # Check if session is busy and show appropriate status
-        if lock.locked():
+        if session_key in self._processing:
+            # Session is busy — queue this message (keep only the latest)
             result = await say(
                 text=":hourglass: Queued — waiting for the previous task to finish...",
                 thread_ts=thread_ts,
             )
-            message_ts = result["ts"]
-            async with lock:
-                await self._update_message(
-                    channel, message_ts, ":hourglass_flowing_sand: Processing..."
-                )
-                await self._stream_response(
-                    channel, message_ts, session_key, text, context
-                )
-        else:
-            result = await say(
-                text=":hourglass_flowing_sand: Processing...",
+            new_message_ts = result["ts"]
+
+            # Drop the previous pending message if any
+            old_pending = self._pending.get(session_key)
+            if old_pending is not None:
+                await self._delete_message(old_pending.channel, old_pending.message_ts)
+
+            self._pending[session_key] = _PendingMessage(
+                text=text,
+                context=context,
+                message_ts=new_message_ts,
+                channel=channel,
                 thread_ts=thread_ts,
             )
-            message_ts = result["ts"]
-            async with lock:
-                await self._stream_response(
-                    channel, message_ts, session_key, text, context
+            return
+
+        # Session is idle — process immediately
+        self._processing.add(session_key)
+        result = await say(
+            text=":hourglass_flowing_sand: Processing...",
+            thread_ts=thread_ts,
+        )
+        message_ts = result["ts"]
+
+        try:
+            await self._stream_response(
+                channel, message_ts, session_key, text, context
+            )
+
+            # Drain the pending slot (may refill during processing)
+            while session_key in self._pending:
+                pending = self._pending.pop(session_key)
+                await self._update_message(
+                    pending.channel,
+                    pending.message_ts,
+                    ":hourglass_flowing_sand: Processing...",
                 )
+                await self._stream_response(
+                    pending.channel,
+                    pending.message_ts,
+                    session_key,
+                    pending.text,
+                    pending.context,
+                )
+        finally:
+            # Clean up any remaining pending on unexpected error
+            remaining = self._pending.pop(session_key, None)
+            if remaining is not None:
+                await self._delete_message(remaining.channel, remaining.message_ts)
+            self._processing.discard(session_key)
 
     async def _stream_response(
         self,
@@ -210,6 +252,14 @@ class SlackAdapter:
                     if not final:
                         final = "_No response from agent._"
                     await self._update_message(channel, message_ts, final)
+
+    async def _delete_message(self, channel: str, ts: str) -> None:
+        try:
+            await self._app.client.chat_delete(channel=channel, ts=ts)
+        except SlackApiError as e:
+            logger.warning(
+                "Failed to delete Slack message %s: %s", ts, e.response["error"]
+            )
 
     async def _update_message(self, channel: str, ts: str, text: str) -> None:
         try:

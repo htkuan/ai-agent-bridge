@@ -2,18 +2,23 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
 
-from agent_bridge.agents.claude.config import ClaudeConfig
-from agent_bridge.agents.claude.controller import ClaudeController
-from agent_bridge.bridge import Bridge
-from agent_bridge.config import BridgeConfig
-from agent_bridge.platforms.slack.adapter import SlackAdapter
-from agent_bridge.platforms.slack.config import SlackConfig
-from agent_bridge.session import SessionManager
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from agent_bridge.agents.claude.config import ClaudeConfig  # noqa: E402
+from agent_bridge.agents.claude.controller import ClaudeController  # noqa: E402
+from agent_bridge.bridge import Bridge  # noqa: E402
+from agent_bridge.config import BridgeConfig  # noqa: E402
+from agent_bridge.platforms.slack.adapter import SlackAdapter  # noqa: E402
+from agent_bridge.platforms.slack.config import SlackConfig  # noqa: E402
+from agent_bridge.session import SessionManager  # noqa: E402
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=os.environ.get("AGENT_BRIDGE_LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)

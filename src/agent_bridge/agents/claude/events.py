@@ -4,7 +4,13 @@ import json
 import logging
 from dataclasses import dataclass, field
 
-from agent_bridge.events import BridgeEvent, Completion, StatusUpdate, TextDelta
+from agent_bridge.events import (
+    BridgeEvent,
+    Completion,
+    StatusUpdate,
+    TextDelta,
+    UserQuestion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +166,11 @@ def to_bridge_event(event: ClaudeEvent) -> BridgeEvent | None:
     match event:
         case AssistantTextEvent(text=text):
             return TextDelta(text=text)
+        case ToolUseEvent(tool_name="AskUserQuestion", tool_input=inp):
+            questions = inp.get("questions", [])
+            if not questions:
+                return StatusUpdate(status="Using AskUserQuestion...")
+            return UserQuestion(questions=questions)
         case ToolUseEvent(tool_name=name):
             return StatusUpdate(status=f"Using {name}...")
         case ResultEvent(

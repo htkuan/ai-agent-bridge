@@ -166,6 +166,7 @@ AGENT_BRIDGE_SESSION_TTL_HOURS=72
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Session TTL in hours |
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Claude agent timeout in seconds |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `10` | Max concurrent agent sessions |
+| `AGENT_BRIDGE_LOG_LEVEL` | No | `INFO` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 
 ### Run (Local)
 

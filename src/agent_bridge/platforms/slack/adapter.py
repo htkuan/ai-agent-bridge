@@ -17,7 +17,13 @@ except ImportError:
     ) from None
 
 from agent_bridge.bridge import Bridge
-from agent_bridge.events import Completion, Processing, StatusUpdate, TextDelta
+from agent_bridge.events import (
+    Completion,
+    Processing,
+    StatusUpdate,
+    TextDelta,
+    UserQuestion,
+)
 from agent_bridge.platforms.slack.config import SlackConfig
 from agent_bridge.session import SessionManager
 
@@ -45,6 +51,7 @@ class _SessionState:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     processing: bool = False
     pending: _PendingMessage | None = None
+    waiting_for_answer: bool = False
 
 
 class SlackInfoCache:
@@ -127,6 +134,7 @@ class SlackAdapter:
             key
             for key, state in self._sessions.items()
             if not state.processing
+            and not state.waiting_for_answer
             and state.pending is None
             and not state.lock.locked()
             and self._session_manager.get(key) is None
@@ -187,7 +195,12 @@ class SlackAdapter:
         # --- Gate 1: per-session serialisation ---
         # Lock guards ALL reads/writes to this session's state
         async with state.lock:
-            if state.processing:
+            if state.waiting_for_answer:
+                # User is answering a question — resume the session
+                logger.info("Session %s: received answer, resuming", session_key)
+                state.waiting_for_answer = False
+                state.processing = True
+            elif state.processing:
                 # Session busy — replace the pending slot (keep only latest)
                 context = await self._resolve_context(
                     channel, user_id, thread_ts, client
@@ -208,18 +221,24 @@ class SlackAdapter:
                     thread_ts=thread_ts,
                 )
                 return
-
-            # Session idle — mark as processing, then release lock to do real work
-            state.processing = True
+            else:
+                # Session idle — mark as processing, then release lock to do real work
+                state.processing = True
 
         # --- Processing happens outside the lock so new messages can queue ---
         try:
             context = await self._resolve_context(
                 channel, user_id, thread_ts, client
             )
-            await self._stream_response(
+            status = await self._stream_response(
                 channel, thread_ts, session_key, text, context, say
             )
+
+            if status == "waiting_for_answer":
+                async with state.lock:
+                    state.waiting_for_answer = True
+                    state.processing = False
+                return
 
             # Drain pending (re-acquire lock each iteration to read state safely)
             while True:
@@ -230,7 +249,7 @@ class SlackAdapter:
                     pending = state.pending
                     state.pending = None
 
-                await self._stream_response(
+                status = await self._stream_response(
                     pending.channel,
                     pending.thread_ts,
                     session_key,
@@ -239,6 +258,12 @@ class SlackAdapter:
                     say=None,
                     existing_message_ts=pending.message_ts,
                 )
+
+                if status == "waiting_for_answer":
+                    async with state.lock:
+                        state.waiting_for_answer = True
+                        state.processing = False
+                    return
         except Exception:
             logger.exception("Error processing session %s", session_key)
             async with state.lock:
@@ -257,17 +282,21 @@ class SlackAdapter:
         context: dict[str, str],
         say=None,
         existing_message_ts: str | None = None,
-    ) -> None:
+    ) -> str | None:
         """Stream agent events and update the Slack message.
 
         For new messages, ``say`` is used to post the initial reply.
         For pending (drained) messages, ``existing_message_ts`` points
         to the already-posted placeholder.
+
+        Returns ``"waiting_for_answer"`` when the agent asked the user a
+        question and the session should wait for a reply; ``None`` otherwise.
         """
         message_ts = existing_message_ts
         accumulated_text = ""
         tool_status = ""
         last_update_time = 0.0
+        pending_user_questions: list[dict] = []
 
         async for event_obj in self._bridge.handle_message(
             session_key=session_key,
@@ -276,6 +305,7 @@ class SlackAdapter:
         ):
             match event_obj:
                 case Processing():
+                    logger.debug("Session %s: Processing → posting initial message", session_key)
                     if message_ts is None and say is not None:
                         result = await say(
                             text=":hourglass_flowing_sand: Processing...",
@@ -293,6 +323,11 @@ class SlackAdapter:
                     accumulated_text += chunk
                     now = time.monotonic()
                     if now - last_update_time >= UPDATE_THROTTLE_SECONDS and message_ts:
+                        logger.debug(
+                            "Session %s: TextDelta → updating message (%d chars)",
+                            session_key,
+                            len(accumulated_text),
+                        )
                         await self._update_message(
                             channel, message_ts, accumulated_text + tool_status
                         )
@@ -302,6 +337,7 @@ class SlackAdapter:
                     tool_status = f"\n\n_{status}_"
                     now = time.monotonic()
                     if now - last_update_time >= UPDATE_THROTTLE_SECONDS and message_ts:
+                        logger.debug("Session %s: StatusUpdate → %s", session_key, status)
                         display = (
                             accumulated_text + tool_status
                             if accumulated_text
@@ -310,7 +346,36 @@ class SlackAdapter:
                         await self._update_message(channel, message_ts, display)
                         last_update_time = now
 
+                case UserQuestion(questions=questions):
+                    logger.info(
+                        "Session %s: agent asked %d question(s), entering waiting_for_answer",
+                        session_key,
+                        len(questions),
+                    )
+                    pending_user_questions = questions
+
                 case Completion(text=final_text, is_error=is_error):
+                    if pending_user_questions:
+                        logger.debug(
+                            "Session %s: Completion with pending questions → posting questions to Slack",
+                            session_key,
+                        )
+                        formatted = self._format_questions_for_slack(
+                            pending_user_questions
+                        )
+                        if message_ts:
+                            await self._update_message(
+                                channel, message_ts, formatted
+                            )
+                        elif say is not None:
+                            await say(text=formatted, thread_ts=thread_ts)
+                        return "waiting_for_answer"
+
+                    logger.debug(
+                        "Session %s: Completion → final message (is_error=%s)",
+                        session_key,
+                        is_error,
+                    )
                     final = final_text or accumulated_text
                     if is_error:
                         if existing_message_ts is not None:
@@ -330,6 +395,38 @@ class SlackAdapter:
                         await self._update_message(channel, message_ts, final)
                     elif say is not None:
                         await say(text=final, thread_ts=thread_ts)
+
+        return None
+
+    @staticmethod
+    def _format_questions_for_slack(questions: list[dict]) -> str:
+        """Format AskUserQuestion questions for Slack display."""
+        lines = [":question: *Claude needs your input*\n"]
+        multi = len(questions) > 1
+        for i, q in enumerate(questions, 1):
+            question_text = q.get("question", "")
+            if multi:
+                lines.append(f"*{i}.* {question_text}")
+            else:
+                lines.append(question_text)
+
+            options = q.get("options", [])
+            for opt in options:
+                if isinstance(opt, str):
+                    lines.append(f"  • `{opt}`")
+                else:
+                    label = opt.get("label", opt.get("value", ""))
+                    desc = opt.get("description", "")
+                    if desc:
+                        lines.append(f"  • `{label}` — {desc}")
+                    else:
+                        lines.append(f"  • `{label}`")
+
+            if q.get("multiSelect"):
+                lines.append("_You can select multiple._")
+
+        lines.append("\nReply in this thread to answer.")
+        return "\n".join(lines)
 
     async def _delete_message(self, channel: str, ts: str) -> None:
         try:

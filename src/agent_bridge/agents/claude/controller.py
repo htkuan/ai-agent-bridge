@@ -156,10 +156,15 @@ class ClaudeController:
             if not line_bytes:
                 break
             line = line_bytes.decode(errors="replace")
+            logger.debug("Raw stream line: %s", line.rstrip())
             for claude_event in parse_stream_line(line):
+                logger.debug("Parsed Claude event: %s", claude_event)
                 bridge_event = to_bridge_event(claude_event)
                 if bridge_event is not None:
+                    logger.debug("Converted to BridgeEvent: %s", bridge_event)
                     yield bridge_event
+                else:
+                    logger.debug("Filtered out (internal): %s", type(claude_event).__name__)
 
     @staticmethod
     async def _drain_stderr(process: asyncio.subprocess.Process) -> str:

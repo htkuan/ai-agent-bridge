@@ -24,6 +24,13 @@ class StatusUpdate:
 
 
 @dataclass
+class UserQuestion:
+    """Agent is asking the user a question (e.g. AskUserQuestion tool)."""
+
+    questions: list[dict]
+
+
+@dataclass
 class Completion:
     """Agent finished responding."""
 
@@ -34,4 +41,4 @@ class Completion:
     metadata: dict = field(default_factory=dict)
 
 
-type BridgeEvent = Processing | TextDelta | StatusUpdate | Completion
+type BridgeEvent = Processing | TextDelta | StatusUpdate | UserQuestion | Completion

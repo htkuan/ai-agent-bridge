@@ -186,6 +186,29 @@ class SlackAdapter:
 
         # Strip bot mention from text (e.g., "<@U12345> do something" → "do something")
         text = re.sub(r"<@[A-Z0-9]+>\s*", "", text).strip()
+
+        # Append file/image info so the agent can decide whether to fetch them
+        files = event.get("files") or []
+        if files:
+            parts = []
+            for f in files:
+                name = f.get("name", "unknown")
+                mimetype = f.get("mimetype", "unknown")
+                url = (
+                    f.get("url_private_download")
+                    or f.get("url_private")
+                    or ""
+                )
+                parts.append(f"- {name} ({mimetype}): {url}")
+            token = self._config.bot_token
+            hint = (
+                "[Slack attachments — download with: "
+                f'curl -H "Authorization: Bearer {token}" '
+                '"<url>" -o /tmp/<filename>]'
+            )
+            text = f"{text}\n\n{hint}\n" + "\n".join(parts)
+            text = text.strip()
+
         if not text:
             return
 

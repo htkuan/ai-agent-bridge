@@ -21,7 +21,7 @@ VALID_PERMISSION_MODES = {
 class ClaudeConfig:
     work_dir: Path
     permission_mode: str = "acceptEdits"
-    timeout_seconds: float = 300.0
+    timeout_seconds: float = 600.0
 
     @classmethod
     def from_env(cls) -> ClaudeConfig:
@@ -30,7 +30,7 @@ class ClaudeConfig:
         config = cls(
             work_dir=Path(os.environ.get("AGENT_BRIDGE_CLAUDE_WORK_DIR", ".")).resolve(),
             permission_mode=os.environ.get("AGENT_BRIDGE_CLAUDE_PERMISSION_MODE", "acceptEdits"),
-            timeout_seconds=float(os.environ.get("AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS", "300")),
+            timeout_seconds=float(os.environ.get("AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS", "600")),
         )
         config._validate()
         return config

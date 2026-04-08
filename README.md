@@ -164,6 +164,8 @@ AGENT_BRIDGE_SESSION_TTL_HOURS=72
 | `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude permission mode |
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Path to session mapping file |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Session TTL in hours |
+| `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Claude agent timeout in seconds |
+| `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `10` | Max concurrent agent sessions |
 
 ### Run (Local)
 

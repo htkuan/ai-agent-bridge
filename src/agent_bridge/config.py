@@ -13,7 +13,7 @@ class BridgeConfig:
 
     session_store_path: Path = field(default_factory=lambda: Path("./sessions.json"))
     session_ttl_hours: float = 72.0
-    max_concurrent_sessions: int = 5
+    max_concurrent_sessions: int = 10
 
     @classmethod
     def from_env(cls) -> BridgeConfig:

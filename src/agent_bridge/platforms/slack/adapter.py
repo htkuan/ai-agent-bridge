@@ -325,6 +325,7 @@ class SlackAdapter:
         tool_status = ""
         last_update_time = 0.0
         pending_user_questions: list[dict] = []
+        completed = False
 
         async for event_obj in self._bridge.handle_message(
             session_key=session_key,
@@ -385,6 +386,7 @@ class SlackAdapter:
                     pending_user_questions = questions
 
                 case Completion(text=final_text, is_error=is_error):
+                    completed = True
                     if pending_user_questions:
                         logger.debug(
                             "Session %s: Completion with pending questions → posting questions to Slack",
@@ -406,6 +408,11 @@ class SlackAdapter:
                         session_key,
                         is_error,
                     )
+                    # Ensure minimum gap since last Slack update to avoid rate limits
+                    elapsed = time.monotonic() - last_update_time
+                    if last_update_time and elapsed < UPDATE_THROTTLE_SECONDS:
+                        await asyncio.sleep(UPDATE_THROTTLE_SECONDS - elapsed)
+
                     final = final_text or accumulated_text
                     if is_error:
                         if existing_message_ts is not None:
@@ -430,6 +437,19 @@ class SlackAdapter:
                         await self._update_message(channel, message_ts, final)
                     elif say is not None:
                         await say(text=final, thread_ts=thread_ts)
+
+        # Safety net: if stream ended without Completion, strip residual tool_status
+        if not completed and message_ts and accumulated_text:
+            logger.warning(
+                "Session %s: stream ended without Completion — cleaning up message",
+                session_key,
+            )
+            if len(accumulated_text) > SLACK_MSG_MAX_LENGTH:
+                short = accumulated_text[:300] + "\n\n_… Full response uploaded as file below._"
+                await self._update_message(channel, message_ts, short)
+                await self._upload_snippet(channel, thread_ts, accumulated_text)
+            else:
+                await self._update_message(channel, message_ts, accumulated_text)
 
         return None
 

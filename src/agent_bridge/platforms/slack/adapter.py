@@ -32,6 +32,10 @@ logger = logging.getLogger(__name__)
 # Minimum interval between Slack message updates (seconds)
 UPDATE_THROTTLE_SECONDS = 1.5
 
+# Slack hard limit is ~40 000 chars; leave headroom for truncation notice
+SLACK_MAX_TEXT_LENGTH = 39_000
+TRUNCATION_NOTICE = "… _(message truncated, full response will follow)_\n\n"
+
 
 @dataclass
 class _PendingMessage:
@@ -320,6 +324,7 @@ class SlackAdapter:
         tool_status = ""
         last_update_time = 0.0
         pending_user_questions: list[dict] = []
+        completion_received = False
 
         async for event_obj in self._bridge.handle_message(
             session_key=session_key,
@@ -378,6 +383,7 @@ class SlackAdapter:
                     pending_user_questions = questions
 
                 case Completion(text=final_text, is_error=is_error):
+                    completion_received = True
                     if pending_user_questions:
                         logger.debug(
                             "Session %s: Completion with pending questions → posting questions to Slack",
@@ -414,10 +420,18 @@ class SlackAdapter:
                             )
                     if not final:
                         final = "_No response from agent._"
-                    if message_ts:
-                        await self._update_message(channel, message_ts, final)
-                    elif say is not None:
-                        await say(text=final, thread_ts=thread_ts)
+                    await self._post_final_message(
+                        channel, thread_ts, message_ts, final, say
+                    )
+
+        # Safety net: if the agent stream ended without a Completion event,
+        # update the Slack message to remove leftover tool_status.
+        if not completion_received and message_ts:
+            logger.warning("Session %s: stream ended without Completion event", session_key)
+            final = accumulated_text or "_No response from agent._"
+            await self._post_final_message(
+                channel, thread_ts, message_ts, final, say
+            )
 
         return None
 
@@ -451,6 +465,43 @@ class SlackAdapter:
         lines.append("\nReply in this thread to answer.")
         return "\n".join(lines)
 
+    async def _post_final_message(
+        self,
+        channel: str,
+        thread_ts: str,
+        message_ts: str | None,
+        text: str,
+        say,
+    ) -> None:
+        """Post the final response, uploading as a snippet file if too long."""
+        if len(text) <= SLACK_MAX_TEXT_LENGTH:
+            if message_ts:
+                await self._update_message(channel, message_ts, text)
+            elif say is not None:
+                await say(text=text, thread_ts=thread_ts)
+            return
+
+        # Too long — update inline message with truncated preview,
+        # upload full response as a snippet file in the thread.
+        preview = text[:SLACK_MAX_TEXT_LENGTH - 200] + "\n\n…\n_Response too long — full content attached as file below._"
+        if message_ts:
+            await self._update_message(channel, message_ts, preview)
+        elif say is not None:
+            await say(text=preview, thread_ts=thread_ts)
+
+        try:
+            await self._app.client.files_upload_v2(
+                channel=channel,
+                thread_ts=thread_ts,
+                content=text,
+                filename="response.md",
+                title="Full response",
+            )
+        except SlackApiError as e:
+            logger.warning(
+                "Failed to upload snippet: %s", e.response["error"]
+            )
+
     async def _delete_message(self, channel: str, ts: str) -> None:
         try:
             await self._app.client.chat_delete(channel=channel, ts=ts)
@@ -460,6 +511,8 @@ class SlackAdapter:
             )
 
     async def _update_message(self, channel: str, ts: str, text: str) -> None:
+        if len(text) > SLACK_MAX_TEXT_LENGTH:
+            text = TRUNCATION_NOTICE + text[-(SLACK_MAX_TEXT_LENGTH - len(TRUNCATION_NOTICE)):]
         try:
             await self._app.client.chat_update(
                 channel=channel,

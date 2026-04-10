@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 from agent_bridge.agents.claude.config import ClaudeConfig
 from agent_bridge.agents.claude.events import (
@@ -25,11 +24,10 @@ class ClaudeController:
         session_id: str,
         prompt: str,
         is_new: bool,
-        work_dir: Path | None = None,
         context: dict[str, str] | None = None,
     ) -> AsyncIterator[BridgeEvent]:
         """Run a Claude Code prompt and yield streaming BridgeEvents."""
-        cwd = work_dir or self._config.work_dir
+        cwd = self._config.work_dir
         timeout = self._config.timeout_seconds
 
         cmd = self._build_command(session_id, prompt, is_new, context)
@@ -47,11 +45,15 @@ class ClaudeController:
         stderr_task = asyncio.create_task(self._drain_stderr(process))
 
         timed_out = False
+        completion_seen = False
         try:
             async for event in self._read_stream_with_timeout(process, timeout):
+                if isinstance(event, Completion):
+                    completion_seen = True
                 yield event
         except asyncio.TimeoutError:
             timed_out = True
+            completion_seen = True
             logger.error("Claude process timed out after %ss", timeout)
             yield Completion(
                 text=f"Claude process timed out after {timeout}s",
@@ -70,12 +72,20 @@ class ClaudeController:
             return_code = process.returncode
 
             if not timed_out and return_code and return_code != 0:
+                completion_seen = True
                 if stderr_text:
                     logger.error("Claude stderr: %s", stderr_text[:500])
                 yield Completion(
                     text=f"Claude process exited with code {return_code}",
                     is_error=True,
                 )
+
+            if not completion_seen:
+                logger.warning(
+                    "Claude stream ended without a result event (exit code %s)",
+                    return_code,
+                )
+                yield Completion(text="")
 
     def _build_command(
         self,

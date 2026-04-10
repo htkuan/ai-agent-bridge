@@ -32,6 +32,11 @@ logger = logging.getLogger(__name__)
 # Minimum interval between Slack message updates (seconds)
 UPDATE_THROTTLE_SECONDS = 1.5
 
+# Slack chat_update/chat_postMessage text limit.
+# The documented limit is ~40 000 chars, but mrkdwn formatting can lower
+# the effective ceiling significantly. Use a conservative threshold.
+SLACK_MSG_MAX_LENGTH = 3_900
+
 
 @dataclass
 class _PendingMessage:
@@ -352,7 +357,7 @@ class SlackAdapter:
                             len(accumulated_text),
                         )
                         await self._update_message(
-                            channel, message_ts, accumulated_text + tool_status
+                            channel, message_ts, accumulated_text + tool_status,
                         )
                         last_update_time = now
 
@@ -366,7 +371,9 @@ class SlackAdapter:
                             if accumulated_text
                             else tool_status
                         )
-                        await self._update_message(channel, message_ts, display)
+                        await self._update_message(
+                            channel, message_ts, display
+                        )
                         last_update_time = now
 
                 case UserQuestion(questions=questions):
@@ -388,7 +395,7 @@ class SlackAdapter:
                         )
                         if message_ts:
                             await self._update_message(
-                                channel, message_ts, formatted
+                                channel, message_ts, formatted,
                             )
                         elif say is not None:
                             await say(text=formatted, thread_ts=thread_ts)
@@ -414,7 +421,12 @@ class SlackAdapter:
                             )
                     if not final:
                         final = "_No response from agent._"
-                    if message_ts:
+                    if len(final) > SLACK_MSG_MAX_LENGTH:
+                        if message_ts:
+                            short = final[:300] + "\n\n_… Full response uploaded as file below._"
+                            await self._update_message(channel, message_ts, short)
+                        await self._upload_snippet(channel, thread_ts, final)
+                    elif message_ts:
                         await self._update_message(channel, message_ts, final)
                     elif say is not None:
                         await say(text=final, thread_ts=thread_ts)
@@ -460,6 +472,8 @@ class SlackAdapter:
             )
 
     async def _update_message(self, channel: str, ts: str, text: str) -> None:
+        if len(text) > SLACK_MSG_MAX_LENGTH:
+            text = text[:SLACK_MSG_MAX_LENGTH] + "\n\n_… (generating response…)_"
         try:
             await self._app.client.chat_update(
                 channel=channel,
@@ -467,9 +481,32 @@ class SlackAdapter:
                 text=text,
             )
         except SlackApiError as e:
-            logger.warning(
-                "Failed to update Slack message %s: %s", ts, e.response["error"]
+            if e.response["error"] == "msg_too_long":
+                try:
+                    short = text[:500] + "\n\n_… (generating response…)_"
+                    await self._app.client.chat_update(
+                        channel=channel, ts=ts, text=short,
+                    )
+                except SlackApiError:
+                    pass
+            else:
+                logger.warning(
+                    "Failed to update Slack message %s: %s", ts, e.response["error"]
+                )
+
+    async def _upload_snippet(
+        self, channel: str, thread_ts: str, content: str
+    ) -> None:
+        try:
+            await self._app.client.files_upload_v2(
+                channel=channel,
+                thread_ts=thread_ts,
+                content=content,
+                filename="response.md",
+                title="Full Response",
             )
+        except SlackApiError as e:
+            logger.warning("Failed to upload snippet: %s", e.response["error"])
 
     async def start(self) -> None:
         self._handler = AsyncSocketModeHandler(

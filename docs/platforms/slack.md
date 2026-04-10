@@ -25,6 +25,7 @@ Under **OAuth & Permissions**, add these Bot Token Scopes:
 |-------|---------|
 | `app_mentions:read` | Receive @mention events in channels |
 | `chat:write` | Send and update messages |
+| `files:write` | Upload file snippets when response exceeds message length limit |
 | `im:history` | Read DM message history |
 | `im:read` | Access DM channels |
 
@@ -168,6 +169,7 @@ Updates the message with the final response text. Error cases:
 | Capacity full (new request) | `:no_entry: Too many requests being processed, please try again later.` |
 | Capacity full (pending drained) | `:x: Your queued message could not be processed — please try again shortly.` |
 | No response | `_No response from agent._` |
+| Response too long | First 300 chars + note, full content uploaded as `response.md` file snippet |
 
 ## File Attachments
 

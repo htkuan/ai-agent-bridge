@@ -54,7 +54,7 @@ See [Environment Variables](#environment-variables) for the full list.
 1. Create a Slack App at [api.slack.com/apps](https://api.slack.com/apps)
 2. Enable **Socket Mode** → generate an App-Level Token (`xapp-...`)
 3. Add **Bot Token Scopes** (OAuth & Permissions):
-   - `app_mentions:read`, `chat:write`, `im:history`, `im:read`
+   - `app_mentions:read`, `chat:write`, `files:write`, `im:history`, `im:read`
 4. Subscribe to **Events**:
    - `app_mention`, `message.im`
 5. Install to workspace → copy Bot User OAuth Token (`xoxb-...`)

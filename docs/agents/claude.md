@@ -126,12 +126,16 @@ A single Claude `assistant` message can contain multiple content blocks (e.g., t
 ### Subprocess lifecycle
 
 ```
-1. asyncio.create_subprocess_exec() — spawn claude process
+1. asyncio.create_subprocess_exec() — spawn claude process in its own process group
 2. Read stdout line-by-line (with overall timeout)
 3. Background task drains stderr (prevents pipe buffer deadlock)
 4. On completion: collect return code + stderr
-5. On timeout: SIGTERM → wait 5s → SIGKILL
+5. On timeout/cleanup: SIGTERM entire process group → wait 5s → SIGKILL entire group
 ```
+
+### Process group cleanup
+
+The subprocess is spawned with `start_new_session=True`, which places it in a dedicated process group. On cleanup, `os.killpg()` sends the signal to the **entire group** — the main `claude` process and all its children (language servers, subprocesses, etc.). This prevents orphan child processes from surviving after the bridge terminates a session.
 
 ### Buffer size
 

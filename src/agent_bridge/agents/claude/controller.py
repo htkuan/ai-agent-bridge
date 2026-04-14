@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import signal
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -41,6 +43,7 @@ class ClaudeController:
             stderr=asyncio.subprocess.PIPE,
             cwd=str(cwd),
             limit=10 * 1024 * 1024,  # 10 MB line buffer (default 64 KB is too small)
+            start_new_session=True,  # isolate process group for clean tree cleanup
         )
 
         # Drain stderr in background to prevent buffer deadlock
@@ -59,12 +62,15 @@ class ClaudeController:
             )
         finally:
             if process.returncode is None:
-                process.terminate()
+                self._kill_process_tree(process, graceful=True)
                 try:
                     await asyncio.wait_for(process.wait(), timeout=5.0)
                 except asyncio.TimeoutError:
-                    process.kill()
+                    self._kill_process_tree(process, graceful=False)
                     await process.wait()
+            else:
+                # Main process exited but children may still be running
+                self._kill_process_tree(process, graceful=True)
 
             stderr_text = await stderr_task
             return_code = process.returncode
@@ -165,6 +171,34 @@ class ClaudeController:
                     yield bridge_event
                 else:
                     logger.debug("Filtered out (internal): %s", type(claude_event).__name__)
+
+    @staticmethod
+    def _kill_process_tree(
+        process: asyncio.subprocess.Process, *, graceful: bool
+    ) -> None:
+        """Kill the entire process group (main process + all children).
+
+        Requires the subprocess to have been started with start_new_session=True
+        so it has its own process group.
+        """
+        pid = process.pid
+        if pid is None:
+            return
+        sig = signal.SIGTERM if graceful else signal.SIGKILL
+        try:
+            # start_new_session=True guarantees PGID == PID, so use pid
+            # directly instead of os.getpgid() which fails after process exits
+            os.killpg(pid, sig)
+            logger.info("Sent %s to process group (pid=%d)", sig.name, pid)
+        except ProcessLookupError:
+            pass  # entire group already exited
+        except OSError:
+            # Fallback: kill just the main process
+            logger.warning("killpg failed for pid=%d, falling back to direct kill", pid)
+            try:
+                process.terminate() if graceful else process.kill()
+            except ProcessLookupError:
+                pass
 
     @staticmethod
     async def _drain_stderr(process: asyncio.subprocess.Process) -> str:

@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 class SlackConfig:
     bot_token: str
     app_token: str
+    startup_notify_channel: str | None = None
+    startup_notify_message: str | None = None
 
     @classmethod
     def from_env(cls) -> SlackConfig:
@@ -22,4 +24,9 @@ class SlackConfig:
                 "AGENT_BRIDGE_SLACK_BOT_TOKEN and AGENT_BRIDGE_SLACK_APP_TOKEN "
                 "environment variables are required"
             )
-        return cls(bot_token=bot_token, app_token=app_token)
+        return cls(
+            bot_token=bot_token,
+            app_token=app_token,
+            startup_notify_channel=os.environ.get("AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_CHANNEL"),
+            startup_notify_message=os.environ.get("AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_MESSAGE"),
+        )

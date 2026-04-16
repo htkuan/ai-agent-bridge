@@ -51,6 +51,17 @@ AGENT_BRIDGE_SLACK_APP_TOKEN=xapp-your-app-level-token
 
 Both are **required**. The adapter raises `ValueError` at startup if either is missing.
 
+### Optional: Startup Notification
+
+Send a Slack message after Socket Mode connects successfully:
+
+```bash
+AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_CHANNEL=C12345678
+AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_MESSAGE=Bot is online :white_check_mark:
+```
+
+Both must be set for the notification to fire. Useful for deploy pipelines that need confirmation the bot is actually alive and connected.
+
 ## Session Semantics
 
 **One Slack thread = one agent session.**

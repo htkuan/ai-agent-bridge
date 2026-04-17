@@ -182,7 +182,7 @@ All config loads from `.env` via python-dotenv. See `.env.example` for the full 
 
 | Variable | Required | Default | Component |
 |----------|----------|---------|-----------|
-| `ANTHROPIC_API_KEY` | Yes | — | Claude CLI |
+| `ANTHROPIC_API_KEY` | No | — | Claude CLI (only if not already authenticated via `claude login`) |
 | `AGENT_BRIDGE_SLACK_BOT_TOKEN` | Yes (if using Slack) | — | Slack |
 | `AGENT_BRIDGE_SLACK_APP_TOKEN` | Yes (if using Slack) | — | Slack |
 | `AGENT_BRIDGE_CLAUDE_WORK_DIR` | No | `.` | Claude |

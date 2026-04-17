@@ -109,7 +109,7 @@ All agent output flows through generic events — the shared language between ag
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | — | API key consumed by the Claude Code CLI |
+| `ANTHROPIC_API_KEY` | No | — | API key for the Claude Code CLI (skip if already authenticated via `claude login`) |
 | `AGENT_BRIDGE_SLACK_BOT_TOKEN` | Yes | — | Slack Bot User OAuth Token (`xoxb-...`) |
 | `AGENT_BRIDGE_SLACK_APP_TOKEN` | Yes | — | Slack App-Level Token for Socket Mode (`xapp-...`) |
 | `AGENT_BRIDGE_CLAUDE_WORK_DIR` | No | `.` | Working directory for Claude Code |

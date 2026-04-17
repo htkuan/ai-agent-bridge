@@ -182,11 +182,13 @@ All config loads from `.env` via python-dotenv. See `.env.example` for the full 
 
 | Variable | Required | Default | Component |
 |----------|----------|---------|-----------|
+| `ANTHROPIC_API_KEY` | Yes | — | Claude CLI |
 | `AGENT_BRIDGE_SLACK_BOT_TOKEN` | Yes (if using Slack) | — | Slack |
 | `AGENT_BRIDGE_SLACK_APP_TOKEN` | Yes (if using Slack) | — | Slack |
 | `AGENT_BRIDGE_CLAUDE_WORK_DIR` | No | `.` | Claude |
 | `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude |
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Claude |
+| `AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED` | No | `false` | Claude |
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Bridge |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Bridge |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Bridge |

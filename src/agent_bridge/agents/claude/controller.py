@@ -108,6 +108,12 @@ class ClaudeController:
             "--verbose",
         ]
 
+        if self._config.worktree_enabled:
+            # Use session_id as worktree name so path/branch are deterministic.
+            # On new sessions Claude creates <work_dir>/.claude/worktrees/<session_id>;
+            # on --resume it reuses the existing one and cd's into it automatically.
+            cmd.extend(["-w", session_id])
+
         if is_new:
             cmd.extend(["--session-id", session_id])
         else:
@@ -206,3 +212,51 @@ class ClaudeController:
         assert process.stderr is not None
         stderr_bytes = await process.stderr.read()
         return stderr_bytes.decode(errors="replace").strip()
+
+    async def cleanup_session(self, session_id: str) -> None:
+        """Remove the worktree and branch that -w created for this session.
+
+        No-op when worktree mode is disabled. Never raises — a dirty worktree
+        simply stays on disk for manual inspection.
+        """
+        if not self._config.worktree_enabled:
+            return
+        repo_root = self._config.work_dir
+        worktree_path = repo_root / ".claude" / "worktrees" / session_id
+        branch_name = f"worktree-{session_id}"
+
+        if worktree_path.exists():
+            rc, err = await self._run_git(
+                repo_root, "worktree", "remove", str(worktree_path)
+            )
+            if rc != 0:
+                logger.warning(
+                    "Worktree remove failed for session %s (leaving on disk): %s",
+                    session_id,
+                    err,
+                )
+                return
+        else:
+            # Worktree dir gone but admin entry may still linger
+            await self._run_git(repo_root, "worktree", "prune")
+
+        # Branch deletion is best-effort; it may already be gone
+        await self._run_git(repo_root, "branch", "-D", branch_name)
+        logger.info("Cleaned up worktree for session %s", session_id)
+
+    @staticmethod
+    async def _run_git(cwd: Path, *args: str) -> tuple[int, str]:
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            *args,
+            cwd=str(cwd),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return -1, "timeout"
+        return proc.returncode or 0, stderr.decode(errors="replace").strip()

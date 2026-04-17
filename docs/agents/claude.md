@@ -10,10 +10,13 @@ Each user message triggers a **one-shot subprocess**:
 
 ```
 claude -p "<prompt>" --output-format stream-json --verbose \
+  [-w <session_id>] \
   [--session-id ID | --resume ID] \
   [--permission-mode MODE] \
   [--append-system-prompt "<context>"]
 ```
+
+`-w <session_id>` is included only when [Worktree Mode](#worktree-mode) is enabled.
 
 The process runs, streams events via stdout, and exits. Session continuity is handled by Claude Code's built-in `--session-id` (new) and `--resume` (continue) flags.
 
@@ -31,6 +34,7 @@ The process runs, streams events via stdout, and exits. Session continuity is ha
 | `AGENT_BRIDGE_CLAUDE_WORK_DIR` | `.` | Working directory where Claude Code operates. This determines which codebase the agent has access to. Path is resolved to absolute at startup. |
 | `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | `acceptEdits` | Controls what Claude can do without asking. |
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | `600` | Maximum time (seconds) for a single invocation. Process is terminated on timeout. |
+| `AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED` | `false` | Run each session in its own git worktree (see [Worktree Mode](#worktree-mode)). |
 
 ### Permission Modes
 
@@ -45,6 +49,46 @@ The process runs, streams events via stdout, and exits. Session continuity is ha
 | `dangerously-skip-permissions` | Skip all permission checks (uses `--dangerously-skip-permissions` flag instead of `--permission-mode`) |
 
 Validation happens at startup — invalid modes raise `ValueError`.
+
+### Worktree Mode
+
+When `AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED=true`, every session runs in an isolated git worktree, so concurrent sessions never clobber each other's files.
+
+**Layout**
+
+```
+<work_dir>/
+├── .claude/
+│   └── worktrees/
+│       ├── <session_id_1>/      # checked-out branch: worktree-<session_id_1>
+│       └── <session_id_2>/      # checked-out branch: worktree-<session_id_2>
+└── ...
+```
+
+The path and branch names are deterministic: the controller passes `-w <session_id>` on every invocation. Claude Code creates the worktree on the first call and reuses it on `--resume`, automatically running commands with the worktree as cwd.
+
+**Prerequisites (enforced at startup)**
+
+- `work_dir` must be a git repository
+- An `origin` remote must exist with a resolvable `origin/HEAD` — Claude uses it as the base branch. Run `git remote set-head origin --auto` if `symbolic-ref refs/remotes/origin/HEAD` is missing.
+
+Startup fails with a clear error if these are not met.
+
+**Lifecycle**
+
+| Event | What happens |
+|-------|--------------|
+| First message in session | `claude -p -w <session_id> --session-id <session_id> ...` creates the worktree off `origin/HEAD` with branch `worktree-<session_id>`. |
+| Follow-up messages | `claude -p -w <session_id> --resume <session_id> ...` — Claude auto-detects the existing worktree and runs in it. |
+| Session expires (TTL) | Periodic cleanup calls `git worktree remove` then `git branch -D worktree-<session_id>`. |
+| Worktree has uncommitted changes on expiry | Removal is skipped, path is logged. Inspect and clean up manually. |
+| Manual `rm -rf` on the worktree dir | Controller calls `git worktree prune` before the next session so a fresh worktree can be recreated from the existing branch. |
+
+**Limitations**
+
+- Base branch is always `origin/HEAD`. Override by adding a [`WorktreeCreate` hook](https://docs.anthropic.com/en/docs/claude-code/hooks) in the repo.
+- Gitignored dependencies (e.g., `node_modules`, `.venv`) are *not* shared between worktrees — Claude will install into each worktree separately.
+- External state (databases, bound ports, credentials) stays shared — worktrees only isolate the filesystem.
 
 ## Command Building
 

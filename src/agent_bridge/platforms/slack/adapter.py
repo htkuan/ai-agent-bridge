@@ -535,6 +535,22 @@ class SlackAdapter:
         logger.info("Starting Slack adapter (Socket Mode)")
         await self._handler.connect_async()
 
+        if self._config.startup_notify_channel and self._config.startup_notify_message:
+            try:
+                await self._app.client.chat_postMessage(
+                    channel=self._config.startup_notify_channel,
+                    text=self._config.startup_notify_message,
+                )
+                logger.info(
+                    "Startup notification sent to %s",
+                    self._config.startup_notify_channel,
+                )
+            except SlackApiError as e:
+                logger.warning(
+                    "Failed to send startup notification: %s",
+                    e.response["error"],
+                )
+
     async def stop(self) -> None:
         if self._handler:
             await self._handler.close_async()

@@ -70,12 +70,19 @@ async def main() -> None:
             except asyncio.TimeoutError:
                 pass
             if not shutdown_event.is_set():
-                purged = session_manager.purge_expired()
+                purged_ids = session_manager.purge_expired()
                 stale = adapter.cleanup_stale_sessions()
-                if purged or stale:
+                for sid in purged_ids:
+                    try:
+                        await controller.cleanup_session(sid)
+                    except Exception:
+                        logger.exception(
+                            "Worktree cleanup failed for session %s", sid
+                        )
+                if purged_ids or stale:
                     logger.info(
                         "Cleanup: purged %d expired sessions, %d stale pending",
-                        purged,
+                        len(purged_ids),
                         stale,
                     )
 

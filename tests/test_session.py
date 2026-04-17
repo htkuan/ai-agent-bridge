@@ -153,7 +153,7 @@ def test_purge_expired(tmp_path: Path):
     store = tmp_path / "sessions.json"
     mgr = SessionManager(store, ttl_hours=1.0)
 
-    mgr.get_or_create("slack:C1:ts1")
+    sid1, _ = mgr.get_or_create("slack:C1:ts1")
     mgr.get_or_create("slack:C2:ts2")
 
     past = datetime.now(timezone.utc) - timedelta(hours=2)
@@ -161,7 +161,7 @@ def test_purge_expired(tmp_path: Path):
     mgr._save()
 
     purged = mgr.purge_expired()
-    assert purged == 1
+    assert purged == [sid1]
 
     # Verify it's gone from the store file too
     data = json.loads(store.read_text())
@@ -193,7 +193,7 @@ def test_active_session_not_expired(tmp_path: Path):
 
     # Just created, should be active
     assert mgr.get("slack:C123:ts1") == sid
-    assert mgr.purge_expired() == 0
+    assert mgr.purge_expired() == []
 
 
 def test_ttl_resets_on_use(tmp_path: Path):
@@ -211,4 +211,4 @@ def test_ttl_resets_on_use(tmp_path: Path):
     assert is_new is False
 
     # Now it should be fresh again
-    assert mgr.purge_expired() == 0
+    assert mgr.purge_expired() == []

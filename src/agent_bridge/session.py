@@ -70,8 +70,8 @@ class SessionManager:
         """Return a copy of all non-expired session mappings."""
         return {k: v for k, v in self._sessions.items() if not self._is_expired(v)}
 
-    def purge_expired(self) -> int:
-        """Remove all expired sessions. Returns count of purged sessions."""
+    def purge_expired(self) -> list[str]:
+        """Remove all expired sessions. Returns session IDs of purged entries."""
         return self._purge_expired()
 
     def _is_expired(self, entry: dict) -> bool:
@@ -80,14 +80,18 @@ class SessionManager:
             return True
         return _now() - last_used > self._ttl
 
-    def _purge_expired(self) -> int:
-        expired_keys = [k for k, v in self._sessions.items() if self._is_expired(v)]
-        for key in expired_keys:
+    def _purge_expired(self) -> list[str]:
+        expired = [
+            (k, v["session_id"])
+            for k, v in self._sessions.items()
+            if self._is_expired(v)
+        ]
+        for key, _ in expired:
             logger.info("Purging expired session for key %s", key)
             del self._sessions[key]
-        if expired_keys:
+        if expired:
             self._save()
-        return len(expired_keys)
+        return [sid for _, sid in expired]
 
     def _load(self) -> None:
         if self._store_path.exists():

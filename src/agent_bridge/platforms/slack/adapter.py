@@ -32,10 +32,31 @@ logger = logging.getLogger(__name__)
 # Minimum interval between Slack message updates (seconds)
 UPDATE_THROTTLE_SECONDS = 1.5
 
-# Slack chat_update/chat_postMessage text limit.
-# The documented limit is ~40 000 chars, but mrkdwn formatting can lower
-# the effective ceiling significantly. Use a conservative threshold.
-SLACK_MSG_MAX_LENGTH = 3_900
+# Slack chat_update/chat_postMessage effective ceiling. Empirically ~4000
+# UTF-8 bytes (not characters) — a CJK char is 3 bytes, so a char-based
+# check lets long CJK messages slip past and hit msg_too_long.
+SLACK_MSG_MAX_BYTES = 3_900
+
+
+def _utf8_len(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
+def _truncate_to_bytes(text: str, max_bytes: int) -> str:
+    if max_bytes <= 0:
+        return ""
+    data = text.encode("utf-8")
+    if len(data) <= max_bytes:
+        return text
+    # errors="ignore" drops any trailing partial multi-byte sequence
+    return data[:max_bytes].decode("utf-8", errors="ignore")
+
+
+def _fit_with_suffix(text: str, max_bytes: int, suffix: str) -> str:
+    if _utf8_len(text) <= max_bytes:
+        return text
+    budget = max(0, max_bytes - _utf8_len(suffix))
+    return _truncate_to_bytes(text, budget) + suffix
 
 
 @dataclass
@@ -428,11 +449,23 @@ class SlackAdapter:
                             )
                     if not final:
                         final = "_No response from agent._"
-                    if len(final) > SLACK_MSG_MAX_LENGTH:
+                    if _utf8_len(final) > SLACK_MSG_MAX_BYTES:
+                        uploaded = await self._upload_snippet(
+                            channel, thread_ts, final
+                        )
+                        notice = (
+                            "\n\n_… Full response uploaded as file below._"
+                            if uploaded
+                            else "\n\n_… (response too long; upload failed — please retry)_"
+                        )
+                        preview_budget = min(
+                            1000, SLACK_MSG_MAX_BYTES - _utf8_len(notice)
+                        )
+                        short = _truncate_to_bytes(final, preview_budget) + notice
                         if message_ts:
-                            short = final[:300] + "\n\n_… Full response uploaded as file below._"
                             await self._update_message(channel, message_ts, short)
-                        await self._upload_snippet(channel, thread_ts, final)
+                        elif say is not None:
+                            await say(text=short, thread_ts=thread_ts)
                     elif message_ts:
                         await self._update_message(channel, message_ts, final)
                     elif say is not None:
@@ -444,10 +477,20 @@ class SlackAdapter:
                 "Session %s: stream ended without Completion — cleaning up message",
                 session_key,
             )
-            if len(accumulated_text) > SLACK_MSG_MAX_LENGTH:
-                short = accumulated_text[:300] + "\n\n_… Full response uploaded as file below._"
+            if _utf8_len(accumulated_text) > SLACK_MSG_MAX_BYTES:
+                uploaded = await self._upload_snippet(
+                    channel, thread_ts, accumulated_text
+                )
+                notice = (
+                    "\n\n_… Full response uploaded as file below._"
+                    if uploaded
+                    else "\n\n_… (response too long; upload failed — please retry)_"
+                )
+                preview_budget = min(
+                    1000, SLACK_MSG_MAX_BYTES - _utf8_len(notice)
+                )
+                short = _truncate_to_bytes(accumulated_text, preview_budget) + notice
                 await self._update_message(channel, message_ts, short)
-                await self._upload_snippet(channel, thread_ts, accumulated_text)
             else:
                 await self._update_message(channel, message_ts, accumulated_text)
 
@@ -492,31 +535,56 @@ class SlackAdapter:
             )
 
     async def _update_message(self, channel: str, ts: str, text: str) -> None:
-        if len(text) > SLACK_MSG_MAX_LENGTH:
-            text = text[:SLACK_MSG_MAX_LENGTH] + "\n\n_… (generating response…)_"
+        text = _fit_with_suffix(
+            text, SLACK_MSG_MAX_BYTES, "\n\n_… (generating response…)_"
+        )
         try:
             await self._app.client.chat_update(
                 channel=channel,
                 ts=ts,
                 text=text,
             )
+            return
         except SlackApiError as e:
-            if e.response["error"] == "msg_too_long":
-                try:
-                    short = text[:500] + "\n\n_… (generating response…)_"
-                    await self._app.client.chat_update(
-                        channel=channel, ts=ts, text=short,
-                    )
-                except SlackApiError:
-                    pass
-            else:
+            if e.response["error"] != "msg_too_long":
                 logger.warning(
-                    "Failed to update Slack message %s: %s", ts, e.response["error"]
+                    "Failed to update Slack message %s: %s",
+                    ts,
+                    e.response["error"],
                 )
+                return
+
+        # Slack still rejected the byte-trimmed payload. Fall back progressively
+        # rather than the old hard 500-char cut, which caused a 528-char stuck
+        # message for CJK-heavy replies.
+        for budget in (
+            SLACK_MSG_MAX_BYTES * 3 // 4,
+            SLACK_MSG_MAX_BYTES // 2,
+            SLACK_MSG_MAX_BYTES // 4,
+        ):
+            short = _fit_with_suffix(
+                text, budget, "\n\n_… (response truncated)_"
+            )
+            try:
+                await self._app.client.chat_update(
+                    channel=channel, ts=ts, text=short
+                )
+                return
+            except SlackApiError as retry_err:
+                if retry_err.response["error"] != "msg_too_long":
+                    logger.warning(
+                        "Failed to update Slack message %s: %s",
+                        ts,
+                        retry_err.response["error"],
+                    )
+                    return
+        logger.warning(
+            "Slack rejected update to %s at all fallback sizes", ts
+        )
 
     async def _upload_snippet(
         self, channel: str, thread_ts: str, content: str
-    ) -> None:
+    ) -> bool:
         try:
             await self._app.client.files_upload_v2(
                 channel=channel,
@@ -525,8 +593,10 @@ class SlackAdapter:
                 filename="response.md",
                 title="Full Response",
             )
+            return True
         except SlackApiError as e:
             logger.warning("Failed to upload snippet: %s", e.response["error"])
+            return False
 
     async def start(self) -> None:
         self._handler = AsyncSocketModeHandler(

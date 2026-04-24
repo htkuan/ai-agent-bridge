@@ -180,7 +180,7 @@ Updates the message with the final response text. Error cases:
 | Capacity full (new request) | `:no_entry: Too many requests being processed, please try again later.` |
 | Capacity full (pending drained) | `:x: Your queued message could not be processed — please try again shortly.` |
 | No response | `_No response from agent._` |
-| Response too long | First 300 chars + note, full content uploaded as `response.md` file snippet |
+| Response too long (> ~3900 UTF-8 bytes) | Preview (up to 1000 bytes) + note, full content uploaded as `response.md` file snippet; if upload fails, user sees `(response too long; upload failed — please retry)` |
 
 ## File Attachments
 

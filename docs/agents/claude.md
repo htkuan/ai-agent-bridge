@@ -13,6 +13,7 @@ claude -p "<prompt>" --output-format stream-json --verbose \
   [-w <session_id>] \
   [--session-id ID | --resume ID] \
   [--permission-mode MODE] \
+  --effort LEVEL \
   [--append-system-prompt "<context>"]
 ```
 
@@ -35,6 +36,7 @@ The process runs, streams events via stdout, and exits. Session continuity is ha
 | `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | `acceptEdits` | Controls what Claude can do without asking. |
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | `600` | Maximum time (seconds) for a single invocation. Process is terminated on timeout. |
 | `AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED` | `false` | Run each session in its own git worktree (see [Worktree Mode](#worktree-mode)). |
+| `AGENT_BRIDGE_CLAUDE_EFFORT` | `xhigh` | Effort level passed to `claude --effort`. One of `low`, `medium`, `high`, `xhigh`, `max`. |
 
 ### Permission Modes
 

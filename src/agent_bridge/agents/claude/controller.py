@@ -117,6 +117,8 @@ class ClaudeController:
         else:
             cmd.extend(["--permission-mode", permission_mode])
 
+        cmd.extend(["--effort", self._config.effort])
+
         if system_prompt:
             cmd.extend(["--append-system-prompt", system_prompt])
 

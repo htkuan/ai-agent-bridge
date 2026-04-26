@@ -195,6 +195,7 @@ All config loads from `.env` via python-dotenv. See `.env.example` for the full 
 | `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude |
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Claude |
 | `AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED` | No | `false` | Claude |
+| `AGENT_BRIDGE_CLAUDE_EFFORT` | No | `xhigh` | Claude (one of `low`, `medium`, `high`, `xhigh`, `max`) |
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Bridge |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Bridge |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Bridge |

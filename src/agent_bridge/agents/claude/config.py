@@ -17,6 +17,8 @@ VALID_PERMISSION_MODES = {
     "dangerously-skip-permissions",
 }
 
+VALID_EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
+
 _TRUTHY = {"true", "1", "yes", "on"}
 
 
@@ -26,6 +28,7 @@ class ClaudeConfig:
     permission_mode: str = "acceptEdits"
     timeout_seconds: float = 600.0
     worktree_enabled: bool = False
+    effort: str = "xhigh"
 
     @classmethod
     def from_env(cls) -> ClaudeConfig:
@@ -38,6 +41,7 @@ class ClaudeConfig:
             worktree_enabled=os.environ.get(
                 "AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED", "false"
             ).lower() in _TRUTHY,
+            effort=os.environ.get("AGENT_BRIDGE_CLAUDE_EFFORT", "xhigh").strip() or "xhigh",
         )
         config._validate()
         return config
@@ -55,6 +59,11 @@ class ClaudeConfig:
         if self.timeout_seconds <= 0:
             raise ValueError(
                 f"AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS must be positive, got {self.timeout_seconds}"
+            )
+        if self.effort not in VALID_EFFORT_LEVELS:
+            raise ValueError(
+                f"Invalid AGENT_BRIDGE_CLAUDE_EFFORT: {self.effort!r}. "
+                f"Must be one of: {', '.join(sorted(VALID_EFFORT_LEVELS))}"
             )
         if self.worktree_enabled:
             self._validate_worktree_prereqs()

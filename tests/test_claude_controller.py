@@ -9,13 +9,18 @@ from agent_bridge.agents.claude.config import ClaudeConfig
 from agent_bridge.agents.claude.controller import ClaudeController
 
 
-def _config(work_dir: Path, worktree_enabled: bool = False) -> ClaudeConfig:
+def _config(
+    work_dir: Path,
+    worktree_enabled: bool = False,
+    effort: str = "xhigh",
+) -> ClaudeConfig:
     # Bypass _validate so tests don't need a real git repo unless they want one.
     cfg = ClaudeConfig.__new__(ClaudeConfig)
     object.__setattr__(cfg, "work_dir", work_dir)
     object.__setattr__(cfg, "permission_mode", "acceptEdits")
     object.__setattr__(cfg, "timeout_seconds", 600.0)
     object.__setattr__(cfg, "worktree_enabled", worktree_enabled)
+    object.__setattr__(cfg, "effort", effort)
     return cfg
 
 
@@ -86,6 +91,42 @@ def test_build_command_appends_system_prompt_verbatim(tmp_path: Path):
     sp = "platform-built directives that the agent must not parse"
     cmd = controller._build_command("s1", "hi", is_new=True, system_prompt=sp)
     assert _system_prompt(cmd) == sp
+
+
+# --- Effort flag ---
+
+
+def test_build_command_includes_default_effort(tmp_path: Path):
+    controller = ClaudeController(_config(tmp_path))
+    cmd = controller._build_command("s1", "hi", is_new=True)
+    assert cmd[cmd.index("--effort") + 1] == "xhigh"
+
+
+def test_build_command_includes_custom_effort(tmp_path: Path):
+    controller = ClaudeController(_config(tmp_path, effort="low"))
+    cmd = controller._build_command("s1", "hi", is_new=True)
+    assert cmd[cmd.index("--effort") + 1] == "low"
+
+
+def test_effort_validation_rejects_invalid(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_WORK_DIR", str(tmp_path))
+    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_EFFORT", "ultra")
+    with pytest.raises(ValueError, match="AGENT_BRIDGE_CLAUDE_EFFORT"):
+        ClaudeConfig.from_env()
+
+
+def test_effort_defaults_to_xhigh_when_unset(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_WORK_DIR", str(tmp_path))
+    monkeypatch.delenv("AGENT_BRIDGE_CLAUDE_EFFORT", raising=False)
+    cfg = ClaudeConfig.from_env()
+    assert cfg.effort == "xhigh"
+
+
+def test_effort_empty_string_falls_back_to_xhigh(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_WORK_DIR", str(tmp_path))
+    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_EFFORT", "")
+    cfg = ClaudeConfig.from_env()
+    assert cfg.effort == "xhigh"
 
 
 # --- Config validation ---

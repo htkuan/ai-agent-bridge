@@ -204,6 +204,35 @@ class SlackAdapter:
             "user_name": user_name,
         }
 
+    @staticmethod
+    def _tag_prompt(text: str, context: dict[str, str]) -> str:
+        # Slack-flavored sender identity prefix. The agent stays platform-agnostic;
+        # the platform owns how it names speakers.
+        user_name = context.get("user_name", "unknown")
+        user_id = context.get("user_id", "")
+        tag = f"{user_name} ({user_id})" if user_id else user_name
+        return f"[{tag}]: {text}"
+
+    @staticmethod
+    def _build_system_prompt(context: dict[str, str]) -> str:
+        parts = [f"Platform: {context.get('platform', 'slack')}"]
+        if context.get("workspace"):
+            parts.append(f"Workspace: {context['workspace']}")
+        channel_name = context.get("channel_name", "")
+        channel_id = context.get("channel_id", "")
+        if channel_name and channel_id:
+            parts.append(f"Channel: #{channel_name} ({channel_id})")
+        elif channel_id:
+            parts.append(f"Channel: {channel_id}")
+        if context.get("thread_ts"):
+            parts.append(f"Thread: {context['thread_ts']}")
+
+        return (
+            "This conversation is from a chat platform. "
+            "Each message is prefixed with [user_name (user_id)] to identify the speaker.\n"
+            + "\n".join(parts)
+        )
+
     async def _process_message(self, event: dict, say, client) -> None:
         channel = event.get("channel", "")
         user_id = event.get("user", "")
@@ -350,8 +379,9 @@ class SlackAdapter:
 
         async for event_obj in self._bridge.handle_message(
             session_key=session_key,
-            text=text,
+            text=self._tag_prompt(text, context),
             context=context,
+            system_prompt=self._build_system_prompt(context),
         ):
             match event_obj:
                 case Processing():

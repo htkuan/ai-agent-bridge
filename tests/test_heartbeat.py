@@ -35,9 +35,17 @@ class _StubBridge:
         session_key: str,
         text: str,
         context: dict[str, str] | None = None,
+        system_prompt: str | None = None,
+        resumable: bool = True,
     ) -> AsyncIterator[BridgeEvent]:
         self.calls.append(
-            {"session_key": session_key, "text": text, "context": context}
+            {
+                "session_key": session_key,
+                "text": text,
+                "context": context,
+                "system_prompt": system_prompt,
+                "resumable": resumable,
+            }
         )
         for event in self._events:
             yield event
@@ -147,6 +155,26 @@ async def test_fire_once_calls_bridge_with_prompt_and_writes_state(make_adapter)
     assert call["context"]["source"] == "heartbeat"
     assert "fired_at" in call["context"]
     assert config.state_path.exists()
+
+
+async def test_fire_once_marks_session_non_resumable(make_adapter):
+    adapter, bridge, _ = make_adapter()
+    await adapter._fire_once()
+
+    # Heartbeat ticks are one-shot — same key must never resume the same session
+    assert bridge.calls[0]["resumable"] is False
+
+
+async def test_fire_once_passes_heartbeat_flavored_system_prompt(make_adapter):
+    adapter, bridge, _ = make_adapter()
+    await adapter._fire_once()
+
+    sp = bridge.calls[0]["system_prompt"]
+    assert sp is not None
+    # Adapter — not the agent — owns this phrasing. Two things must be present:
+    # the mechanism name and the fire time.
+    assert "heartbeat" in sp.lower()
+    assert bridge.calls[0]["context"]["fired_at"] in sp
 
 
 async def test_fire_once_writes_state_even_on_bridge_error(tmp_path: Path):

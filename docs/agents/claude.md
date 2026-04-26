@@ -94,15 +94,19 @@ Startup fails with a clear error if these are not met.
 
 The controller builds the CLI command in `_build_command()`:
 
-### Prompt tagging
+### Prompt and system prompt: platform-driven
 
-User prompts are prefixed with sender identity:
+The controller is **platform-agnostic**: it never inspects `context` to construct prompts or system text. Whatever the platform supplies through `bridge.handle_message(text=..., system_prompt=...)` is forwarded as-is to `claude -p` and `--append-system-prompt` respectively.
 
-```
-[user_name (user_id)]: original message text
-```
+This means each platform owns its own framing:
 
-This lets Claude Code know who is speaking when multiple users interact in the same session.
+| Platform | What it puts in `text` | What it puts in `system_prompt` |
+|----------|------------------------|----------------------------------|
+| Slack    | `[user_name (user_id)]: original message` | "This conversation is from a chat platform…" + workspace/channel/thread metadata |
+| Heartbeat | The configured prompt verbatim, no prefix | "This is a scheduled invocation, no user listening…" + `fired_at` |
+| (new platform) | Whatever convention fits its sender semantics | Whatever directives fit its invocation model |
+
+Adding a new platform means writing those two strings inside the new adapter — the Claude controller stays untouched.
 
 ### Session handling
 
@@ -110,18 +114,6 @@ This lets Claude Code know who is speaking when multiple users interact in the s
 |----------|------|--------|
 | New session | `--session-id {uuid}` | Creates a fresh Claude Code session |
 | Existing session | `--resume {uuid}` | Continues from where the last message left off |
-
-### System prompt
-
-When context is available (platform, workspace, channel info), it's appended as a system prompt:
-
-```
-This conversation is from a chat platform. Each message is prefixed with [user_name (user_id)] to identify the speaker.
-Platform: slack
-Workspace: MyCompany
-Channel: #engineering (C12345)
-Thread: 1234567890.123456
-```
 
 ## Event Flow
 

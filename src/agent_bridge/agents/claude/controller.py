@@ -29,13 +29,14 @@ class ClaudeController:
         is_new: bool,
         work_dir: Path | None = None,
         context: dict[str, str] | None = None,
+        system_prompt: str | None = None,
     ) -> AsyncIterator[BridgeEvent]:
         """Run a Claude Code prompt and yield streaming BridgeEvents."""
         cwd = work_dir or self._config.work_dir
         timeout = self._config.timeout_seconds
 
-        cmd = self._build_command(session_id, prompt, is_new, context)
-        logger.info("Running claude: %s (cwd=%s, timeout=%ss)", cmd[:5], cwd, timeout)
+        cmd = self._build_command(session_id, prompt, is_new, system_prompt)
+        logger.info("Running claude: %s (cwd=%s, timeout=%ss)", cmd, cwd, timeout)
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -88,21 +89,12 @@ class ClaudeController:
         session_id: str,
         prompt: str,
         is_new: bool,
-        context: dict[str, str] | None = None,
+        system_prompt: str | None = None,
     ) -> list[str]:
-        # Prefix prompt with sender identity so Claude knows who is speaking
-        if context:
-            user_name = context.get("user_name", "unknown")
-            user_id = context.get("user_id", "")
-            tag = f"{user_name} ({user_id})" if user_id else user_name
-            tagged_prompt = f"[{tag}]: {prompt}"
-        else:
-            tagged_prompt = prompt
-
         cmd = [
             "claude",
             "-p",
-            tagged_prompt,
+            prompt,
             "--output-format",
             "stream-json",
             "--verbose",
@@ -125,26 +117,7 @@ class ClaudeController:
         else:
             cmd.extend(["--permission-mode", permission_mode])
 
-        if context:
-            parts = [
-                f"Platform: {context.get('platform', 'unknown')}",
-            ]
-            if context.get("workspace"):
-                parts.append(f"Workspace: {context['workspace']}")
-            channel_name = context.get("channel_name", "")
-            channel_id = context.get("channel_id", "")
-            if channel_name and channel_id:
-                parts.append(f"Channel: #{channel_name} ({channel_id})")
-            elif channel_id:
-                parts.append(f"Channel: {channel_id}")
-            if context.get("thread_ts"):
-                parts.append(f"Thread: {context['thread_ts']}")
-
-            system_prompt = (
-                "This conversation is from a chat platform. "
-                "Each message is prefixed with [user_name (user_id)] to identify the speaker.\n"
-                + "\n".join(parts)
-            )
+        if system_prompt:
             cmd.extend(["--append-system-prompt", system_prompt])
 
         return cmd

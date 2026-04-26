@@ -49,6 +49,45 @@ def test_build_command_with_worktree_resume(tmp_path: Path):
     assert "--session-id" not in cmd
 
 
+# --- system_prompt pass-through ---
+#
+# After the platform/agent split, the controller is platform-agnostic:
+# it never inspects context, never prefixes the prompt — it just appends
+# whatever system_prompt the platform supplied.
+
+
+def _system_prompt(cmd: list[str]) -> str | None:
+    if "--append-system-prompt" not in cmd:
+        return None
+    return cmd[cmd.index("--append-system-prompt") + 1]
+
+
+def test_build_command_passes_prompt_verbatim(tmp_path: Path):
+    controller = ClaudeController(_config(tmp_path))
+    cmd = controller._build_command("s1", "[alice]: hi there", is_new=True)
+    # Whatever the caller passed is what -p sees
+    assert cmd[cmd.index("-p") + 1] == "[alice]: hi there"
+
+
+def test_build_command_omits_system_prompt_when_none(tmp_path: Path):
+    controller = ClaudeController(_config(tmp_path))
+    cmd = controller._build_command("s1", "hi", is_new=True, system_prompt=None)
+    assert "--append-system-prompt" not in cmd
+
+
+def test_build_command_omits_system_prompt_when_empty(tmp_path: Path):
+    controller = ClaudeController(_config(tmp_path))
+    cmd = controller._build_command("s1", "hi", is_new=True, system_prompt="")
+    assert "--append-system-prompt" not in cmd
+
+
+def test_build_command_appends_system_prompt_verbatim(tmp_path: Path):
+    controller = ClaudeController(_config(tmp_path))
+    sp = "platform-built directives that the agent must not parse"
+    cmd = controller._build_command("s1", "hi", is_new=True, system_prompt=sp)
+    assert _system_prompt(cmd) == sp
+
+
 # --- Config validation ---
 
 

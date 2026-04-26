@@ -204,11 +204,11 @@ The agent can then decide whether to fetch and process the files.
 
 ## Context Resolution
 
-The adapter resolves display names for Slack entities and passes them as context to the agent:
+The adapter resolves display names for Slack entities and uses them to build the prompt prefix and the agent's system prompt:
 
 | Field | Source | Purpose |
 |-------|--------|---------|
-| `platform` | Hardcoded `"slack"` | Agent knows which platform |
+| `platform` | Hardcoded `"slack"` | Embedded in system prompt |
 | `workspace` | `team_info()` API | Workspace name |
 | `channel_id` | Event payload | Channel identifier |
 | `channel_name` | `conversations_info()` API | Human-readable channel name |
@@ -218,7 +218,14 @@ The adapter resolves display names for Slack entities and passes them as context
 
 All resolutions are cached by `SlackInfoCache` to avoid repeated API calls.
 
-This context is passed to the agent as a system prompt appendix, so the agent knows who is speaking and from where.
+### Prompt prefix and system prompt
+
+The adapter (not the agent) owns chat-platform framing. Two static helpers shape what's sent to the bridge:
+
+- `_tag_prompt(text, context)` — prefixes the user's message with `[user_name (user_id)]:` so the agent knows who is speaking. The tagged string is passed as `text` to `bridge.handle_message`.
+- `_build_system_prompt(context)` — produces the chat-platform system prompt (workspace/channel/thread metadata + the convention that every message is sender-tagged) and passes it as `system_prompt`.
+
+This split keeps the agent platform-agnostic: a future platform that sends raw data (heartbeat, webhooks, queues, etc.) can produce its own prefix + system prompt without changing the agent.
 
 ## Stale Session Cleanup
 

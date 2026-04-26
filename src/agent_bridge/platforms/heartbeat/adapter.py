@@ -88,12 +88,22 @@ class HeartbeatAdapter:
                 session_key=session_key,
                 text=self._config.prompt,
                 context=context,
+                system_prompt=self._build_system_prompt(fired_at),
+                resumable=False,
             ):
                 self._log_event(session_key, event)
         except Exception:
             logger.exception("Heartbeat tick failed for session %s", session_key)
         finally:
             self._write_last_run(fired_at)
+
+    @staticmethod
+    def _build_system_prompt(fired_at: datetime) -> str:
+        return (
+            "This is a heartbeat session: a scheduled tick fired at a fixed "
+            "interval to give the agent a chance to do periodic work. "
+            f"Fired at {fired_at.isoformat()}."
+        )
 
     def _log_event(self, session_key: str, event: BridgeEvent) -> None:
         match event:

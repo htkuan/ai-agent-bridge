@@ -96,13 +96,15 @@ The controller builds the CLI command in `_build_command()`:
 
 ### Prompt tagging
 
-User prompts are prefixed with sender identity:
+For chat-platform messages, prompts are prefixed with sender identity:
 
 ```
 [user_name (user_id)]: original message text
 ```
 
 This lets Claude Code know who is speaking when multiple users interact in the same session.
+
+Heartbeat invocations (`context["source"] == "heartbeat"`) skip this prefix — there is no human sender, so the prompt is passed through verbatim.
 
 ### Session handling
 
@@ -113,7 +115,7 @@ This lets Claude Code know who is speaking when multiple users interact in the s
 
 ### System prompt
 
-When context is available (platform, workspace, channel info), it's appended as a system prompt:
+When chat-platform context is available (platform, workspace, channel info), it's appended as a system prompt:
 
 ```
 This conversation is from a chat platform. Each message is prefixed with [user_name (user_id)] to identify the speaker.
@@ -122,6 +124,8 @@ Workspace: MyCompany
 Channel: #engineering (C12345)
 Thread: 1234567890.123456
 ```
+
+When `context["source"] == "heartbeat"`, a different system prompt is appended that explicitly tells Claude the invocation is scheduled (not a human reply), no user is listening, AskUserQuestion will not be answered, and only side effects (files written, external tools called) persist beyond the audit log. The `fired_at` timestamp from the context is included.
 
 ## Event Flow
 

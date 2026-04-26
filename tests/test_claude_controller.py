@@ -49,6 +49,97 @@ def test_build_command_with_worktree_resume(tmp_path: Path):
     assert "--session-id" not in cmd
 
 
+# --- Context handling ---
+
+
+def _system_prompt(cmd: list[str]) -> str | None:
+    if "--append-system-prompt" not in cmd:
+        return None
+    return cmd[cmd.index("--append-system-prompt") + 1]
+
+
+def test_build_command_no_context_omits_system_prompt(tmp_path: Path):
+    controller = ClaudeController(_config(tmp_path))
+    cmd = controller._build_command("s1", "hi", is_new=True, context=None)
+    # Prompt is passed verbatim, no [tag]: prefix
+    assert cmd[cmd.index("-p") + 1] == "hi"
+    assert "--append-system-prompt" not in cmd
+
+
+def test_build_command_empty_context_omits_system_prompt(tmp_path: Path):
+    controller = ClaudeController(_config(tmp_path))
+    cmd = controller._build_command("s1", "hi", is_new=True, context={})
+    assert cmd[cmd.index("-p") + 1] == "hi"
+    assert "--append-system-prompt" not in cmd
+
+
+def test_build_command_chat_context_prefixes_prompt_and_emits_system_prompt(
+    tmp_path: Path,
+):
+    controller = ClaudeController(_config(tmp_path))
+    context = {
+        "platform": "slack",
+        "workspace": "acme",
+        "channel_id": "C123",
+        "channel_name": "general",
+        "thread_ts": "1700000000.000100",
+        "user_id": "U999",
+        "user_name": "alice",
+    }
+    cmd = controller._build_command("s1", "do something", is_new=True, context=context)
+
+    # Prompt prefixed with [user_name (user_id)]:
+    assert cmd[cmd.index("-p") + 1] == "[alice (U999)]: do something"
+
+    sp = _system_prompt(cmd)
+    assert sp is not None
+    assert "chat platform" in sp
+    assert "[user_name (user_id)]" in sp
+    assert "Platform: slack" in sp
+    assert "Workspace: acme" in sp
+    assert "Channel: #general (C123)" in sp
+    assert "Thread: 1700000000.000100" in sp
+
+
+def test_build_command_heartbeat_context_no_prompt_prefix(tmp_path: Path):
+    controller = ClaudeController(_config(tmp_path))
+    context = {"source": "heartbeat", "fired_at": "2026-04-26T10:00:00+00:00"}
+    cmd = controller._build_command("s1", "check tasks", is_new=True, context=context)
+
+    # Prompt passed through verbatim — no [tag]: prefix
+    assert cmd[cmd.index("-p") + 1] == "check tasks"
+
+
+def test_build_command_heartbeat_system_prompt_has_heartbeat_phrasing(tmp_path: Path):
+    controller = ClaudeController(_config(tmp_path))
+    context = {"source": "heartbeat", "fired_at": "2026-04-26T10:00:00+00:00"}
+    cmd = controller._build_command("s1", "check tasks", is_new=True, context=context)
+
+    sp = _system_prompt(cmd)
+    assert sp is not None
+    lowered = sp.lower()
+    # Key phrases — partial match, not exact string
+    assert "scheduled" in lowered
+    assert "no user" in lowered
+    assert "audit" in lowered
+    # Should explicitly tell agent not to ask questions / expect a reply
+    assert "question" in lowered
+    assert "reply" in lowered
+    # Should NOT use the chat-platform framing
+    assert "chat platform" not in lowered
+
+
+def test_build_command_heartbeat_includes_fired_at(tmp_path: Path):
+    controller = ClaudeController(_config(tmp_path))
+    fired_at = "2026-04-26T10:00:00+00:00"
+    context = {"source": "heartbeat", "fired_at": fired_at}
+    cmd = controller._build_command("s1", "check tasks", is_new=True, context=context)
+
+    sp = _system_prompt(cmd)
+    assert sp is not None
+    assert fired_at in sp
+
+
 # --- Config validation ---
 
 

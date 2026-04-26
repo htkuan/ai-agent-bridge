@@ -90,8 +90,10 @@ class ClaudeController:
         is_new: bool,
         context: dict[str, str] | None = None,
     ) -> list[str]:
-        # Prefix prompt with sender identity so Claude knows who is speaking
-        if context:
+        source = context.get("source") if context else None
+        is_heartbeat = source == "heartbeat"
+
+        if context and not is_heartbeat:
             user_name = context.get("user_name", "unknown")
             user_id = context.get("user_id", "")
             tag = f"{user_name} ({user_id})" if user_id else user_name
@@ -125,29 +127,48 @@ class ClaudeController:
         else:
             cmd.extend(["--permission-mode", permission_mode])
 
-        if context:
-            parts = [
-                f"Platform: {context.get('platform', 'unknown')}",
-            ]
-            if context.get("workspace"):
-                parts.append(f"Workspace: {context['workspace']}")
-            channel_name = context.get("channel_name", "")
-            channel_id = context.get("channel_id", "")
-            if channel_name and channel_id:
-                parts.append(f"Channel: #{channel_name} ({channel_id})")
-            elif channel_id:
-                parts.append(f"Channel: {channel_id}")
-            if context.get("thread_ts"):
-                parts.append(f"Thread: {context['thread_ts']}")
-
-            system_prompt = (
-                "This conversation is from a chat platform. "
-                "Each message is prefixed with [user_name (user_id)] to identify the speaker.\n"
-                + "\n".join(parts)
-            )
+        system_prompt = self._build_system_prompt(context)
+        if system_prompt is not None:
             cmd.extend(["--append-system-prompt", system_prompt])
 
         return cmd
+
+    @staticmethod
+    def _build_system_prompt(context: dict[str, str] | None) -> str | None:
+        if not context:
+            return None
+
+        if context.get("source") == "heartbeat":
+            fired_at = context.get("fired_at", "unknown")
+            return (
+                "This is a scheduled (heartbeat) invocation, not a response to a human.\n"
+                f"Fired at: {fired_at}\n"
+                "No user is listening on the other end. Do not ask questions — "
+                "AskUserQuestion will not be answered. Do not expect a reply.\n"
+                "Your output is logged for audit only. To make work persist, "
+                "write a file or call an external tool — anything you only "
+                "say in chat will be lost."
+            )
+
+        parts = [
+            f"Platform: {context.get('platform', 'unknown')}",
+        ]
+        if context.get("workspace"):
+            parts.append(f"Workspace: {context['workspace']}")
+        channel_name = context.get("channel_name", "")
+        channel_id = context.get("channel_id", "")
+        if channel_name and channel_id:
+            parts.append(f"Channel: #{channel_name} ({channel_id})")
+        elif channel_id:
+            parts.append(f"Channel: {channel_id}")
+        if context.get("thread_ts"):
+            parts.append(f"Thread: {context['thread_ts']}")
+
+        return (
+            "This conversation is from a chat platform. "
+            "Each message is prefixed with [user_name (user_id)] to identify the speaker.\n"
+            + "\n".join(parts)
+        )
 
     async def _read_stream_with_timeout(
         self, process: asyncio.subprocess.Process, timeout: float

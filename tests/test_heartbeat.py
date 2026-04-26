@@ -35,9 +35,15 @@ class _StubBridge:
         session_key: str,
         text: str,
         context: dict[str, str] | None = None,
+        system_prompt: str | None = None,
     ) -> AsyncIterator[BridgeEvent]:
         self.calls.append(
-            {"session_key": session_key, "text": text, "context": context}
+            {
+                "session_key": session_key,
+                "text": text,
+                "context": context,
+                "system_prompt": system_prompt,
+            }
         )
         for event in self._events:
             yield event
@@ -147,6 +153,23 @@ async def test_fire_once_calls_bridge_with_prompt_and_writes_state(make_adapter)
     assert call["context"]["source"] == "heartbeat"
     assert "fired_at" in call["context"]
     assert config.state_path.exists()
+
+
+async def test_fire_once_passes_heartbeat_flavored_system_prompt(make_adapter):
+    adapter, bridge, _ = make_adapter()
+    await adapter._fire_once()
+
+    sp = bridge.calls[0]["system_prompt"]
+    assert sp is not None
+    lowered = sp.lower()
+    # Adapter — not the agent — owns this phrasing now.
+    assert "scheduled" in lowered
+    assert "no user" in lowered
+    assert "audit" in lowered
+    assert "question" in lowered
+    assert "reply" in lowered
+    # The fired_at from context should appear inside the system prompt too
+    assert bridge.calls[0]["context"]["fired_at"] in sp
 
 
 async def test_fire_once_writes_state_even_on_bridge_error(tmp_path: Path):

@@ -23,6 +23,8 @@ class FakeController:
     def __init__(self, delay: float = 0.0) -> None:
         self.delay = delay
         self.calls: list[str] = []
+        self.last_system_prompt: str | None = None
+        self.last_context: dict[str, str] | None = None
 
     async def run(
         self,
@@ -30,8 +32,11 @@ class FakeController:
         prompt: str,
         is_new: bool,
         context: dict[str, str] | None = None,
+        system_prompt: str | None = None,
     ) -> AsyncIterator[BridgeEvent]:
         self.calls.append(prompt)
+        self.last_system_prompt = system_prompt
+        self.last_context = context
         if self.delay:
             await asyncio.sleep(self.delay)
         yield TextDelta(text=f"echo:{prompt}")
@@ -54,6 +59,31 @@ async def test_handle_message_emits_processing_and_completion(session_mgr):
 
     types = [type(e) for e in events]
     assert types == [Processing, TextDelta, Completion]
+
+
+@pytest.mark.asyncio
+async def test_handle_message_forwards_system_prompt_to_controller(session_mgr):
+    controller = FakeController()
+    bridge = Bridge(session_mgr, controller, max_concurrent=5)
+
+    async for _ in bridge.handle_message(
+        "key1", "hello", context={"a": "b"}, system_prompt="be helpful"
+    ):
+        pass
+
+    assert controller.last_system_prompt == "be helpful"
+    assert controller.last_context == {"a": "b"}
+
+
+@pytest.mark.asyncio
+async def test_handle_message_forwards_none_system_prompt_when_omitted(session_mgr):
+    controller = FakeController()
+    bridge = Bridge(session_mgr, controller, max_concurrent=5)
+
+    async for _ in bridge.handle_message("key1", "hello"):
+        pass
+
+    assert controller.last_system_prompt is None
 
 
 @pytest.mark.asyncio
@@ -100,7 +130,7 @@ async def test_semaphore_released_after_error(session_mgr):
     """Semaphore is released even when the controller raises."""
 
     class FailingController:
-        async def run(self, session_id, prompt, is_new, context=None):
+        async def run(self, session_id, prompt, is_new, context=None, system_prompt=None):
             raise RuntimeError("boom")
             yield  # noqa: RET503 — make this an async generator
 

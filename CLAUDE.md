@@ -37,7 +37,7 @@ Events are defined in `src/agent_bridge/events.py`. Agent-internal events (think
 
 ### Protocols
 
-- `AgentController` — `run(session_id, prompt, is_new, context) → AsyncIterator[BridgeEvent]`
+- `AgentController` — `run(session_id, prompt, is_new, context, system_prompt) → AsyncIterator[BridgeEvent]`. The platform adapter builds `prompt` (already pre-tagged with sender identity if needed) and `system_prompt` (platform-flavored directives); the agent forwards them as-is. The agent must not interpret platform-specific keys out of `context`.
 - `PlatformAdapter` — `start()`, `stop()`
 
 Defined in `src/agent_bridge/protocols.py`. New agents/platforms implement these.
@@ -54,12 +54,13 @@ Defined in `src/agent_bridge/protocols.py`. New agents/platforms implement these
 ```
 1. User message arrives at Platform Adapter
 2. Adapter constructs session_key, acquires per-session lock
-3. Bridge.handle_message(session_key, text, context)
+3. Adapter builds `text` (pre-tagged with sender identity) and `system_prompt` (platform directives) — the agent stays platform-agnostic
+4. Bridge.handle_message(session_key, text, context, system_prompt)
    → SessionManager resolves key → (session_id, is_new)
    → Semaphore check (reject if capacity full)
-   → AgentController.run(session_id, prompt, is_new, context)
-4. Agent yields BridgeEvents
-5. Adapter renders events as platform-native messages
+   → AgentController.run(session_id, prompt, is_new, context, system_prompt)
+5. Agent yields BridgeEvents
+6. Adapter renders events as platform-native messages
 ```
 
 ## Tech stack
@@ -142,9 +143,11 @@ src/agent_bridge/
 2. Create `platforms/{name}/adapter.py` — implements `PlatformAdapter` protocol
 3. Define session key format (e.g. `discord:{guild}:{channel}`)
 4. Own per-session locking strategy
-5. Consume `BridgeEvent`s from `bridge.handle_message()`
-6. Wire up in `__init__.py`
-7. Add documentation in `docs/platforms/{name}.md`
+5. Build the text the agent receives — pre-tag the prompt with sender identity if your platform has one (e.g. `[name]: text`); pass `None` if it doesn't (proactive triggers)
+6. Build the `system_prompt` — platform-flavored directives (chat framing, scheduled-invocation framing, webhook-trigger framing, etc.). The agent forwards it as-is
+7. Consume `BridgeEvent`s from `bridge.handle_message(session_key, text, context, system_prompt)`
+8. Wire up in `__init__.py`
+9. Add documentation in `docs/platforms/{name}.md`
 
 ### Adding a new agent
 
@@ -152,8 +155,9 @@ src/agent_bridge/
 2. Create `agents/{name}/controller.py` — implements `AgentController` protocol
 3. Create `agents/{name}/events.py` — parse agent output → `BridgeEvent`s
 4. `run()` yields only generic `BridgeEvent`s — agent-internal events stay internal
-5. Wire up in `__init__.py`
-6. Add documentation in `docs/agents/{name}.md`
+5. Treat `system_prompt` and `prompt` as opaque strings built by the platform — do not parse `context` for platform-specific keys
+6. Wire up in `__init__.py`
+7. Add documentation in `docs/agents/{name}.md`
 
 ### Documentation maintenance
 

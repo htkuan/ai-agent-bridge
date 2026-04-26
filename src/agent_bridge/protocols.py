@@ -12,6 +12,11 @@ class AgentController(Protocol):
     An agent is purely invoked: it receives a session ID + prompt,
     loads the session, executes, and yields events.  It does not
     define session semantics or care how results are rendered.
+
+    ``system_prompt`` is built by the platform adapter and passed through
+    verbatim — the agent must not interpret platform-specific fields out
+    of ``context`` to construct it.  ``context`` itself is opaque metadata
+    (useful for audit/logging) and platform-defined.
     """
 
     def run(
@@ -20,6 +25,7 @@ class AgentController(Protocol):
         prompt: str,
         is_new: bool,
         context: dict[str, str] | None = None,
+        system_prompt: str | None = None,
     ) -> AsyncIterator[BridgeEvent]: ...
 
 

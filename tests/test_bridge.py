@@ -87,6 +87,78 @@ async def test_handle_message_forwards_none_system_prompt_when_omitted(session_m
 
 
 @pytest.mark.asyncio
+async def test_resumable_default_writes_to_session_store(session_mgr):
+    """Default resumable=True path: SessionManager records the key on disk."""
+    bridge = Bridge(session_mgr, FakeController(), max_concurrent=5)
+
+    async for _ in bridge.handle_message("slack:C1:t1", "hi"):
+        pass
+
+    assert session_mgr.get("slack:C1:t1") is not None
+
+
+@pytest.mark.asyncio
+async def test_resumable_false_does_not_touch_session_store(session_mgr):
+    """resumable=False: bridge mints an ephemeral UUID, store stays empty."""
+    bridge = Bridge(session_mgr, FakeController(), max_concurrent=5)
+
+    async for _ in bridge.handle_message(
+        "heartbeat:tick:2026-01-01", "hi", resumable=False
+    ):
+        pass
+
+    # Key never reaches the store
+    assert session_mgr.get("heartbeat:tick:2026-01-01") is None
+    assert session_mgr.list_sessions() == {}
+
+
+@pytest.mark.asyncio
+async def test_resumable_false_passes_uuid_session_id_to_controller(session_mgr):
+    """Even without a stored mapping, the agent still gets a valid session_id."""
+    controller = FakeController()
+    bridge = Bridge(session_mgr, controller, max_concurrent=5)
+
+    captured: list[str] = []
+
+    async def capturing_run(session_id, prompt, is_new, context=None, system_prompt=None):
+        captured.append(session_id)
+        async for e in FakeController().run(
+            session_id, prompt, is_new, context=context, system_prompt=system_prompt
+        ):
+            yield e
+
+    bridge._controller = type("C", (), {"run": staticmethod(capturing_run)})()
+
+    async for _ in bridge.handle_message("k", "hi", resumable=False):
+        pass
+
+    assert len(captured) == 1
+    # UUID-shaped (36 chars with hyphens)
+    assert len(captured[0]) == 36 and captured[0].count("-") == 4
+
+
+@pytest.mark.asyncio
+async def test_resumable_false_repeated_calls_yield_distinct_session_ids(session_mgr):
+    """Two calls with the same key + resumable=False must NOT share state."""
+    seen: list[str] = []
+
+    class CapturingController:
+        async def run(self, session_id, prompt, is_new, context=None, system_prompt=None):
+            seen.append(session_id)
+            yield Completion(text="ok")
+
+    bridge = Bridge(session_mgr, CapturingController(), max_concurrent=5)
+
+    async for _ in bridge.handle_message("same-key", "first", resumable=False):
+        pass
+    async for _ in bridge.handle_message("same-key", "second", resumable=False):
+        pass
+
+    assert len(seen) == 2
+    assert seen[0] != seen[1]
+
+
+@pytest.mark.asyncio
 async def test_capacity_full_rejects_immediately(session_mgr):
     """When all slots are taken, handle_message yields an error Completion immediately."""
     controller = FakeController(delay=0.3)

@@ -154,7 +154,7 @@ One tick (`_fire_once`) does this, in order:
 1. **Capture timestamp** — `fired_at = utcnow()`.
 2. **Build session key** — `f"heartbeat:tick:{fired_at.isoformat()}"`. Microsecond precision in the iso format makes collisions effectively impossible.
 3. **Build context** — `{"source": "heartbeat", "fired_at": "<iso>"}`. See [Context](#context).
-4. **Call the bridge** — `bridge.handle_message(session_key, prompt, context)`. This goes through the global concurrency gate; on capacity overflow the bridge yields a single error `Completion` and the tick effectively no-ops (with an ERROR log).
+4. **Call the bridge** — `bridge.handle_message(session_key, prompt, context, system_prompt, resumable=False)`. This goes through the global concurrency gate; on capacity overflow the bridge yields a single error `Completion` and the tick effectively no-ops (with an ERROR log). `resumable=False` tells the bridge to mint a fresh ephemeral UUID and **not** persist anything to `sessions.json` — heartbeat ticks are one-shot, never resumed, so they leave no trace on disk.
 5. **Consume the event stream** — every `BridgeEvent` is logged (see [Logging](#logging)). The adapter does not render events to any external surface; the agent's tools are the only output channel.
 6. **Catch exceptions** — anything raised during iteration is caught and logged via `logger.exception`. The tick does not crash the loop.
 7. **Write state file** (in a `finally` block) — records `fired_at` as the new `last_run`, regardless of success or failure.

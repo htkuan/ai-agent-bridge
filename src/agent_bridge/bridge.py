@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from collections.abc import AsyncIterator
 
 from agent_bridge.events import BridgeEvent, Completion, Processing
@@ -28,6 +29,7 @@ class Bridge:
         text: str,
         context: dict[str, str] | None = None,
         system_prompt: str | None = None,
+        resumable: bool = True,
     ) -> AsyncIterator[BridgeEvent]:
         """Resolve session, acquire a processing slot, call agent, forward events.
 
@@ -36,12 +38,23 @@ class Bridge:
 
         ``system_prompt`` is opaque pass-through: built by the calling
         platform adapter, forwarded to the agent unchanged.
+
+        ``resumable`` controls whether passing the same ``session_key`` later
+        can resume the same session. When False, the bridge mints a fresh
+        ephemeral UUID and skips the SessionManager entirely — the session
+        leaves no trace on disk. Use this for one-shot, proactive triggers
+        (e.g. heartbeat ticks) where each call is conceptually independent.
         """
-        session_id, is_new = self._session_manager.get_or_create(session_key)
+        if resumable:
+            session_id, is_new = self._session_manager.get_or_create(session_key)
+        else:
+            session_id = str(uuid.uuid4())
+            is_new = True
         logger.info(
-            "Session %s (new=%s) for key %s — acquiring slot",
+            "Session %s (new=%s, resumable=%s) for key %s — acquiring slot",
             session_id,
             is_new,
+            resumable,
             session_key,
         )
 

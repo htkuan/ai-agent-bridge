@@ -36,7 +36,7 @@ class ClaudeController:
         timeout = self._config.timeout_seconds
 
         cmd = self._build_command(session_id, prompt, is_new, system_prompt)
-        logger.info("Running claude: %s (cwd=%s, timeout=%ss)", cmd[:5], cwd, timeout)
+        logger.info("Running claude: %s (cwd=%s, timeout=%ss)", cmd, cwd, timeout)
 
         process = await asyncio.create_subprocess_exec(
             *cmd,

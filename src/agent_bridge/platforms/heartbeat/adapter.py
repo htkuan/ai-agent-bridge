@@ -89,6 +89,7 @@ class HeartbeatAdapter:
                 text=self._config.prompt,
                 context=context,
                 system_prompt=self._build_system_prompt(fired_at),
+                resumable=False,
             ):
                 self._log_event(session_key, event)
         except Exception:
@@ -99,13 +100,9 @@ class HeartbeatAdapter:
     @staticmethod
     def _build_system_prompt(fired_at: datetime) -> str:
         return (
-            "This is a scheduled (heartbeat) invocation, not a response to a human.\n"
-            f"Fired at: {fired_at.isoformat()}\n"
-            "No user is listening on the other end. Do not ask questions — "
-            "AskUserQuestion will not be answered. Do not expect a reply.\n"
-            "Your output is logged for audit only. To make work persist, "
-            "write a file or call an external tool — anything you only "
-            "say in chat will be lost."
+            "This is a heartbeat session: a scheduled tick fired at a fixed "
+            "interval to give the agent a chance to do periodic work. "
+            f"Fired at {fired_at.isoformat()}."
         )
 
     def _log_event(self, session_key: str, event: BridgeEvent) -> None:

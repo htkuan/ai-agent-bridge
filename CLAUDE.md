@@ -55,8 +55,9 @@ Defined in `src/agent_bridge/protocols.py`. New agents/platforms implement these
 1. User message arrives at Platform Adapter
 2. Adapter constructs session_key, acquires per-session lock
 3. Adapter builds `text` (pre-tagged with sender identity) and `system_prompt` (platform directives) — the agent stays platform-agnostic
-4. Bridge.handle_message(session_key, text, context, system_prompt)
-   → SessionManager resolves key → (session_id, is_new)
+4. Bridge.handle_message(session_key, text, context, system_prompt, resumable)
+   → If `resumable=True`: SessionManager resolves key → (session_id, is_new), persisted on disk
+   → If `resumable=False`: bridge mints a fresh ephemeral UUID, SessionManager untouched
    → Semaphore check (reject if capacity full)
    → AgentController.run(session_id, prompt, is_new, context, system_prompt)
 5. Agent yields BridgeEvents
@@ -145,9 +146,10 @@ src/agent_bridge/
 4. Own per-session locking strategy
 5. Build the text the agent receives — pre-tag the prompt with sender identity if your platform has one (e.g. `[name]: text`); pass `None` if it doesn't (proactive triggers)
 6. Build the `system_prompt` — platform-flavored directives (chat framing, scheduled-invocation framing, webhook-trigger framing, etc.). The agent forwards it as-is
-7. Consume `BridgeEvent`s from `bridge.handle_message(session_key, text, context, system_prompt)`
-8. Wire up in `__init__.py`
-9. Add documentation in `docs/platforms/{name}.md`
+7. Decide `resumable`: pass `True` (default) if the same `session_key` should be able to resume the same session later (e.g. chat threads); pass `False` for one-shot triggers where every call must be a fresh, untracked session (e.g. heartbeat ticks)
+8. Consume `BridgeEvent`s from `bridge.handle_message(session_key, text, context, system_prompt, resumable)`
+9. Wire up in `__init__.py`
+10. Add documentation in `docs/platforms/{name}.md`
 
 ### Adding a new agent
 

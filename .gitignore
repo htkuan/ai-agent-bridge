@@ -1,5 +1,6 @@
 # Agent Bridge runtime data
 sessions.json
+heartbeat.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

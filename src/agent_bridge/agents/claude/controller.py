@@ -191,8 +191,10 @@ class ClaudeController:
     async def cleanup_session(self, session_id: str) -> None:
         """Remove the worktree and branch that -w created for this session.
 
-        No-op when worktree mode is disabled. Never raises — a dirty worktree
-        simply stays on disk for manual inspection.
+        No-op when worktree mode is disabled. Never raises. Sessions are
+        ephemeral and any uncommitted state in the worktree is disposable, so
+        on a clean-remove failure we retry with --force to prevent unbounded
+        accumulation of dirty worktrees on disk.
         """
         if not self._config.worktree_enabled:
             return
@@ -205,12 +207,22 @@ class ClaudeController:
                 repo_root, "worktree", "remove", str(worktree_path)
             )
             if rc != 0:
-                logger.warning(
-                    "Worktree remove failed for session %s (leaving on disk): %s",
+                # Common cause: untracked or modified files in the worktree.
+                logger.info(
+                    "Worktree remove for session %s failed (%s); retrying with --force",
                     session_id,
                     err,
                 )
-                return
+                rc, err = await self._run_git(
+                    repo_root, "worktree", "remove", "--force", str(worktree_path)
+                )
+                if rc != 0:
+                    logger.warning(
+                        "Worktree force-remove failed for session %s (leaving on disk): %s",
+                        session_id,
+                        err,
+                    )
+                    return
         else:
             # Worktree dir gone but admin entry may still linger
             await self._run_git(repo_root, "worktree", "prune")

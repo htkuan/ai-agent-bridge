@@ -400,6 +400,8 @@ class SlackAdapter:
                         )
 
                 case TextDelta(text=chunk):
+                    if accumulated_text:
+                        accumulated_text += "\n\n"
                     accumulated_text += chunk
                     now = time.monotonic()
                     if now - last_update_time >= UPDATE_THROTTLE_SECONDS and message_ts:
@@ -464,7 +466,7 @@ class SlackAdapter:
                     if last_update_time and elapsed < UPDATE_THROTTLE_SECONDS:
                         await asyncio.sleep(UPDATE_THROTTLE_SECONDS - elapsed)
 
-                    final = final_text or accumulated_text
+                    final = accumulated_text or final_text
                     if is_error:
                         if existing_message_ts is not None:
                             # Pending message rejected by Bridge

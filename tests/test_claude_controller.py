@@ -198,3 +198,53 @@ async def test_cleanup_session_noop_when_disabled(tmp_path: Path):
     controller = ClaudeController(_config(tmp_path, worktree_enabled=False))
     # Should not raise even though no git repo exists
     await controller.cleanup_session("nonexistent-session")
+
+
+def _init_repo_with_worktree(repo: Path, session_id: str) -> Path:
+    """Init a git repo with one commit and create a worktree for the session."""
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.email", "t@t"], check=True
+    )
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "--allow-empty", "-q", "-m", "init"],
+        check=True,
+    )
+    worktree_path = repo / ".claude" / "worktrees" / session_id
+    worktree_path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "git", "-C", str(repo), "worktree", "add", "-b",
+            f"worktree-{session_id}", str(worktree_path),
+        ],
+        check=True,
+    )
+    return worktree_path
+
+
+async def test_cleanup_session_force_removes_dirty_worktree(tmp_path: Path):
+    session_id = "dirty-session"
+    worktree_path = _init_repo_with_worktree(tmp_path, session_id)
+    # Leave an untracked file behind so plain `git worktree remove` refuses
+    (worktree_path / "untracked.txt").write_text("leftover")
+
+    controller = ClaudeController(_config(tmp_path, worktree_enabled=True))
+    await controller.cleanup_session(session_id)
+
+    assert not worktree_path.exists()
+    branches = subprocess.run(
+        ["git", "-C", str(tmp_path), "branch", "--list", f"worktree-{session_id}"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert branches.strip() == ""
+
+
+async def test_cleanup_session_removes_clean_worktree(tmp_path: Path):
+    session_id = "clean-session"
+    worktree_path = _init_repo_with_worktree(tmp_path, session_id)
+
+    controller = ClaudeController(_config(tmp_path, worktree_enabled=True))
+    await controller.cleanup_session(session_id)
+
+    assert not worktree_path.exists()

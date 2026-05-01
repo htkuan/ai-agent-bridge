@@ -142,7 +142,6 @@ class SlackAdapter:
         self._sessions: dict[str, _SessionState] = {}
         self._name_cache = SlackInfoCache()
         self._bot_user_id: str | None = None
-        self._bot_user_name: str | None = None
         self._register_handlers()
 
     # --- Session key: Slack defines thread = session ---
@@ -206,8 +205,6 @@ class SlackAdapter:
         }
         if self._bot_user_id:
             ctx["bot_user_id"] = self._bot_user_id
-        if self._bot_user_name:
-            ctx["bot_user_name"] = self._bot_user_name
         return ctx
 
     @staticmethod
@@ -233,12 +230,8 @@ class SlackAdapter:
         if context.get("thread_ts"):
             parts.append(f"Thread: {context['thread_ts']}")
         bot_user_id = context.get("bot_user_id", "")
-        bot_user_name = context.get("bot_user_name", "")
         if bot_user_id:
-            label = (
-                f"{bot_user_name} ({bot_user_id})" if bot_user_name else bot_user_id
-            )
-            parts.append(f"You are: {label} — Slack mention: <@{bot_user_id}>")
+            parts.append(f"Your Slack mention: <@{bot_user_id}>")
 
         return (
             "This conversation is from Slack. "
@@ -653,10 +646,9 @@ class SlackAdapter:
         try:
             auth = await self._app.client.auth_test()
             self._bot_user_id = auth.get("user_id")
-            self._bot_user_name = auth.get("user")
             logger.info(
                 "Resolved bot identity: %s (%s)",
-                self._bot_user_name,
+                auth.get("user"),
                 self._bot_user_id,
             )
         except SlackApiError as e:

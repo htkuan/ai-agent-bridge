@@ -208,22 +208,22 @@ The adapter resolves display names for Slack entities and uses them to build the
 
 | Field | Source | Purpose |
 |-------|--------|---------|
-| `platform` | Hardcoded `"slack"` | Embedded in system prompt |
 | `workspace` | `team_info()` API | Workspace name |
 | `channel_id` | Event payload | Channel identifier |
 | `channel_name` | `conversations_info()` API | Human-readable channel name |
 | `thread_ts` | Event payload | Thread root timestamp |
 | `user_id` | Event payload | Slack user ID |
 | `user_name` | `users_info()` API | Display name or real name |
+| `bot_user_id` | `auth.test()` API at startup | The bot's own Slack user ID — surfaced as `Your Slack mention: <@U…>` so the agent can detect when users @-mention it |
 
-All resolutions are cached by `SlackInfoCache` to avoid repeated API calls.
+All resolutions are cached by `SlackInfoCache` to avoid repeated API calls. The bot user ID is fetched once during `start()` and reused for every request. The bot's display name is intentionally not surfaced — the Slack app's name and the AI agent's persona are independent concerns.
 
 ### Prompt prefix and system prompt
 
 The adapter (not the agent) owns chat-platform framing. Two static helpers shape what's sent to the bridge:
 
 - `_tag_prompt(text, context)` — prefixes the user's message with `[user_name (user_id)]:` so the agent knows who is speaking. The tagged string is passed as `text` to `bridge.handle_message`.
-- `_build_system_prompt(context)` — produces the chat-platform system prompt (workspace/channel/thread metadata + the convention that every message is sender-tagged) and passes it as `system_prompt`.
+- `_build_system_prompt(context)` — produces the Slack system prompt (workspace/channel/thread metadata, the bot's mention syntax, and the convention that every message is sender-tagged) and passes it as `system_prompt`.
 
 This split keeps the agent platform-agnostic: a future platform that sends raw data (heartbeat, webhooks, queues, etc.) can produce its own prefix + system prompt without changing the agent.
 

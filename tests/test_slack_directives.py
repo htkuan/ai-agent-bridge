@@ -26,28 +26,26 @@ def test_tag_prompt_missing_both_falls_back_to_unknown():
 def test_build_system_prompt_full_context():
     sp = SlackAdapter._build_system_prompt(
         {
-            "platform": "slack",
             "workspace": "acme",
             "channel_id": "C123",
             "channel_name": "general",
             "thread_ts": "1700000000.000100",
             "user_id": "U999",
             "user_name": "alice",
+            "bot_user_id": "U_BOT",
         }
     )
-    assert "chat platform" in sp
+    assert "Slack" in sp
     assert "[user_name (user_id)]" in sp
-    assert "Platform: slack" in sp
     assert "Workspace: acme" in sp
     assert "Channel: #general (C123)" in sp
     assert "Thread: 1700000000.000100" in sp
+    assert "Your Slack mention: <@U_BOT>" in sp
 
 
 def test_build_system_prompt_omits_missing_fields():
-    sp = SlackAdapter._build_system_prompt(
-        {"platform": "slack", "channel_id": "C123"}
-    )
-    assert "Platform: slack" in sp
+    sp = SlackAdapter._build_system_prompt({"channel_id": "C123"})
     assert "Channel: C123" in sp
     assert "Workspace" not in sp
     assert "Thread" not in sp
+    assert "Slack mention" not in sp

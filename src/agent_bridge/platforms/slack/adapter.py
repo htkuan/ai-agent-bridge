@@ -141,6 +141,7 @@ class SlackAdapter:
         self._handler: AsyncSocketModeHandler | None = None
         self._sessions: dict[str, _SessionState] = {}
         self._name_cache = SlackInfoCache()
+        self._bot_user_id: str | None = None
         self._register_handlers()
 
     # --- Session key: Slack defines thread = session ---
@@ -194,8 +195,7 @@ class SlackAdapter:
         workspace, channel_name, user_name = await self._name_cache.resolve(
             channel, user_id, client
         )
-        return {
-            "platform": "slack",
+        ctx = {
             "workspace": workspace,
             "channel_id": channel,
             "channel_name": channel_name,
@@ -203,6 +203,9 @@ class SlackAdapter:
             "user_id": user_id,
             "user_name": user_name,
         }
+        if self._bot_user_id:
+            ctx["bot_user_id"] = self._bot_user_id
+        return ctx
 
     @staticmethod
     def _tag_prompt(text: str, context: dict[str, str]) -> str:
@@ -215,7 +218,7 @@ class SlackAdapter:
 
     @staticmethod
     def _build_system_prompt(context: dict[str, str]) -> str:
-        parts = [f"Platform: {context.get('platform', 'slack')}"]
+        parts: list[str] = []
         if context.get("workspace"):
             parts.append(f"Workspace: {context['workspace']}")
         channel_name = context.get("channel_name", "")
@@ -226,9 +229,12 @@ class SlackAdapter:
             parts.append(f"Channel: {channel_id}")
         if context.get("thread_ts"):
             parts.append(f"Thread: {context['thread_ts']}")
+        bot_user_id = context.get("bot_user_id", "")
+        if bot_user_id:
+            parts.append(f"Your Slack mention: <@{bot_user_id}>")
 
         return (
-            "This conversation is from a chat platform. "
+            "This conversation is from Slack. "
             "Each message is prefixed with [user_name (user_id)] to identify the speaker.\n"
             + "\n".join(parts)
         )
@@ -636,6 +642,19 @@ class SlackAdapter:
         )
         logger.info("Starting Slack adapter (Socket Mode)")
         await self._handler.connect_async()
+
+        try:
+            auth = await self._app.client.auth_test()
+            self._bot_user_id = auth.get("user_id")
+            logger.info(
+                "Resolved bot identity: %s (%s)",
+                auth.get("user"),
+                self._bot_user_id,
+            )
+        except SlackApiError as e:
+            logger.warning(
+                "Failed to resolve bot identity: %s", e.response["error"]
+            )
 
         if self._config.startup_notify_channel and self._config.startup_notify_message:
             try:

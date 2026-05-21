@@ -11,13 +11,15 @@ load_dotenv()
 
 from agent_bridge.agents.claude.config import ClaudeConfig  # noqa: E402
 from agent_bridge.agents.claude.controller import ClaudeController  # noqa: E402
+from agent_bridge.agents.codex.config import CodexConfig  # noqa: E402
+from agent_bridge.agents.codex.controller import CodexController  # noqa: E402
 from agent_bridge.bridge import Bridge  # noqa: E402
 from agent_bridge.config import BridgeConfig  # noqa: E402
 from agent_bridge.platforms.heartbeat.adapter import HeartbeatAdapter  # noqa: E402
 from agent_bridge.platforms.heartbeat.config import HeartbeatConfig  # noqa: E402
 from agent_bridge.platforms.slack.adapter import SlackAdapter  # noqa: E402
 from agent_bridge.platforms.slack.config import SlackConfig  # noqa: E402
-from agent_bridge.protocols import PlatformAdapter  # noqa: E402
+from agent_bridge.protocols import AgentController, PlatformAdapter  # noqa: E402
 from agent_bridge.session import SessionManager  # noqa: E402
 
 logging.basicConfig(
@@ -32,18 +34,35 @@ CLEANUP_INTERVAL_SECONDS = 3600
 
 async def main() -> None:
     bridge_config = BridgeConfig.from_env()
-    claude_config = ClaudeConfig.from_env()
+    agent_kind = os.environ.get("AGENT_BRIDGE_AGENT", "claude").strip().lower()
+    if agent_kind not in {"claude", "codex"}:
+        raise ValueError(
+            f"Invalid AGENT_BRIDGE_AGENT: {agent_kind!r}. Must be 'claude' or 'codex'."
+        )
 
-    logger.info("Claude work dir: %s", claude_config.work_dir)
-    logger.info("Permission mode: %s", claude_config.permission_mode)
+    controller: AgentController
+    if agent_kind == "codex":
+        codex_config = CodexConfig.from_env()
+        logger.info("Agent: codex")
+        logger.info("Codex work dir: %s", codex_config.work_dir)
+        logger.info("Codex sandbox: %s", codex_config.sandbox)
+        logger.info("Codex approval: %s", codex_config.approval)
+        logger.info("Codex timeout: %s seconds", codex_config.timeout_seconds)
+        controller = CodexController(codex_config)
+    else:
+        claude_config = ClaudeConfig.from_env()
+        logger.info("Agent: claude")
+        logger.info("Claude work dir: %s", claude_config.work_dir)
+        logger.info("Permission mode: %s", claude_config.permission_mode)
+        logger.info("Claude timeout: %s seconds", claude_config.timeout_seconds)
+        controller = ClaudeController(claude_config)
+
     logger.info("Session TTL: %s hours", bridge_config.session_ttl_hours)
-    logger.info("Claude timeout: %s seconds", claude_config.timeout_seconds)
     logger.info("Max concurrent sessions: %s", bridge_config.max_concurrent_sessions)
 
     session_manager = SessionManager(
         bridge_config.session_store_path, bridge_config.session_ttl_hours
     )
-    controller = ClaudeController(claude_config)
     bridge = Bridge(
         session_manager,
         controller,
@@ -106,11 +125,14 @@ async def main() -> None:
                     else 0
                 )
                 for sid in purged_ids:
+                    cleanup = getattr(controller, "cleanup_session", None)
+                    if cleanup is None:
+                        continue
                     try:
-                        await controller.cleanup_session(sid)
+                        await cleanup(sid)
                     except Exception:
                         logger.exception(
-                            "Worktree cleanup failed for session %s", sid
+                            "Agent session cleanup failed for session %s", sid
                         )
                 if purged_ids or stale:
                     logger.info(

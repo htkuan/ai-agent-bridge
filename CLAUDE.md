@@ -88,10 +88,15 @@ src/agent_bridge/
 ├── session.py           # SessionManager (key → UUID, TTL, JSON persistence)
 ├── protocols.py         # AgentController + PlatformAdapter protocol interfaces
 ├── agents/
-│   └── claude/
-│       ├── config.py    # ClaudeConfig (work_dir, permission_mode, timeout)
-│       ├── controller.py # Subprocess spawner, stream reader, timeout handling
-│       └── events.py    # Claude stream-json parser → BridgeEvent converter
+│   ├── claude/
+│   │   ├── config.py    # ClaudeConfig (work_dir, permission_mode, timeout)
+│   │   ├── controller.py # Subprocess spawner, stream reader, timeout handling
+│   │   └── events.py    # Claude stream-json parser → BridgeEvent converter
+│   └── codex/
+│       ├── config.py    # CodexConfig (work_dir, sandbox, approval, ...)
+│       ├── controller.py # Subprocess spawner; injects prompt via stdin
+│       ├── events.py    # Codex --json (NDJSON) parser → BridgeEvent converter
+│       └── thread_map.py # Persistent bridge_session_id → codex thread_id map
 └── platforms/
     └── slack/
         ├── config.py    # SlackConfig (bot_token, app_token)
@@ -188,6 +193,7 @@ All config loads from `.env` via python-dotenv. See `.env.example` for the full 
 
 | Variable | Required | Default | Component |
 |----------|----------|---------|-----------|
+| `AGENT_BRIDGE_AGENT` | No | `claude` | Selects agent backend (`claude` or `codex`) |
 | `ANTHROPIC_API_KEY` | No | — | Claude CLI (only if not already authenticated via `claude login`) |
 | `AGENT_BRIDGE_SLACK_BOT_TOKEN` | Yes (if using Slack) | — | Slack |
 | `AGENT_BRIDGE_SLACK_APP_TOKEN` | Yes (if using Slack) | — | Slack |
@@ -196,6 +202,14 @@ All config loads from `.env` via python-dotenv. See `.env.example` for the full 
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Claude |
 | `AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED` | No | `false` | Claude |
 | `AGENT_BRIDGE_CLAUDE_EFFORT` | No | `xhigh` | Claude (one of `low`, `medium`, `high`, `xhigh`, `max`) |
+| `AGENT_BRIDGE_CODEX_WORK_DIR` | No | `.` | Codex |
+| `AGENT_BRIDGE_CODEX_SANDBOX` | No | `workspace-write` | Codex (`read-only`, `workspace-write`, `danger-full-access`) |
+| `AGENT_BRIDGE_CODEX_APPROVAL` | No | `never` | Codex (`untrusted`, `on-request`, `never`) |
+| `AGENT_BRIDGE_CODEX_MODEL` | No | — | Codex (empty = CLI default) |
+| `AGENT_BRIDGE_CODEX_TIMEOUT_SECONDS` | No | `600` | Codex |
+| `AGENT_BRIDGE_CODEX_THREAD_MAP_PATH` | No | `./codex_threads.json` | Codex |
+| `AGENT_BRIDGE_CODEX_SKIP_GIT_REPO_CHECK` | No | `true` | Codex |
+| `AGENT_BRIDGE_CODEX_EXTRA_CONFIG` | No | — | Codex (comma-separated `-c key=value` overrides) |
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Bridge |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Bridge |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Bridge |

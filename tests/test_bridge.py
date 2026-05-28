@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from agent_bridge.bridge import Bridge
+from agent_bridge.dedupe import PromptDedupeCache
 from agent_bridge.events import (
     BridgeEvent,
     Completion,
@@ -258,3 +259,166 @@ async def test_exceeding_max_concurrent_rejects_extra(session_mgr):
 
 async def _collect(aiter) -> list:
     return [e async for e in aiter]
+
+
+# --- Dedupe ---
+
+
+@pytest.mark.asyncio
+async def test_dedupe_disabled_when_cache_is_none(session_mgr):
+    """No dedupe instance → identical prompts run twice (legacy behaviour)."""
+    controller = FakeController()
+    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=None)
+
+    async for _ in bridge.handle_message("slack:C1:t1", "alert"):
+        pass
+    async for _ in bridge.handle_message("slack:C1:t2", "alert"):
+        pass
+
+    assert controller.calls == ["alert", "alert"]
+
+
+@pytest.mark.asyncio
+async def test_dedupe_in_flight_skips_controller(session_mgr):
+    """Second identical prompt while the first is running short-circuits."""
+    controller = FakeController(delay=0.2)
+    cache = PromptDedupeCache(ttl_seconds=60.0)
+    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
+
+    task1 = asyncio.create_task(
+        _collect(
+            bridge.handle_message(
+                "slack:C1:t1",
+                "alert",
+                context={"thread_permalink": "https://w.slack.com/A/p1"},
+            )
+        )
+    )
+    await asyncio.sleep(0.05)  # let task1 enter the controller
+
+    events2 = [
+        e
+        async for e in bridge.handle_message(
+            "slack:C1:t2",
+            "alert",
+            context={"thread_permalink": "https://w.slack.com/A/p2"},
+        )
+    ]
+    assert len(events2) == 1
+    assert isinstance(events2[0], Completion)
+    assert events2[0].metadata["dedupe"] == "in_flight"
+    assert "https://w.slack.com/A/p1" in events2[0].text
+
+    await task1
+    assert controller.calls == ["alert"]  # only the first call actually ran
+
+
+@pytest.mark.asyncio
+async def test_dedupe_recent_hit_after_completion(session_mgr):
+    """After the first run completes, a third identical prompt still hits cache."""
+    controller = FakeController()
+    cache = PromptDedupeCache(ttl_seconds=60.0)
+    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
+
+    async for _ in bridge.handle_message(
+        "slack:C1:t1", "alert", context={"thread_permalink": "https://link"}
+    ):
+        pass
+
+    events2 = [
+        e async for e in bridge.handle_message("slack:C1:t2", "alert")
+    ]
+    assert len(events2) == 1
+    assert events2[0].metadata["dedupe"] == "recent_hit"
+    assert "https://link" in events2[0].text
+    assert controller.calls == ["alert"]
+
+
+@pytest.mark.asyncio
+async def test_dedupe_different_scope_does_not_collide(session_mgr):
+    """Same prompt in different channels → both run (channel-scoped)."""
+    controller = FakeController()
+    cache = PromptDedupeCache(ttl_seconds=60.0)
+    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
+
+    async for _ in bridge.handle_message("slack:C1:t1", "alert"):
+        pass
+    async for _ in bridge.handle_message("slack:C2:t1", "alert"):
+        pass
+
+    assert controller.calls == ["alert", "alert"]
+
+
+@pytest.mark.asyncio
+async def test_dedupe_normalizes_sender_tag_prefix(session_mgr):
+    """Same alert under different Slack display names still collides."""
+    controller = FakeController()
+    cache = PromptDedupeCache(ttl_seconds=60.0)
+    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
+
+    async for _ in bridge.handle_message(
+        "slack:C1:t1", "[Sentry (U1)]: [caac-web] Error: X"
+    ):
+        pass
+    events2 = [
+        e
+        async for e in bridge.handle_message(
+            "slack:C1:t2", "[Sentry Bot (U1)]: [caac-web] Error: X"
+        )
+    ]
+    assert len(events2) == 1
+    assert events2[0].metadata["dedupe"] == "recent_hit"
+    assert controller.calls[0].startswith("[Sentry")
+
+
+@pytest.mark.asyncio
+async def test_dedupe_controller_exception_releases_cache_slot(session_mgr):
+    """Controller crash must not block the next retry for the full TTL."""
+
+    class FlakyController:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def run(self, session_id, prompt, is_new, context=None, system_prompt=None):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("boom")
+                yield  # noqa: RET503 — async generator marker
+            yield Completion(text="recovered")
+
+    controller = FlakyController()
+    cache = PromptDedupeCache(ttl_seconds=60.0)
+    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        async for _ in bridge.handle_message("slack:C1:t1", "alert"):
+            pass
+
+    # Retry must reach the controller, not be blocked by a stale cache entry.
+    events = [e async for e in bridge.handle_message("slack:C1:t2", "alert")]
+    assert any(isinstance(e, Completion) and e.text == "recovered" for e in events)
+    assert controller.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_dedupe_capacity_full_releases_cache_slot(session_mgr):
+    """If the bridge rejects on capacity, the dedupe entry must be cleared too."""
+    controller = FakeController(delay=0.3)
+    cache = PromptDedupeCache(ttl_seconds=60.0)
+    bridge = Bridge(session_mgr, controller, max_concurrent=1, dedupe=cache)
+
+    occupier = asyncio.create_task(
+        _collect(bridge.handle_message("slack:C1:t1", "first"))
+    )
+    await asyncio.sleep(0.05)
+
+    # Second message is on a different prompt and different channel — gets
+    # rejected by capacity gate. Cache entry must be freed so a retry works.
+    events = [e async for e in bridge.handle_message("slack:C2:t1", "second")]
+    assert events[0].metadata["error_code"] == "capacity_full"
+
+    await occupier
+    # Now capacity is free — retry should NOT be dedupe-blocked.
+    events2 = [e async for e in bridge.handle_message("slack:C2:t2", "second")]
+    assert any(isinstance(e, Completion) and not e.is_error for e in events2)
+    assert "second" in controller.calls

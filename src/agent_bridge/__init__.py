@@ -13,6 +13,7 @@ from agent_bridge.agents.claude.config import ClaudeConfig  # noqa: E402
 from agent_bridge.agents.claude.controller import ClaudeController  # noqa: E402
 from agent_bridge.bridge import Bridge  # noqa: E402
 from agent_bridge.config import BridgeConfig  # noqa: E402
+from agent_bridge.dedupe import PromptDedupeCache  # noqa: E402
 from agent_bridge.platforms.heartbeat.adapter import HeartbeatAdapter  # noqa: E402
 from agent_bridge.platforms.heartbeat.config import HeartbeatConfig  # noqa: E402
 from agent_bridge.platforms.slack.adapter import SlackAdapter  # noqa: E402
@@ -44,10 +45,22 @@ async def main() -> None:
         bridge_config.session_store_path, bridge_config.session_ttl_hours
     )
     controller = ClaudeController(claude_config)
+    dedupe: PromptDedupeCache | None = None
+    if bridge_config.dedupe_ttl_seconds > 0:
+        dedupe = PromptDedupeCache(
+            ttl_seconds=bridge_config.dedupe_ttl_seconds,
+            max_entries=bridge_config.dedupe_max_entries,
+        )
+        logger.info(
+            "Prompt dedupe enabled (ttl=%.0fs, max_entries=%d)",
+            bridge_config.dedupe_ttl_seconds,
+            bridge_config.dedupe_max_entries,
+        )
     bridge = Bridge(
         session_manager,
         controller,
         max_concurrent=bridge_config.max_concurrent_sessions,
+        dedupe=dedupe,
     )
 
     # --- Adapters: each independently optional ---

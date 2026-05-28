@@ -85,6 +85,7 @@ class SlackInfoCache:
 
     def __init__(self) -> None:
         self.workspace: str | None = None
+        self.domain: str | None = None
         self.channels: dict[str, str] = {}
         self.users: dict[str, str] = {}
 
@@ -94,6 +95,8 @@ class SlackInfoCache:
             try:
                 team_info = await client.team_info()
                 self.workspace = team_info["team"].get("name", "")
+                # Subdomain used to construct permalinks without an extra API call.
+                self.domain = team_info["team"].get("domain", "")
             except SlackApiError as e:
                 logger.warning("Failed to resolve workspace name: %s", e.response["error"])
 
@@ -205,7 +208,19 @@ class SlackAdapter:
         }
         if self._bot_user_id:
             ctx["bot_user_id"] = self._bot_user_id
+        permalink = self._build_permalink(channel, thread_ts)
+        if permalink:
+            ctx["thread_permalink"] = permalink
         return ctx
+
+    def _build_permalink(self, channel: str, ts: str) -> str | None:
+        # Slack permalink format: https://<domain>.slack.com/archives/<channel>/p<ts_without_dot>
+        # Cheaper than calling chat.getPermalink for every incoming message.
+        domain = self._name_cache.domain
+        if not domain or not ts:
+            return None
+        ts_part = ts.replace(".", "")
+        return f"https://{domain}.slack.com/archives/{channel}/p{ts_part}"
 
     @staticmethod
     def _tag_prompt(text: str, context: dict[str, str]) -> str:

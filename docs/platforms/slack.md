@@ -62,6 +62,10 @@ AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_MESSAGE=Bot is online :white_check_mark:
 
 Both must be set for the notification to fire. Useful for deploy pipelines that need confirmation the bot is actually alive and connected.
 
+### Cross-Session Prompt Dedupe
+
+Dedupe lives in the Bridge, not the Slack adapter — see the project root [CLAUDE.md](../../CLAUDE.md) env vars table for `AGENT_BRIDGE_DEDUPE_TTL_SECONDS` and `AGENT_BRIDGE_DEDUPE_MAX_ENTRIES`. The adapter's only Slack-specific contribution is `thread_permalink` in the context dict (constructed locally from the cached team `domain`; no extra `chat.getPermalink` API call). When a duplicate fires in a different thread, the bridge yields a `Completion` whose text contains a clickable link back to the original investigation thread.
+
 ## Session Semantics
 
 **One Slack thread = one agent session.**
@@ -215,6 +219,7 @@ The adapter resolves display names for Slack entities and uses them to build the
 | `user_id` | Event payload | Slack user ID |
 | `user_name` | `users_info()` API | Display name or real name |
 | `bot_user_id` | `auth.test()` API at startup | The bot's own Slack user ID — surfaced as `Your Slack mention: <@U…>` so the agent can detect when users @-mention it |
+| `thread_permalink` | Constructed from cached team `domain` + `channel` + `thread_ts` | Stable URL to the originating Slack thread. Consumed by the bridge dedupe cache so a duplicate alert can point back to the existing investigation. |
 
 All resolutions are cached by `SlackInfoCache` to avoid repeated API calls. The bot user ID is fetched once during `start()` and reused for every request. The bot's display name is intentionally not surfaced — the Slack app's name and the AI agent's persona are independent concerns.
 

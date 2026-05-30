@@ -14,6 +14,12 @@ class BridgeConfig:
     session_store_path: Path = field(default_factory=lambda: Path("./sessions.json"))
     session_ttl_hours: float = 72.0
     max_concurrent_sessions: int = 10
+    # Cross-session prompt dedupe. 0 disables the feature entirely.
+    dedupe_ttl_seconds: float = 0.0
+    dedupe_max_entries: int = 512
+    # SimHash Hamming-distance threshold. 0 ⇒ exact canonical match only.
+    # Positive values enable fuzzy match (typical range 3–10).
+    dedupe_simhash_threshold: int = 0
 
     @classmethod
     def from_env(cls) -> BridgeConfig:
@@ -27,6 +33,15 @@ class BridgeConfig:
             max_concurrent_sessions=int(
                 os.environ.get("AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS", "5")
             ),
+            dedupe_ttl_seconds=float(
+                os.environ.get("AGENT_BRIDGE_DEDUPE_TTL_SECONDS", "0")
+            ),
+            dedupe_max_entries=int(
+                os.environ.get("AGENT_BRIDGE_DEDUPE_MAX_ENTRIES", "512")
+            ),
+            dedupe_simhash_threshold=int(
+                os.environ.get("AGENT_BRIDGE_DEDUPE_SIMHASH_THRESHOLD", "0")
+            ),
         )
         config._validate()
         return config
@@ -39,4 +54,19 @@ class BridgeConfig:
         if self.max_concurrent_sessions <= 0:
             raise ValueError(
                 f"AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS must be positive, got {self.max_concurrent_sessions}"
+            )
+        if self.dedupe_ttl_seconds < 0:
+            raise ValueError(
+                "AGENT_BRIDGE_DEDUPE_TTL_SECONDS must be >= 0 "
+                f"(0 disables the feature), got {self.dedupe_ttl_seconds}"
+            )
+        if self.dedupe_max_entries <= 0:
+            raise ValueError(
+                "AGENT_BRIDGE_DEDUPE_MAX_ENTRIES must be positive, "
+                f"got {self.dedupe_max_entries}"
+            )
+        if self.dedupe_simhash_threshold < 0:
+            raise ValueError(
+                "AGENT_BRIDGE_DEDUPE_SIMHASH_THRESHOLD must be >= 0 "
+                f"(0 disables fuzzy match), got {self.dedupe_simhash_threshold}"
             )

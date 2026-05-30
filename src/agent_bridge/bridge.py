@@ -124,6 +124,10 @@ class Bridge:
         await self._sem.acquire()
         yield Processing()
 
+        # Track the last Completion's is_error so we can release the dedupe slot
+        # when the run failed — otherwise a transient controller error would
+        # lock out retries for the full TTL.
+        last_completion_error = False
         try:
             async for event in self._controller.run(
                 session_id,
@@ -132,9 +136,11 @@ class Bridge:
                 context=context,
                 system_prompt=system_prompt,
             ):
+                if isinstance(event, Completion):
+                    last_completion_error = event.is_error
                 yield event
         except BaseException:
-            # Controller blew up — release the dedupe entry so retries aren't
+            # Controller raised — release the dedupe entry so retries aren't
             # blocked. Re-raise after cleanup.
             if dedupe_on and dedupe_canonical is not None:
                 assert self._dedupe is not None and dedupe_scope is not None
@@ -143,6 +149,13 @@ class Bridge:
         else:
             if dedupe_on and dedupe_canonical is not None:
                 assert self._dedupe is not None and dedupe_scope is not None
-                self._dedupe.mark_completed(dedupe_scope, dedupe_canonical)
+                if last_completion_error:
+                    # Controller reported failure (timeout, non-zero exit,
+                    # API error, …). Drop the cache entry so the same alert
+                    # can be retried instead of getting a "recent_hit" pointer
+                    # back to the failed run.
+                    self._dedupe.mark_failed(dedupe_scope, dedupe_canonical)
+                else:
+                    self._dedupe.mark_completed(dedupe_scope, dedupe_canonical)
         finally:
             self._sem.release()

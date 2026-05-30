@@ -395,6 +395,39 @@ async def test_dedupe_skipped_for_non_resumable(session_mgr):
 
 
 @pytest.mark.asyncio
+async def test_dedupe_controller_is_error_releases_cache_slot(session_mgr):
+    """A Completion(is_error=True) yield must free the dedupe slot for retry.
+
+    Most real-world controller failures (timeout, non-zero exit, API error)
+    are reported as is_error=True rather than raising — they must not lock
+    out retries the same way a clean success would.
+    """
+
+    class ErroringController:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def run(self, session_id, prompt, is_new, context=None, system_prompt=None):
+            self.calls += 1
+            if self.calls == 1:
+                yield Completion(text="timeout", is_error=True)
+                return
+            yield Completion(text="ok")
+
+    controller = ErroringController()
+    cache = PromptDedupeCache(ttl_seconds=60.0)
+    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
+
+    events1 = [e async for e in bridge.handle_message("slack:C1:t1", "alert")]
+    assert any(isinstance(e, Completion) and e.is_error for e in events1)
+
+    # Retry must reach the controller — the failed first run is not held in cache.
+    events2 = [e async for e in bridge.handle_message("slack:C1:t2", "alert")]
+    assert any(isinstance(e, Completion) and not e.is_error and e.text == "ok" for e in events2)
+    assert controller.calls == 2
+
+
+@pytest.mark.asyncio
 async def test_dedupe_controller_exception_releases_cache_slot(session_mgr):
     """Controller crash must not block the next retry for the full TTL."""
 

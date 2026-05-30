@@ -169,10 +169,11 @@ Both states include `metadata["first_session_key"]`, which the platform adapter 
 | Trigger | Action |
 |---------|--------|
 | Controller raises | `mark_failed` — entry removed before re-raise |
+| Controller yields `Completion(is_error=True)` | `mark_failed` — entry removed (most real failures take this path: timeout, non-zero exit, API error) |
 | Capacity-full rejection | `mark_failed` — entry removed before yielding the error |
 | Successful run | `mark_completed` — entry stays in the cache until TTL |
 
-Without this, an alerter retrying after a single transient failure could be locked out for the full TTL.
+Without this, an alerter retrying after a single transient failure could be locked out for the full TTL with a pointer back to the failed run.
 
 ### Storage and eviction
 
@@ -210,7 +211,7 @@ The Bridge never invents `TextDelta`/`StatusUpdate`/`UserQuestion` itself — th
 |--------------|------------------|
 | `SessionManager` disk-write error | Raises `OSError` from `get_or_create` — propagates up to the platform adapter, which should log and surface to the user |
 | Controller raises | Semaphore released, dedupe entry cleared, exception re-raised (the adapter's `try` block typically catches and posts an error message) |
-| Controller yields `Completion(is_error=True)` | Forwarded as a normal event; dedupe entry is *kept* (the run completed, just unsuccessfully — duplicates within TTL still get the cached pointer) |
+| Controller yields `Completion(is_error=True)` | Forwarded as a normal event; dedupe entry is *cleared* so retries can re-run (most controller failures take this path — timeout, non-zero exit, API error) |
 | Capacity full | Single error `Completion`, no Semaphore acquired, dedupe slot freed |
 
 The semaphore release is in a `finally` block so it runs whether the controller succeeded, raised, or was cancelled.

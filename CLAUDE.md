@@ -199,6 +199,9 @@ All config loads from `.env` via python-dotenv. See `.env.example` for the full 
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Bridge |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Bridge |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Bridge |
+| `AGENT_BRIDGE_DEDUPE_TTL_SECONDS` | No | `0` | Bridge (cross-session prompt dedupe; 0 disables) |
+| `AGENT_BRIDGE_DEDUPE_MAX_ENTRIES` | No | `512` | Bridge (dedupe LRU cap) |
+| `AGENT_BRIDGE_DEDUPE_SIMHASH_THRESHOLD` | No | `0` | Bridge (Hamming threshold for fuzzy match; 0 = exact canonical only) |
 | `AGENT_BRIDGE_HEARTBEAT_ENABLED` | No | `false` | Heartbeat |
 | `AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES` | Yes (if heartbeat enabled) | — | Heartbeat |
 | `AGENT_BRIDGE_HEARTBEAT_PROMPT` | Yes (if heartbeat enabled) | — | Heartbeat |

@@ -51,8 +51,11 @@ class ClaudeController:
         stderr_task = asyncio.create_task(self._drain_stderr(process))
 
         timed_out = False
+        result_seen = False
         try:
             async for event in self._read_stream_with_timeout(process, timeout):
+                if isinstance(event, Completion):
+                    result_seen = True
                 yield event
         except asyncio.TimeoutError:
             timed_out = True
@@ -62,21 +65,27 @@ class ClaudeController:
                 is_error=True,
             )
         finally:
-            if process.returncode is None:
-                self._kill_process_tree(process, graceful=True)
-                try:
-                    await asyncio.wait_for(process.wait(), timeout=5.0)
-                except asyncio.TimeoutError:
-                    self._kill_process_tree(process, graceful=False)
-                    await process.wait()
-            else:
-                # Main process exited but children may still be running
-                self._kill_process_tree(process, graceful=True)
+            # Kill the whole process group up front. An orphaned grandchild
+            # (e.g. a nested `claude -p` backgrounded by a skill) inherits the
+            # stdout/stderr pipes and keeps them open, which would wedge both
+            # process.wait() and the stderr drain on the still-open pipes.
+            self._kill_process_tree(process, graceful=True)
+            try:
+                await asyncio.wait_for(process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                self._kill_process_tree(process, graceful=False)
+                await process.wait()
 
-            stderr_text = await stderr_task
+            try:
+                stderr_text = await asyncio.wait_for(stderr_task, timeout=5.0)
+            except asyncio.TimeoutError:
+                stderr_task.cancel()
+                stderr_text = ""
             return_code = process.returncode
 
-            if not timed_out and return_code and return_code != 0:
+            # Once a result was streamed, the task succeeded — a non-zero exit
+            # code is just our own group teardown (signal), not a failure.
+            if not timed_out and not result_seen and return_code and return_code != 0:
                 if stderr_text:
                     logger.error("Claude stderr: %s", stderr_text[:500])
                 yield Completion(
@@ -152,6 +161,11 @@ class ClaudeController:
                     yield bridge_event
                 else:
                     logger.debug("Filtered out (internal): %s", type(claude_event).__name__)
+                if isinstance(claude_event, ResultEvent):
+                    # `result` is the terminal line; stop reading instead of
+                    # blocking on EOF, which may never arrive if a backgrounded
+                    # grandchild still holds the inherited stdout pipe open.
+                    return
 
     @staticmethod
     def _kill_process_tree(

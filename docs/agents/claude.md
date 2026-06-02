@@ -165,15 +165,25 @@ A single Claude `assistant` message can contain multiple content blocks (e.g., t
 
 ```
 1. asyncio.create_subprocess_exec() — spawn claude process in its own process group
-2. Read stdout line-by-line (with overall timeout)
+2. Read stdout line-by-line (with overall timeout), stopping at the terminal `result` line
 3. Background task drains stderr (prevents pipe buffer deadlock)
-4. On completion: collect return code + stderr
+4. On completion: SIGTERM entire process group up front, then collect return code + stderr
 5. On timeout/cleanup: SIGTERM entire process group → wait 5s → SIGKILL entire group
 ```
+
+### Stream termination: break on `result`, not EOF
+
+`claude -p --output-format stream-json` emits exactly one terminal `{"type":"result", …}` line and then exits. The read loop **breaks on that `result` line** rather than waiting for stdout EOF.
+
+This matters when a task leaves a **backgrounded grandchild** alive — e.g. a nested `claude -p` or an `until …` poll loop spawned by a skill. The grandchild inherits the bridge↔claude stdout pipe and keeps its write-end open after the main `claude` process has produced its answer and exited. EOF on the pipe only arrives once **all** write-ends close, so a loop that waited for EOF (and `process.wait()`, which also blocks on the open pipes) would hang until the overall timeout fired — pinning a global concurrency slot for the full timeout window and surfacing a spurious "timed out" error for a task that actually succeeded.
+
+Breaking on `result` loses nothing (it is always the last meaningful line) and frees the slot immediately.
 
 ### Process group cleanup
 
 The subprocess is spawned with `start_new_session=True`, which places it in a dedicated process group. On cleanup, `os.killpg()` sends the signal to the **entire group** — the main `claude` process and all its children (language servers, subprocesses, etc.). This prevents orphan child processes from surviving after the bridge terminates a session.
+
+Because an orphaned grandchild can otherwise wedge both `process.wait()` and the stderr drain on the still-open pipes, the group is killed **up front** in the `finally` block (SIGTERM → wait 5s → SIGKILL) before awaiting the process or stderr. The stderr drain is itself bounded by a short timeout as a backstop.
 
 ### Buffer size
 
@@ -190,8 +200,10 @@ The stdout line buffer is set to **10 MB** (default is 64 KB). Claude Code can p
 
 | Scenario | Result |
 |----------|--------|
-| Process timeout | Error `Completion` with timeout message, process killed |
-| Non-zero exit code | Error `Completion` with exit code, stderr logged |
+| Process timeout (no output) | Error `Completion` with timeout message, process killed |
+| Non-zero exit code *before* a `result` was seen | Error `Completion` with exit code, stderr logged |
+| Non-zero exit code *after* a `result` was seen | Suppressed — the task succeeded; the signal exit is just our own group teardown |
+| `result` with `is_error=true` | Single error `Completion` (the post-result exit code is suppressed, so no duplicate) |
 | Invalid JSON line | Warning logged, line skipped |
 | Pipe buffer overflow | Prevented by 10 MB buffer setting |
 

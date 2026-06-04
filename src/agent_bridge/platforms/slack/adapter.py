@@ -24,7 +24,7 @@ from agent_bridge.events import (
     TextDelta,
     UserQuestion,
 )
-from agent_bridge.platforms.slack.config import SlackConfig
+from agent_bridge.platforms.slack.config import SlackConfig, _normalize_channel
 from agent_bridge.session import SessionManager
 
 logger = logging.getLogger(__name__)
@@ -88,15 +88,11 @@ class SlackInfoCache:
         self.channels: dict[str, str] = {}
         self.users: dict[str, str] = {}
 
-    async def resolve(self, channel: str, user_id: str, client) -> tuple[str, str, str]:
-        """Return (workspace_name, channel_name, user_name), fetching only on cache miss."""
-        if self.workspace is None:
-            try:
-                team_info = await client.team_info()
-                self.workspace = team_info["team"].get("name", "")
-            except SlackApiError as e:
-                logger.warning("Failed to resolve workspace name: %s", e.response["error"])
+    async def resolve_channel(self, channel: str, client) -> str:
+        """Return the channel name, fetching only on cache miss.
 
+        DMs/group-DMs have no name; falls back to the channel id.
+        """
         if channel not in self.channels:
             try:
                 conv_info = await client.conversations_info(channel=channel)
@@ -108,6 +104,18 @@ class SlackInfoCache:
                     e.response["error"],
                 )
                 self.channels[channel] = channel
+        return self.channels[channel]
+
+    async def resolve(self, channel: str, user_id: str, client) -> tuple[str, str, str]:
+        """Return (workspace_name, channel_name, user_name), fetching only on cache miss."""
+        if self.workspace is None:
+            try:
+                team_info = await client.team_info()
+                self.workspace = team_info["team"].get("name", "")
+            except SlackApiError as e:
+                logger.warning("Failed to resolve workspace name: %s", e.response["error"])
+
+        channel_name = await self.resolve_channel(channel, client)
 
         if user_id not in self.users:
             try:
@@ -124,7 +132,7 @@ class SlackInfoCache:
                 )
                 self.users[user_id] = user_id
 
-        return (self.workspace or "", self.channels[channel], self.users[user_id])
+        return (self.workspace or "", channel_name, self.users[user_id])
 
 
 class SlackAdapter:
@@ -188,6 +196,17 @@ class SlackAdapter:
                 return
             await self._process_message(event, say, client)
 
+    async def _channel_allowed(self, channel: str, client) -> bool:
+        """Gate by the configured channel allow-list.
+
+        Empty allow-list = allow everything. Otherwise only channels whose
+        resolved name matches reach the agent; DMs (no name) never match.
+        """
+        if not self._config.allow_channels:
+            return True
+        channel_name = await self._name_cache.resolve_channel(channel, client)
+        return _normalize_channel(channel_name) in self._config.allow_channels
+
     async def _resolve_context(
         self, channel: str, user_id: str, thread_ts: str, client
     ) -> dict[str, str]:
@@ -244,6 +263,15 @@ class SlackAdapter:
         user_id = event.get("user", "")
         text = event.get("text", "")
         thread_ts = event.get("thread_ts") or event.get("ts", "")
+
+        # Gate 0: channel allow-list. Reply with a fixed notice, then stop.
+        if not await self._channel_allowed(channel, client):
+            logger.info("Rejecting message from non-allowed channel %s", channel)
+            await say(
+                text=self._config.channel_not_allowed_message,
+                thread_ts=thread_ts,
+            )
+            return
 
         # Strip bot mention from text (e.g., "<@U12345> do something" → "do something")
         text = re.sub(r"<@[A-Z0-9]+>\s*", "", text).strip()

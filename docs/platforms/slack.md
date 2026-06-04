@@ -62,6 +62,22 @@ AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_MESSAGE=Bot is online :white_check_mark:
 
 Both must be set for the notification to fire. Useful for deploy pipelines that need confirmation the bot is actually alive and connected.
 
+### Optional: Channel Allow-List
+
+Restrict which channels can reach the agent:
+
+```bash
+AGENT_BRIDGE_SLACK_ALLOW_CHANNELS=ops-alerts,team-eng,incidents
+```
+
+- Comma-separated **channel names** (the `#name`, not the `C0123...` ID). Leading `#`, surrounding whitespace, and case are normalized away, so `#Ops-Alerts` and `ops-alerts` match the same channel.
+- **Empty / unset = allow every channel** (backward compatible).
+- When non-empty, only messages from listed channels reach the agent. Anything else gets a reply in-thread (see `AGENT_BRIDGE_SLACK_CHANNEL_NOT_ALLOWED_MESSAGE` below) and is then dropped before any agent work.
+- `AGENT_BRIDGE_SLACK_CHANNEL_NOT_ALLOWED_MESSAGE` overrides that reply text; it defaults to a fixed English notice.
+- **DMs are also gated.** A DM has no channel name (it falls back to the channel ID), so it never matches a name in the list — meaning a non-empty allow-list blocks all DMs. Leave the list empty if you want DMs to keep working.
+
+The gate runs first in `_process_message`, resolving the channel name via the cached `conversations:info` lookup, so it costs at most one API call per distinct channel.
+
 ## Session Semantics
 
 **One Slack thread = one agent session.**

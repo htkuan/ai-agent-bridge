@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import os
 import subprocess
 from pathlib import Path
 
@@ -7,18 +9,20 @@ import pytest
 
 from agent_bridge.agents.claude.config import ClaudeConfig
 from agent_bridge.agents.claude.controller import ClaudeController
+from agent_bridge.events import Completion
 
 
 def _config(
     work_dir: Path,
     worktree_enabled: bool = False,
     effort: str = "xhigh",
+    timeout_seconds: float = 600.0,
 ) -> ClaudeConfig:
     # Bypass _validate so tests don't need a real git repo unless they want one.
     cfg = ClaudeConfig.__new__(ClaudeConfig)
     object.__setattr__(cfg, "work_dir", work_dir)
     object.__setattr__(cfg, "permission_mode", "acceptEdits")
-    object.__setattr__(cfg, "timeout_seconds", 600.0)
+    object.__setattr__(cfg, "timeout_seconds", timeout_seconds)
     object.__setattr__(cfg, "worktree_enabled", worktree_enabled)
     object.__setattr__(cfg, "effort", effort)
     return cfg
@@ -248,3 +252,56 @@ async def test_cleanup_session_removes_clean_worktree(tmp_path: Path):
     await controller.cleanup_session(session_id)
 
     assert not worktree_path.exists()
+
+
+# --- run() stream handling: backgrounded grandchild holding stdout open ---
+
+
+def _fake_claude_with_orphan(bin_dir: Path, pidfile: Path) -> None:
+    """Install a fake `claude` that emits a result line, then leaves a
+    backgrounded child holding the stdout pipe open (mimicking a nested
+    `claude -p` spawned by a skill). Without breaking on `result`, the bridge's
+    readline()/wait() would block until the overall timeout fires.
+    """
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    script = bin_dir / "claude"
+    script.write_text(
+        "#!/bin/sh\n"
+        # Background child inherits stdout; keeps the pipe write-end open.
+        "sleep 30 &\n"
+        f'echo $! > "{pidfile}"\n'
+        '{ echo \'{"type":"result","subtype":"success","session_id":"s1",'
+        '"result":"done","total_cost_usd":0.01,"duration_ms":1000,'
+        '"is_error":false}\'; }\n'
+        "exit 0\n"
+    )
+    script.chmod(0o755)
+
+
+async def test_run_breaks_on_result_despite_orphan_holding_stdout(
+    tmp_path: Path, monkeypatch
+):
+    pidfile = tmp_path / "orphan.pid"
+    bin_dir = tmp_path / "bin"
+    _fake_claude_with_orphan(bin_dir, pidfile)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+    # Small timeout: if the loop waited for EOF it would fail here.
+    controller = ClaudeController(_config(tmp_path, timeout_seconds=5.0))
+
+    start = asyncio.get_event_loop().time()
+    events = [e async for e in controller.run("s1", "hi", is_new=True)]
+    elapsed = asyncio.get_event_loop().time() - start
+
+    # Completed promptly instead of hanging to the 5s timeout.
+    assert elapsed < 3.0
+    completions = [e for e in events if isinstance(e, Completion)]
+    assert len(completions) == 1
+    assert completions[0].is_error is False
+    assert completions[0].text == "done"
+
+    # The orphaned grandchild was reaped along with the process group.
+    orphan_pid = int(pidfile.read_text().strip())
+    await asyncio.sleep(0.2)
+    with pytest.raises(ProcessLookupError):
+        os.kill(orphan_pid, 0)

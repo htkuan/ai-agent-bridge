@@ -63,56 +63,16 @@ BREAKING CHANGE: importers must switch to the new extra name.
 The version-bump commit PSR pushes back to `main` is made with `GITHUB_TOKEN`, which
 does **not** re-trigger workflows, so there is no release loop.
 
-## One-time setup
+## Maintainer setup
 
-These three steps must be done once before automation works.
-
-### 1. Configure PyPI Trusted Publishing
-
-On PyPI → your account → **Publishing** → add a *pending publisher* (works even
-before the project's first upload):
-
-| Field             | Value                          |
-|-------------------|--------------------------------|
-| PyPI Project Name | `ai-agent-bridge`              |
-| Owner             | `htkuan`                       |
-| Repository name   | `ai-agent-bridge`              |
-| Workflow filename | `release.yml`                  |
-| Environment name  | `pypi` (matches the workflow; or leave blank) |
-
-The `deploy` job declares `environment: pypi`, so set the same here or leave it empty.
-
-### 2. Allow the release job to push to `main`
-
-If `main` has branch protection / required PRs, the version-bump commit + tag PSR
-pushes will be **rejected**. Allow it via either:
-
-- **Rulesets / branch protection → bypass list**: add the `github-actions` app (or
-  *"Allow specified actors to bypass required pull requests"*), **or**
-- Give the workflow a fine-grained **PAT** with `contents: write` and pass it as
-  `github_token` instead of `GITHUB_TOKEN`.
-
-### 3. Bootstrap the `0.1.0` baseline
-
-PSR computes the next version relative to the **latest `v*` tag**. There is none yet,
-so the baseline is `0.0.0`. You have two ways to land on `0.1.0` — pick one:
-
-**Option A — let the first CI run cut `0.1.0` (zero manual steps).**
-With no tag, the next push to `main` computes `0.1.0` automatically and publishes it
-(verified locally: `0.0.0` + the historical `feat` commits → minor → `0.1.0`). Simplest,
-but the first `CHANGELOG.md` will summarise all pre-existing commits, some of which
-predate the lowercase convention and may look uneven.
-
-**Option B — set an explicit baseline now (cleaner changelog going forward).**
-Tag the current `main` as `v0.1.0` so "everything so far" is `0.1.0`; the first
-*automated* release is then a clean bump (`0.1.1` / `0.2.0`) from only new,
-convention-conforming commits:
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-uv build && uv publish   # optional: put 0.1.0 itself on PyPI now
-```
+Publishing uses **PyPI Trusted Publishing (OIDC)** — no API tokens are stored. One
+time, a maintainer adds a Trusted Publisher on PyPI for the project (a *pending
+publisher* if the project does not exist yet, otherwise project → Manage →
+Publishing) bound to this repo's `release.yml` workflow and the `pypi` environment.
+Anyone forking and publishing under their own project name does the same for their
+fork. If `main` is ever branch-protected, also allow the release job to push the
+version-bump commit + tag (a bypass for the GitHub Actions actor, or a
+`contents: write` PAT passed as `github_token`).
 
 From here on, every `feat:` / `fix:` merged to `main` releases automatically.
 

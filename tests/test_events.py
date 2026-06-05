@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from agent_bridge.agents.claude.events import (
     AssistantTextEvent,
     InitEvent,
@@ -10,7 +12,7 @@ from agent_bridge.agents.claude.events import (
     parse_stream_line,
     to_bridge_event,
 )
-from agent_bridge.events import Completion, StatusUpdate, TextDelta, UserQuestion
+from agent_bridge.events import Completion, StatusUpdate, TextDelta, Usage, UserQuestion
 
 
 def test_parse_init_event():
@@ -148,6 +150,145 @@ def test_parse_error_result():
     assert isinstance(events[0], ResultEvent)
     assert events[0].is_error is True
     assert events[0].result_text == "Authentication failed"
+
+
+# --- Usage extraction ---
+
+
+def test_parse_result_event_with_usage():
+    line = json.dumps(
+        {
+            "type": "result",
+            "result": "Done!",
+            "total_cost_usd": 0.05,
+            "duration_ms": 3000,
+            "duration_api_ms": 2500,
+            "num_turns": 4,
+            "session_id": "abc-123",
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 200,
+                "cache_read_input_tokens": 300,
+                "cache_creation_input_tokens": 50,
+            },
+        }
+    )
+    ev = parse_stream_line(line)[0]
+    assert isinstance(ev, ResultEvent)
+    assert ev.input_tokens == 100
+    assert ev.output_tokens == 200
+    assert ev.cache_read_tokens == 300
+    assert ev.cache_creation_tokens == 50
+    assert ev.num_turns == 4
+    assert ev.duration_api_ms == 2500
+
+
+def test_parse_result_event_without_usage_defaults_zero():
+    line = json.dumps(
+        {
+            "type": "result",
+            "result": "Done",
+            "total_cost_usd": 0.01,
+            "duration_ms": 100,
+            "session_id": "s",
+        }
+    )
+    ev = parse_stream_line(line)[0]
+    assert ev.input_tokens == 0
+    assert ev.output_tokens == 0
+    assert ev.cache_read_tokens == 0
+    assert ev.num_turns == 0
+
+
+def test_result_to_bridge_carries_usage_metadata():
+    ev = ResultEvent(
+        session_id="s",
+        result_text="Done",
+        cost_usd=0.05,
+        duration_ms=3000,
+        input_tokens=100,
+        output_tokens=200,
+        cache_read_tokens=300,
+        cache_creation_tokens=50,
+        num_turns=4,
+        duration_api_ms=2500,
+    )
+    completion = to_bridge_event(ev)
+    assert isinstance(completion, Completion)
+    assert completion.cost_usd == 0.05
+    usage = completion.metadata["usage"]
+    assert usage["input_tokens"] == 100
+    assert usage["cache_read_tokens"] == 300
+    assert usage["num_turns"] == 4
+    assert usage["duration_api_ms"] == 2500
+
+
+# --- Generic Usage structure ---
+
+
+def test_usage_total_tokens_is_real_total():
+    u = Usage(
+        input_tokens=10, output_tokens=20, cache_read_tokens=30, cache_creation_tokens=40
+    )
+    assert u.total_tokens == 100
+
+
+def test_usage_add_accumulates_every_field():
+    a = Usage(
+        input_tokens=1,
+        output_tokens=2,
+        cache_read_tokens=3,
+        cache_creation_tokens=4,
+        num_turns=1,
+        duration_api_ms=5,
+        duration_ms=6,
+        cost_usd=0.1,
+    )
+    b = Usage(
+        input_tokens=10,
+        output_tokens=20,
+        cache_read_tokens=30,
+        cache_creation_tokens=40,
+        num_turns=2,
+        duration_api_ms=50,
+        duration_ms=60,
+        cost_usd=0.2,
+    )
+    c = a + b
+    assert c.input_tokens == 11
+    assert c.output_tokens == 22
+    assert c.cache_read_tokens == 33
+    assert c.num_turns == 3
+    assert c.duration_ms == 66
+    assert c.cost_usd == pytest.approx(0.3)
+
+
+def test_usage_from_completion_reads_metadata_and_fields():
+    completion = Completion(
+        text="hi",
+        cost_usd=0.05,
+        duration_ms=3000,
+        metadata={
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 200,
+                "cache_read_tokens": 300,
+                "cache_creation_tokens": 50,
+                "num_turns": 4,
+                "duration_api_ms": 2500,
+            }
+        },
+    )
+    u = Usage.from_completion(completion)
+    assert u is not None
+    assert u.input_tokens == 100
+    assert u.cost_usd == 0.05
+    assert u.duration_ms == 3000
+    assert u.duration_api_ms == 2500
+
+
+def test_usage_from_completion_none_when_no_usage():
+    assert Usage.from_completion(Completion(text="hi")) is None
 
 
 def test_parse_empty_line():

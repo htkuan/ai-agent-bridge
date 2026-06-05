@@ -6,7 +6,7 @@ import uuid
 from collections.abc import AsyncIterator
 
 from agent_bridge.dedupe import PromptDedupeCache
-from agent_bridge.events import BridgeEvent, Completion, Processing
+from agent_bridge.events import BridgeEvent, Completion, Processing, Usage
 from agent_bridge.protocols import AgentController
 from agent_bridge.session import SessionManager
 
@@ -26,6 +26,31 @@ class Bridge:
         self._sem = asyncio.Semaphore(max_concurrent)
         # None ⇒ feature off. Preserves pre-dedupe behaviour for tests/dev.
         self._dedupe = dedupe
+        # In-memory per-session usage accumulator. Not persisted — resets on
+        # restart. ``_usage_tracked`` holds the session_ids we have followed
+        # from their first turn (is_new); only those get a trustworthy running
+        # total. Sessions resumed without a tracked start (restart, pre-existing
+        # session) are left out, so ``session_usage`` stays None for them.
+        self._session_usage: dict[str, Usage] = {}
+        self._usage_tracked: set[str] = set()
+
+    def forget_session_usage(self, session_id: str) -> None:
+        """Drop a session's accumulated usage (called on TTL purge)."""
+        self._session_usage.pop(session_id, None)
+        self._usage_tracked.discard(session_id)
+
+    def _attach_usage(self, completion: Completion, session_id: str) -> None:
+        """Set ``usage`` (this turn) and, for tracked sessions, ``session_usage``
+        (running total). Untracked sessions leave ``session_usage`` None.
+        """
+        turn = Usage.from_completion(completion)
+        completion.usage = turn
+        if turn is None or session_id not in self._usage_tracked:
+            return
+        running = self._session_usage.get(session_id)
+        running = turn if running is None else running + turn
+        self._session_usage[session_id] = running
+        completion.session_usage = running
 
     async def handle_message(
         self,
@@ -98,6 +123,12 @@ class Bridge:
         else:
             session_id = str(uuid.uuid4())
             is_new = True
+
+        # Mark sessions we own from the start as usage-trackable. Only these get
+        # a trustworthy session_usage total; non-resumable triggers and resumes
+        # of untracked sessions never accumulate.
+        if resumable and is_new:
+            self._usage_tracked.add(session_id)
         logger.info(
             "Session %s (new=%s, resumable=%s) for key %s — acquiring slot",
             session_id,
@@ -138,6 +169,7 @@ class Bridge:
             ):
                 if isinstance(event, Completion):
                     last_completion_error = event.is_error
+                    self._attach_usage(event, session_id)
                 yield event
         except BaseException:
             # Controller raised — release the dedupe entry so retries aren't

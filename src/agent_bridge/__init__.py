@@ -123,6 +123,7 @@ async def main() -> None:
                     else 0
                 )
                 for sid in purged_ids:
+                    bridge.forget_session_usage(sid)
                     try:
                         await controller.cleanup_session(sid)
                     except Exception:

@@ -7,7 +7,7 @@ Source: `src/agent_bridge/bridge.py`, plus its collaborators:
 | File | Role |
 |------|------|
 | `src/agent_bridge/bridge.py` | The `Bridge` class itself |
-| `src/agent_bridge/events.py` | The five `BridgeEvent` types (`Processing`, `TextDelta`, `StatusUpdate`, `UserQuestion`, `Completion`) |
+| `src/agent_bridge/events.py` | The five `BridgeEvent` types (`Processing`, `TextDelta`, `StatusUpdate`, `UserQuestion`, `Completion`) plus the generic `Usage` report |
 | `src/agent_bridge/session.py` | `SessionManager` — persistent `session_key → session_id` map with TTL |
 | `src/agent_bridge/dedupe.py` | `PromptDedupeCache` — optional cross-session prompt dedupe |
 | `src/agent_bridge/protocols.py` | `AgentController` and `PlatformAdapter` protocols |
@@ -204,6 +204,39 @@ Completion       (final, with cost/duration/error)
 | Capacity full | `text="Too many requests being processed, please try again later."`, `metadata={"error_code": "capacity_full"}`, `is_error=True` |
 
 The Bridge never invents `TextDelta`/`StatusUpdate`/`UserQuestion` itself — those come exclusively from the controller.
+
+## Usage Reporting
+
+The Bridge owns the **generic usage contract** and assembles it from what the agent reports — agents only emit raw values, platforms only render.
+
+### The `Usage` structure
+
+`Usage` (in `events.py`) is the canonical, agent-agnostic usage report. The same shape serves a single turn and an accumulated session total:
+
+| Field | Meaning |
+|-------|---------|
+| `input_tokens` / `output_tokens` | Token counts (exclude cache) |
+| `cache_read_tokens` / `cache_creation_tokens` | Cache token counts |
+| `num_turns` | Agent turns within the invocation |
+| `duration_api_ms` | API-only duration |
+| `duration_ms` / `cost_usd` | Wall-clock duration / cost (mirrors the `Completion` fields) |
+| `total_tokens` (property) | Real total: `input + output + cache_read + cache_creation` |
+
+### How it flows
+
+1. **Agent** parses its native output and writes raw counts into `Completion.metadata["usage"]` using the canonical keys above (it knows its own format; it does not import `Usage`).
+2. **Bridge** calls `Usage.from_completion(...)` on every `Completion` it forwards, pulling token/turn detail from `metadata["usage"]` and cost/duration from the first-class `Completion` fields. The result is set on `Completion.usage`.
+3. **Platform** reads the typed `Completion.usage` and renders it however it likes (Slack appends a footer; heartbeat could log it). Rendering and any on/off toggle live in the platform, not the Bridge.
+
+Bridge-minted completions (dedupe hits, capacity rejections) carry no usage metadata, so their `usage` stays `None`.
+
+### Session accumulation
+
+The Bridge also maintains an **in-memory** per-session running total and sets it on `Completion.session_usage`:
+
+- Claude's `result` event reports only the *current* invocation's usage, so the cumulative total is summed by the Bridge across turns of the same `session_id`.
+- The accumulator is **not persisted** — it resets on restart (`forget_session_usage` also drops a session when its `SessionManager` entry is TTL-purged).
+- A running total is only kept for sessions the Bridge tracked from their **first turn** (`is_new` at creation). For a session resumed without a tracked start — after a restart, or one that pre-existed the feature — `session_usage` is left `None` rather than reporting a misleadingly-low partial total. Non-resumable triggers never accumulate.
 
 ## Error Handling
 

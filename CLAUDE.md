@@ -138,6 +138,15 @@ src/agent_bridge/
 - Async tests run automatically (`asyncio_mode = "auto"`)
 - Test naming: `test_{feature}_{scenario}`
 
+### Commits
+
+- Follow [Conventional Commits](https://www.conventionalcommits.org/) with **lowercase** types: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, `ci:`, `perf:`, `style:`, `build:`, `revert:`. (Not `Feat:`/`Fix:`.)
+- Optional scope in parens, imperative subject, no trailing period: `fix(slack): release dedupe slot on error`.
+- The type drives the automated release: `feat:` → MINOR, `fix:`/`perf:` → PATCH, `feat!:` or a `BREAKING CHANGE:` footer → breaking (MINOR while in 0.x). Other types cut no release.
+- The `commitlint` PR check rejects non-conforming commits. Since PRs merge with merge commits, **each commit on a branch** (not just the PR title) must conform.
+- Optional local guard: `uv run pre-commit install` wires a `commit-msg` hook that runs the same commitlint config before each commit (see `docs/releasing.md`).
+- Releases are automated from these messages — never hand-edit `[project].version`. See `## Releasing` and `docs/releasing.md`.
+
 ### Adding a new platform adapter
 
 1. Create `platforms/{name}/config.py` — config with `from_env()` + `_validate()`
@@ -181,6 +190,14 @@ uv run agent-bridge
 # Run tests
 uv run pytest tests/ -v
 ```
+
+## Releasing
+
+Versioning is automated — **do not hand-edit `[project].version`**. On push to `main`,
+python-semantic-release reads the [Conventional Commits](https://www.conventionalcommits.org/)
+since the last tag (see `### Commits` for the format), bumps the version, tags `vX.Y.Z`,
+writes `CHANGELOG.md`, and publishes to PyPI via OIDC. While in 0.x, breaking changes
+bump the minor (not 1.0.0). Full process + one-time setup: `docs/releasing.md`.
 
 ## Environment variables
 

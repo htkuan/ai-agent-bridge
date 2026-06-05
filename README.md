@@ -147,6 +147,10 @@ uv run pytest tests/ -v
 AGENT_BRIDGE_LOG_LEVEL=DEBUG uv run agent-bridge
 ```
 
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/) (lowercase
+types: `feat:`, `fix:`, ...) and are enforced on PRs. Merging to `main` cuts a release
+automatically — see [docs/releasing.md](docs/releasing.md).
+
 ## License
 
 MIT

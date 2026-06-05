@@ -1,0 +1,28 @@
+name: Lint Commits
+
+# Validates that every commit in a PR follows Conventional Commits
+# (lowercase types: feat / fix / docs / refactor / chore / ...). This keeps
+# the history parseable by python-semantic-release so version bumps are
+# computed correctly. Merge commits are ignored by the linter.
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  commitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the full PR commit range to lint each commit
+
+      - name: Lint commit messages
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: commitlint.config.mjs

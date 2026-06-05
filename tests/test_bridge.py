@@ -503,3 +503,109 @@ async def test_dedupe_hit_logs_dedupe_hit_line(session_mgr, caplog):
     assert "state=recent_hit" in msg
     assert "match=exact" in msg
     assert "first_session=slack:C1:t1" in msg
+
+
+# --- Usage accumulation ---
+
+
+def _usage_meta(**kw):
+    base = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "num_turns": 0,
+        "duration_api_ms": 0,
+    }
+    base.update(kw)
+    return base
+
+
+class UsageController:
+    """Yields one Completion carrying a fixed usage report per call."""
+
+    def __init__(self, cost_usd: float = 0.01) -> None:
+        self.cost_usd = cost_usd
+
+    async def run(
+        self,
+        session_id: str,
+        prompt: str,
+        is_new: bool,
+        context: dict[str, str] | None = None,
+        system_prompt: str | None = None,
+    ) -> AsyncIterator[BridgeEvent]:
+        yield Completion(
+            text="ok",
+            cost_usd=self.cost_usd,
+            duration_ms=100,
+            metadata={"usage": _usage_meta(input_tokens=10, output_tokens=5, num_turns=1)},
+        )
+
+
+async def _completion(bridge, key, text="hi", **kw):
+    return [
+        e
+        async for e in bridge.handle_message(key, text, **kw)
+        if isinstance(e, Completion)
+    ][0]
+
+
+@pytest.mark.asyncio
+async def test_completion_carries_turn_usage(session_mgr):
+    bridge = Bridge(session_mgr, UsageController(cost_usd=0.02), max_concurrent=5)
+    c = await _completion(bridge, "slack:c:t")
+    assert c.usage is not None
+    assert c.usage.input_tokens == 10
+    assert c.usage.cost_usd == 0.02
+    assert c.usage.duration_ms == 100
+
+
+@pytest.mark.asyncio
+async def test_session_usage_accumulates_across_turns(session_mgr):
+    bridge = Bridge(session_mgr, UsageController(cost_usd=0.01), max_concurrent=5)
+
+    c1 = await _completion(bridge, "slack:c:t", "first")
+    assert c1.session_usage is not None
+    assert c1.session_usage.input_tokens == 10
+    assert c1.session_usage.cost_usd == pytest.approx(0.01)
+
+    c2 = await _completion(bridge, "slack:c:t", "second")
+    assert c2.session_usage.input_tokens == 20
+    assert c2.session_usage.num_turns == 2
+    assert c2.session_usage.cost_usd == pytest.approx(0.02)
+    # turn usage stays per-turn, not cumulative
+    assert c2.usage.input_tokens == 10
+
+
+@pytest.mark.asyncio
+async def test_session_usage_none_when_started_mid_session(session_mgr):
+    # Pre-create the session so the bridge resumes it without tracking its start.
+    session_mgr.get_or_create("slack:c:t")
+    bridge = Bridge(session_mgr, UsageController(), max_concurrent=5)
+
+    c = await _completion(bridge, "slack:c:t")
+    assert c.usage is not None  # turn usage still present
+    assert c.session_usage is None  # partial → hidden
+
+
+@pytest.mark.asyncio
+async def test_session_usage_none_for_non_resumable(session_mgr):
+    bridge = Bridge(session_mgr, UsageController(), max_concurrent=5)
+    c = await _completion(bridge, "heartbeat:tick:1", resumable=False)
+    assert c.usage is not None
+    assert c.session_usage is None
+
+
+@pytest.mark.asyncio
+async def test_forget_session_usage_drops_running_total(session_mgr):
+    bridge = Bridge(session_mgr, UsageController(), max_concurrent=5)
+
+    c1 = await _completion(bridge, "slack:c:t")
+    assert c1.session_usage is not None
+
+    sid = session_mgr.get("slack:c:t")
+    bridge.forget_session_usage(sid)
+
+    c2 = await _completion(bridge, "slack:c:t")
+    assert c2.session_usage is None  # accumulator reset → now untracked

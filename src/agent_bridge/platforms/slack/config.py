@@ -12,6 +12,8 @@ DEFAULT_CHANNEL_NOT_ALLOWED_MESSAGE = (
     "Please contact the administrator if you think I should be."
 )
 
+_TRUTHY = {"true", "1", "yes", "on"}
+
 
 @dataclass(frozen=True)
 class SlackConfig:
@@ -24,6 +26,11 @@ class SlackConfig:
     # others (including DMs, which have no name) get channel_not_allowed_message.
     allow_channels: frozenset[str] = frozenset()
     channel_not_allowed_message: str = DEFAULT_CHANNEL_NOT_ALLOWED_MESSAGE
+    # When True, append a usage/cost footer to the final agent reply. The
+    # template (if set) is rendered with {placeholder} substitution; otherwise
+    # a built-in default layout is used.
+    usage_report_enabled: bool = False
+    usage_report_template: str | None = None
 
     @classmethod
     def from_env(cls) -> SlackConfig:
@@ -52,6 +59,14 @@ class SlackConfig:
                 "AGENT_BRIDGE_SLACK_CHANNEL_NOT_ALLOWED_MESSAGE",
                 DEFAULT_CHANNEL_NOT_ALLOWED_MESSAGE,
             ),
+            usage_report_enabled=os.environ.get(
+                "AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED", "false"
+            ).lower()
+            in _TRUTHY,
+            usage_report_template=os.environ.get(
+                "AGENT_BRIDGE_SLACK_USAGE_REPORT_TEMPLATE"
+            )
+            or None,
         )
 
 

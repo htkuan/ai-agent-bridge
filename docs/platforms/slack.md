@@ -78,6 +78,46 @@ AGENT_BRIDGE_SLACK_ALLOW_CHANNELS=ops-alerts,team-eng,incidents
 
 The gate runs first in `_process_message`, resolving the channel name via the cached `conversations:info` lookup, so it costs at most one API call per distinct channel.
 
+### Optional: Usage / Cost Report
+
+Append a usage/cost footer below the final agent reply:
+
+```bash
+AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED=true
+```
+
+- **Unset / false = no footer** (default).
+- The data comes from `Completion.usage` (this turn) and `Completion.session_usage` (the session's running total), which the bridge assembles from the agent's reported usage. See [bridge.md](../bridge.md#usage-reporting) for the generic `Usage` structure and how the session total is accumulated.
+- **The session line only appears when the bridge has tracked the session from its first turn.** After a process restart (the accumulator is in-memory) or for a pre-existing session, `session_usage` is `None` and only the current-turn line is shown — never a misleadingly-low total.
+
+The footer is rendered as an italic Slack footnote beneath a labelled divider (a custom template is wrapped the same way). Default layout:
+
+```
+─────cost─────
+_💰 $0.0123 · 🔢 1234 in / 456 out · 📦 3400 cached · ⏱️ 12.3s_
+_📈 session: $0.0456 · 18700 tokens · 3 turns_
+```
+
+#### Custom template
+
+Override the format with a `{placeholder}` template:
+
+```bash
+AGENT_BRIDGE_SLACK_USAGE_REPORT_TEMPLATE=💵 {cost_usd} | {total_tokens} tokens | {duration_s}s
+```
+
+Unknown placeholders render blank and a malformed template degrades to its raw text (it never breaks the reply). Available placeholders — each also has a `session_`-prefixed variant for the running total (e.g. `{session_cost_usd}`); session placeholders render `0` when the session total isn't tracked:
+
+| Placeholder | Meaning |
+|-------------|---------|
+| `{cost_usd}` | Cost in USD, 4 decimals |
+| `{input_tokens}` / `{output_tokens}` | Token counts (exclude cache) |
+| `{cache_read_tokens}` / `{cache_creation_tokens}` | Cache token counts |
+| `{total_tokens}` | Real total: input + output + cache read + cache creation |
+| `{num_turns}` | Agent turns |
+| `{duration_ms}` / `{duration_s}` | Wall-clock duration |
+| `{duration_api_ms}` | API-only duration |
+
 ## Session Semantics
 
 **One Slack thread = one agent session.**
@@ -197,6 +237,8 @@ Updates the message with the final response text. Error cases:
 | Capacity full (pending drained) | `:x: Your queued message could not be processed — please try again shortly.` |
 | No response | `_No response from agent._` |
 | Response too long (> ~3900 UTF-8 bytes) | Preview (up to 1000 bytes) + note, full content uploaded as `response.md` file snippet; if upload fails, user sees `(response too long; upload failed — please retry)` |
+
+On a successful (non-error) completion, a usage/cost footer is appended when `AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED=true` (see [Usage / Cost Report](#optional-usage--cost-report)).
 
 ## File Attachments
 

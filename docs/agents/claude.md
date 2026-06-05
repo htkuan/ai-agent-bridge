@@ -131,9 +131,24 @@ The Claude CLI outputs one JSON object per line. The event parser (`events.py`) 
 | `assistant` (tool_use) | `StatusUpdate` | `"Using {tool_name}..."` |
 | `assistant` (tool_use: AskUserQuestion) | `UserQuestion` | Special case — carries questions + options |
 | `user` (tool_result) | *filtered* | Tool execution results — internal only |
-| `result` | `Completion` | Final result with cost, duration, error status |
+| `result` | `Completion` | Final result with cost, duration, error status, and token usage |
 
 Key design: **agent-internal events never reach the platform**. Thinking, tool results, and init events are filtered out within this module.
+
+### Usage extraction
+
+The `result` line carries a `usage` object plus `num_turns` / `duration_api_ms`. The parser maps these to the bridge's canonical keys and attaches them to `Completion.metadata["usage"]` — the agent reports raw values; the [Bridge assembles the typed `Usage`](../bridge.md#usage-reporting) and accumulates the session total. `cost_usd` and `duration_ms` stay as first-class `Completion` fields.
+
+| Claude `result` field | Canonical key in `metadata["usage"]` |
+|-----------------------|--------------------------------------|
+| `usage.input_tokens` | `input_tokens` |
+| `usage.output_tokens` | `output_tokens` |
+| `usage.cache_read_input_tokens` | `cache_read_tokens` |
+| `usage.cache_creation_input_tokens` | `cache_creation_tokens` |
+| `num_turns` | `num_turns` |
+| `duration_api_ms` | `duration_api_ms` |
+
+Claude's `result` reports usage for **this invocation only** — the cross-turn session total is computed by the Bridge, not Claude.
 
 ### AskUserQuestion
 

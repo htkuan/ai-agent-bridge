@@ -5,10 +5,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from slack_sdk.errors import SlackApiError
 
+from agent_bridge.events import Completion, Processing, Usage
 from agent_bridge.platforms.slack.adapter import (
     SLACK_MSG_MAX_BYTES,
     SlackAdapter,
 )
+from agent_bridge.platforms.slack.config import SlackConfig
 
 
 def _make_adapter() -> SlackAdapter:
@@ -18,6 +20,29 @@ def _make_adapter() -> SlackAdapter:
     adapter._app.client = MagicMock()
     adapter._app.client.chat_update = AsyncMock()
     adapter._app.client.files_upload_v2 = AsyncMock()
+    return adapter
+
+
+class _FakeBridge:
+    """Yields a fixed event sequence from handle_message()."""
+
+    def __init__(self, events: list) -> None:
+        self._events = events
+
+    def handle_message(self, **_kwargs):
+        async def gen():
+            for e in self._events:
+                yield e
+
+        return gen()
+
+
+def _usage_adapter(events: list, *, enabled: bool = True) -> SlackAdapter:
+    adapter = _make_adapter()
+    adapter._config = SlackConfig(
+        bot_token="x", app_token="y", usage_report_enabled=enabled
+    )
+    adapter._bridge = _FakeBridge(events)
     return adapter
 
 
@@ -107,3 +132,46 @@ async def test_upload_snippet_returns_false_on_error():
     )
     ok = await adapter._upload_snippet("C1", "1.0", "content")
     assert ok is False
+
+
+# --- Usage footer × long-reply upload interaction ---
+
+
+async def test_long_reply_footer_inline_not_in_uploaded_file():
+    """When the body overflows: upload the body alone, show the footer inline."""
+    usage = Usage(input_tokens=10, output_tokens=5, cost_usd=0.0123, duration_ms=12300)
+    body = "A" * (SLACK_MSG_MAX_BYTES + 500)  # exceeds the inline ceiling
+    adapter = _usage_adapter(
+        [Processing(), Completion(text=body, usage=usage, session_usage=usage)]
+    )
+
+    await adapter._stream_response(
+        "C1", "1.0", "slack:C1:1.0", "hi", {}, say=None, existing_message_ts="1.0"
+    )
+
+    # Uploaded file = body only, no footer pollution.
+    upload_content = adapter._app.client.files_upload_v2.await_args.kwargs["content"]
+    assert upload_content == body
+    assert "💰" not in upload_content
+    assert "──" not in upload_content
+
+    # Inline preview (last chat_update) carries the footer.
+    inline = adapter._app.client.chat_update.await_args.kwargs["text"]
+    assert "💰" in inline
+    assert "$0.0123" in inline
+    assert len(inline.encode("utf-8")) <= SLACK_MSG_MAX_BYTES
+
+
+async def test_footer_does_not_push_inline_reply_to_upload():
+    """A body that fits inline must not be forced to a file just by the footer."""
+    usage = Usage(input_tokens=10, output_tokens=5, cost_usd=0.0123, duration_ms=12300)
+    body = "A" * (SLACK_MSG_MAX_BYTES - 50)  # fits alone; body+footer would not
+    adapter = _usage_adapter(
+        [Completion(text=body, usage=usage, session_usage=usage)]
+    )
+
+    await adapter._stream_response(
+        "C1", "1.0", "slack:C1:1.0", "hi", {}, say=None, existing_message_ts="1.0"
+    )
+
+    adapter._app.client.files_upload_v2.assert_not_awaited()

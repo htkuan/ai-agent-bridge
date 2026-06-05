@@ -58,6 +58,12 @@ class ResultEvent:
     cost_usd: float = 0.0
     duration_ms: int = 0
     is_error: bool = False
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    num_turns: int = 0
+    duration_api_ms: int = 0
 
 
 type ClaudeEvent = (
@@ -144,6 +150,9 @@ def parse_stream_line(line: str) -> list[ClaudeEvent]:
         return events
 
     if event_type == "result":
+        # `usage` carries Anthropic-style token counts (input/output exclude
+        # cache, which is reported separately). Map to canonical bridge keys.
+        usage = data.get("usage") or {}
         return [
             ResultEvent(
                 session_id=session_id,
@@ -151,6 +160,12 @@ def parse_stream_line(line: str) -> list[ClaudeEvent]:
                 cost_usd=data.get("total_cost_usd", 0.0),
                 duration_ms=data.get("duration_ms", 0),
                 is_error=data.get("is_error", False),
+                input_tokens=usage.get("input_tokens", 0),
+                output_tokens=usage.get("output_tokens", 0),
+                cache_read_tokens=usage.get("cache_read_input_tokens", 0),
+                cache_creation_tokens=usage.get("cache_creation_input_tokens", 0),
+                num_turns=data.get("num_turns", 0),
+                duration_api_ms=data.get("duration_api_ms", 0),
             )
         ]
 
@@ -173,14 +188,25 @@ def to_bridge_event(event: ClaudeEvent) -> BridgeEvent | None:
             return UserQuestion(questions=questions)
         case ToolUseEvent(tool_name=name):
             return StatusUpdate(status=f"Using {name}...")
-        case ResultEvent(
-            result_text=text,
-            is_error=err,
-            cost_usd=cost,
-            duration_ms=ms,
-        ):
+        case ResultEvent() as result:
+            # Token/turn detail rides in metadata using canonical keys; the
+            # bridge assembles it into a typed Usage. cost/duration stay as
+            # first-class Completion fields.
             return Completion(
-                text=text, is_error=err, cost_usd=cost, duration_ms=ms
+                text=result.result_text,
+                is_error=result.is_error,
+                cost_usd=result.cost_usd,
+                duration_ms=result.duration_ms,
+                metadata={
+                    "usage": {
+                        "input_tokens": result.input_tokens,
+                        "output_tokens": result.output_tokens,
+                        "cache_read_tokens": result.cache_read_tokens,
+                        "cache_creation_tokens": result.cache_creation_tokens,
+                        "num_turns": result.num_turns,
+                        "duration_api_ms": result.duration_api_ms,
+                    }
+                },
             )
         case _:
             return None

@@ -22,6 +22,7 @@ from agent_bridge.events import (
     Processing,
     StatusUpdate,
     TextDelta,
+    Usage,
     UserQuestion,
 )
 from agent_bridge.platforms.slack.config import SlackConfig, _normalize_channel
@@ -57,6 +58,77 @@ def _fit_with_suffix(text: str, max_bytes: int, suffix: str) -> str:
         return text
     budget = max(0, max_bytes - _utf8_len(suffix))
     return _truncate_to_bytes(text, budget) + suffix
+
+
+class _SafeDict(dict):
+    """Leaves unknown {placeholders} blank instead of raising KeyError."""
+
+    def __missing__(self, key: str) -> str:
+        return ""
+
+
+def _usage_fields(usage: Usage, prefix: str = "") -> dict[str, object]:
+    return {
+        f"{prefix}cost_usd": f"{usage.cost_usd:.4f}",
+        f"{prefix}input_tokens": usage.input_tokens,
+        f"{prefix}output_tokens": usage.output_tokens,
+        f"{prefix}cache_read_tokens": usage.cache_read_tokens,
+        f"{prefix}cache_creation_tokens": usage.cache_creation_tokens,
+        f"{prefix}total_tokens": usage.total_tokens,
+        f"{prefix}num_turns": usage.num_turns,
+        f"{prefix}duration_ms": usage.duration_ms,
+        f"{prefix}duration_s": f"{usage.duration_ms / 1000:.1f}",
+        f"{prefix}duration_api_ms": usage.duration_api_ms,
+    }
+
+
+def _render_usage_template(
+    template: str, turn: Usage, session: Usage | None
+) -> str:
+    """Substitute {placeholders} in a user-supplied template. Session fields
+    fall back to zeros when the session total isn't tracked. Malformed
+    templates degrade to the raw string rather than crashing the reply.
+    """
+    values = _usage_fields(turn)
+    values.update(_usage_fields(session or Usage(), "session_"))
+    try:
+        return template.format_map(_SafeDict(values))
+    except (ValueError, IndexError):
+        logger.warning("Invalid AGENT_BRIDGE_SLACK_USAGE_REPORT_TEMPLATE: %r", template)
+        return template
+
+
+def _default_usage_footer(turn: Usage, session: Usage | None) -> str:
+    lines = [
+        f"💰 ${turn.cost_usd:.4f} · "
+        f"🔢 {turn.input_tokens} in / {turn.output_tokens} out · "
+        f"📦 {turn.cache_read_tokens} cached · "
+        f"⏱️ {turn.duration_ms / 1000:.1f}s"
+    ]
+    # Option B: only show the session line when we have a trustworthy total.
+    if session is not None:
+        lines.append(
+            f"📈 session: ${session.cost_usd:.4f} · "
+            f"{session.total_tokens} tokens · "
+            f"{session.num_turns} turns"
+        )
+    return "\n".join(lines)
+
+
+# Slack message text has no real horizontal rule, so fake a labelled one with
+# box-drawing chars — the "cost" label centred in the rule marks everything
+# below it as usage/cost info.
+_USAGE_DIVIDER = "─────cost─────"
+
+
+def _as_footnote(body: str) -> str:
+    """Render text as an italic footnote beneath a labelled divider. Applied to
+    both the default layout and a custom template so the footer reads as a note.
+    """
+    lines = [_USAGE_DIVIDER]
+    for line in body.split("\n"):
+        lines.append(f"_{line}_" if line.strip() else "")
+    return "\n".join(lines)
 
 
 @dataclass
@@ -472,7 +544,12 @@ class SlackAdapter:
                     )
                     pending_user_questions = questions
 
-                case Completion(text=final_text, is_error=is_error):
+                case Completion(
+                    text=final_text,
+                    is_error=is_error,
+                    usage=usage,
+                    session_usage=session_usage,
+                ):
                     completed = True
                     if pending_user_questions:
                         logger.debug(
@@ -515,6 +592,15 @@ class SlackAdapter:
                             )
                     if not final:
                         final = "_No response from agent._"
+                    # The usage footer is metadata about the reply, not part of
+                    # it. Keep it out of both the upload-size decision and the
+                    # uploaded file, and always render it inline (it's tiny) so
+                    # it survives even when the body is truncated to a snippet.
+                    footer = (
+                        ""
+                        if is_error
+                        else self._build_usage_footer(usage, session_usage)
+                    )
                     if _utf8_len(final) > SLACK_MSG_MAX_BYTES:
                         uploaded = await self._upload_snippet(
                             channel, thread_ts, final
@@ -525,17 +611,20 @@ class SlackAdapter:
                             else "\n\n_… (response too long; upload failed — please retry)_"
                         )
                         preview_budget = min(
-                            1000, SLACK_MSG_MAX_BYTES - _utf8_len(notice)
+                            1000,
+                            SLACK_MSG_MAX_BYTES - _utf8_len(notice) - _utf8_len(footer),
                         )
-                        short = _truncate_to_bytes(final, preview_budget) + notice
+                        short = (
+                            _truncate_to_bytes(final, preview_budget) + notice + footer
+                        )
                         if message_ts:
                             await self._update_message(channel, message_ts, short)
                         elif say is not None:
                             await say(text=short, thread_ts=thread_ts)
                     elif message_ts:
-                        await self._update_message(channel, message_ts, final)
+                        await self._update_message(channel, message_ts, final + footer)
                     elif say is not None:
-                        await say(text=final, thread_ts=thread_ts)
+                        await say(text=final + footer, thread_ts=thread_ts)
 
         # Safety net: if stream ended without Completion, strip residual tool_status
         if not completed and message_ts and accumulated_text:
@@ -561,6 +650,22 @@ class SlackAdapter:
                 await self._update_message(channel, message_ts, accumulated_text)
 
         return None
+
+    def _build_usage_footer(
+        self, usage: Usage | None, session_usage: Usage | None
+    ) -> str:
+        """Compose the usage footer (with a leading blank line), or '' when the
+        feature is off or no usage was reported. Template wins over the default.
+        """
+        if not self._config.usage_report_enabled or usage is None:
+            return ""
+        if self._config.usage_report_template:
+            body = _render_usage_template(
+                self._config.usage_report_template, usage, session_usage
+            )
+        else:
+            body = _default_usage_footer(usage, session_usage)
+        return f"\n\n{_as_footnote(body)}" if body else ""
 
     @staticmethod
     def _format_questions_for_slack(questions: list[dict]) -> str:

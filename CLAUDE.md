@@ -75,6 +75,8 @@ Defined in `src/agent_bridge/protocols.py`. New agents/platforms implement these
 | Async HTTP | **aiohttp** | Required by slack-bolt |
 | Env config | **python-dotenv** | `.env` file loading |
 | Testing | **pytest + pytest-asyncio** | `asyncio_mode = "auto"` |
+| Lint / format | **ruff** | line-length 100, rules `E,F,W,I,B,UP,SIM,RUF` (`[tool.ruff]` in pyproject) |
+| Docs site | **MkDocs Material** (`docs` dependency group) | `mkdocs.yml` nav; deployed to GitHub Pages |
 | Claude CLI | `claude -p` with `--output-format stream-json` | Non-interactive, real-time streaming |
 
 ## Project structure
@@ -165,13 +167,19 @@ src/agent_bridge/
 - Test naming: `test_{feature}_{scenario}`
 - Full guide (component checklists + templates): `docs/testing.md`
 
+### Linting & formatting
+
+- `uv run ruff check .` (lint; `--fix` to auto-fix) and `uv run ruff format .` must both be clean — CI enforces `ruff check` + `ruff format --check`
+- Config lives in `[tool.ruff]` in `pyproject.toml`; the only per-file ignore is `SIM117` in `tests/**`
+- `uv run pre-commit install` wires ruff (pre-commit stage) and commitlint (commit-msg stage) hooks
+
 ### Commits
 
 - Follow [Conventional Commits](https://www.conventionalcommits.org/) with **lowercase** types: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, `ci:`, `perf:`, `style:`, `build:`, `revert:`. (Not `Feat:`/`Fix:`.)
 - Optional scope in parens, imperative subject, no trailing period: `fix(slack): release dedupe slot on error`.
 - The type drives the automated release: `feat:` → MINOR, `fix:`/`perf:` → PATCH, `feat!:` or a `BREAKING CHANGE:` footer → breaking (MINOR while in 0.x). Other types cut no release.
 - The `commitlint` PR check rejects non-conforming commits. Since PRs merge with merge commits, **each commit on a branch** (not just the PR title) must conform.
-- Optional local guard: `uv run pre-commit install` wires a `commit-msg` hook that runs the same commitlint config before each commit (see `docs/releasing.md`).
+- Optional local guard: `uv run pre-commit install` wires the commitlint `commit-msg` hook (same config as CI) plus ruff lint/format `pre-commit` hooks (see `docs/releasing.md`).
 - Releases are automated from these messages — never hand-edit `[project].version`. See `## Releasing` and `docs/releasing.md`.
 
 ### Adding a new platform adapter
@@ -204,6 +212,7 @@ When modifying any component, update the corresponding documentation:
 - Agent changes → update `docs/agents/{name}.md`
 - Core bridge/event/session changes → update this file and `README.md`
 - New env vars → update `.env.example` and the relevant docs
+- New docs pages → add them to the `nav` in `mkdocs.yml`; `uv run mkdocs build --strict` must pass (broken links fail the build)
 
 ## Running
 
@@ -216,6 +225,14 @@ uv run agent-bridge
 
 # Run tests
 uv run pytest
+
+# Lint + format check
+uv run ruff check . && uv run ruff format --check .
+
+# Docs site: live preview / strict build
+uv sync --group docs
+uv run mkdocs serve
+uv run mkdocs build --strict
 ```
 
 ## Releasing

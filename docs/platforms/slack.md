@@ -238,7 +238,7 @@ Updates the message with the final response text. Error cases:
 | No response | `_No response from agent._` |
 | Response too long (> ~3900 UTF-8 bytes) | Preview (up to 1000 bytes) + note, full content uploaded as `response.md` file snippet; if upload fails, user sees `(response too long; upload failed — please retry)` |
 
-On a successful (non-error) completion, a usage/cost footer is appended when `AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED=true` (see [Usage / Cost Report](#optional-usage--cost-report)).
+On a successful (non-error) completion, a usage/cost footer is appended when `AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED=true` (see [Usage / Cost Report](#optional-usage-cost-report)).
 
 ## File Attachments
 

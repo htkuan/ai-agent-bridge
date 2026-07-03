@@ -24,7 +24,7 @@ Checked in order at startup:
 
 An **explicitly** specified path (CLI or env var) that does not exist raises `ValueError` at startup — fail fast, no silent fallback. A malformed file (invalid YAML, or a top level that isn't a mapping) also fails startup with a clear error.
 
-See [`agent-bridge.example.yaml`](../agent-bridge.example.yaml) for a fully commented example.
+See [`agent-bridge.example.yaml`](https://github.com/htkuan/ai-agent-bridge/blob/main/agent-bridge.example.yaml) for a fully commented example.
 
 ## `$(VAR)` secret substitution
 

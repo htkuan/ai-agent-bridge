@@ -1,0 +1,75 @@
+site_name: Agent Bridge
+site_description: Modular bridge between chat platforms and AI agents
+site_url: https://htkuan.github.io/ai-agent-bridge/
+repo_url: https://github.com/htkuan/ai-agent-bridge
+repo_name: htkuan/ai-agent-bridge
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    # Palette toggle: light ↔ dark, following the OS preference by default.
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets:
+      # Resolved from the repo root (mkdocs runs there), so pages can include
+      # top-level files like CONTRIBUTING.md without duplicating them.
+      check_paths: true
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Configuration: configuration.md
+  - Architecture:
+      - The Three-Layer Contract: architecture.md
+      - Bridge Core: bridge.md
+  - Platforms:
+      - Slack: platforms/slack.md
+      - Telegram: platforms/telegram.md
+      - LINE: platforms/line.md
+      - POST API: platforms/api.md
+      - Heartbeat: platforms/heartbeat.md
+  - Agents:
+      - Claude Code: agents/claude.md
+      - Codex: agents/codex.md
+      - OpenCode: agents/opencode.md
+  - Testing: testing.md
+  - Contributing: contributing.md
+  - Releasing: releasing.md

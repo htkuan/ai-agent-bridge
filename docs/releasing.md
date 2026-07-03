@@ -34,7 +34,7 @@ as the CI check, so what passes locally passes CI. Enable it once per clone:
 
 ```bash
 uv sync                    # installs the pre-commit tool (dev group)
-uv run pre-commit install  # writes .git/hooks/commit-msg (commit-msg stage)
+uv run pre-commit install  # writes .git/hooks (commit-msg: commitlint; pre-commit: ruff)
 ```
 
 `pre-commit` refuses to install if `core.hooksPath` is set. If you hit

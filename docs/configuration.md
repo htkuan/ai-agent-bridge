@@ -142,6 +142,18 @@ Heartbeat requires an explicit `enabled: true` (there is no secret to infer acti
 
 `ANTHROPIC_API_KEY` is consumed directly by the Claude Code CLI (not by Agent Bridge) and has no YAML key.
 
+### Codex agent
+
+Active only when selected via `agent: codex` / `AGENT_BRIDGE_AGENT=codex`. Requires the [Codex CLI](agents/codex.md#prerequisites) installed and authenticated on the host.
+
+| YAML key | Env var | Default |
+|----------|---------|---------|
+| `agents.codex.work_dir` | `AGENT_BRIDGE_CODEX_WORK_DIR` | `.` |
+| `agents.codex.model` | `AGENT_BRIDGE_CODEX_MODEL` | — (CLI default) |
+| `agents.codex.sandbox` | `AGENT_BRIDGE_CODEX_SANDBOX` | `workspace-write` (`read-only`\|`workspace-write`\|`danger-full-access`) |
+| `agents.codex.timeout_seconds` | `AGENT_BRIDGE_CODEX_TIMEOUT_SECONDS` | `600` |
+| `agents.codex.session_map_path` | `AGENT_BRIDGE_CODEX_SESSION_MAP_PATH` | `./codex-sessions.json` |
+
 ## Adding config for a new component
 
 1. Give the component a frozen dataclass config with `from_source(source)` and a delegating `from_env()`.

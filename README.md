@@ -2,7 +2,7 @@
 
 Modular bridge that connects **chat platforms** to **AI agents**. Each layer is independent — swap platforms or agents without touching the others.
 
-Currently supports: **Slack**, **Telegram**, **LINE**, **POST API** (generic HTTP entry point), **Heartbeat** (scheduled prompts) + **Claude Code**
+Currently supports: **Slack**, **Telegram**, **LINE**, **POST API** (generic HTTP entry point), **Heartbeat** (scheduled prompts) + **Claude Code**, **Codex**
 
 ```
 ┌──────────────┐     ┌──────────┐     ┌──────────────┐
@@ -20,7 +20,7 @@ Currently supports: **Slack**, **Telegram**, **LINE**, **POST API** (generic HTT
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/)
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated (or the [OpenAI Codex CLI](https://developers.openai.com/codex) when running with `AGENT_BRIDGE_AGENT=codex`)
 
 ### Install
 
@@ -96,7 +96,7 @@ The system has three independent layers:
 |-------|------|------|
 | **Platform Adapter** | Owns session semantics, per-session locking, UI rendering | [Slack](docs/platforms/slack.md) · [Telegram](docs/platforms/telegram.md) · [LINE](docs/platforms/line.md) · [POST API](docs/platforms/api.md) · [Heartbeat](docs/platforms/heartbeat.md) |
 | **Bridge** | Routes messages, maps session keys → IDs, enforces concurrency | Core — see below |
-| **Agent Controller** | Executes prompts, yields generic events | [Claude Agent](docs/agents/claude.md) |
+| **Agent Controller** | Executes prompts, yields generic events | [Claude Agent](docs/agents/claude.md) · [Codex Agent](docs/agents/codex.md) |
 
 ### Event Model
 
@@ -147,6 +147,11 @@ Every variable also has a YAML config key — see [docs/configuration.md](docs/c
 | `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude permission mode |
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Per-invocation timeout (seconds) |
 | `AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED` | No | `false` | Run each session in an isolated git worktree (requires `origin/HEAD`) |
+| `AGENT_BRIDGE_CODEX_WORK_DIR` | No | `.` | Working directory for Codex |
+| `AGENT_BRIDGE_CODEX_MODEL` | No | — (CLI default) | Optional Codex model override (`-m`) |
+| `AGENT_BRIDGE_CODEX_SANDBOX` | No | `workspace-write` | Codex sandbox: `read-only` / `workspace-write` / `danger-full-access` |
+| `AGENT_BRIDGE_CODEX_TIMEOUT_SECONDS` | No | `600` | Per-invocation timeout (seconds) |
+| `AGENT_BRIDGE_CODEX_SESSION_MAP_PATH` | No | `./codex-sessions.json` | Bridge-session → codex-thread mapping file |
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Session mapping file path |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Session TTL (hours) |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Max concurrent agent processes |

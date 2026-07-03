@@ -28,6 +28,24 @@ def test_build_claude_agent(tmp_path):
     assert isinstance(controller, ClaudeController)
 
 
+def test_build_codex_agent(tmp_path):
+    from agent_bridge.agents.codex.controller import CodexController
+
+    source = ConfigSource(
+        {
+            "agents": {
+                "codex": {
+                    "work_dir": str(tmp_path),
+                    "session_map_path": str(tmp_path / "codex-sessions.json"),
+                }
+            }
+        },
+        env={},
+    )
+    controller = build_agent("codex", source)
+    assert isinstance(controller, CodexController)
+
+
 def test_unknown_agent_lists_available_names():
     with pytest.raises(ValueError) as exc_info:
         build_agent("gpt9000", ConfigSource({}, env={}))

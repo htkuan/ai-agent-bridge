@@ -22,8 +22,23 @@ def _build_claude(source: ConfigSource) -> AgentController:
     return ClaudeController(config)
 
 
+def _build_codex(source: ConfigSource) -> AgentController:
+    from agent_bridge.agents.codex.config import CodexConfig
+    from agent_bridge.agents.codex.controller import CodexController
+
+    config = CodexConfig.from_source(source)
+    logger.info("Codex work dir: %s", config.work_dir)
+    logger.info("Codex sandbox: %s", config.sandbox)
+    if config.model:
+        logger.info("Codex model: %s", config.model)
+    logger.info("Codex timeout: %s seconds", config.timeout_seconds)
+    logger.info("Codex session map: %s", config.session_map_path)
+    return CodexController(config)
+
+
 AGENT_BUILDERS: dict[str, AgentBuilder] = {
     "claude": _build_claude,
+    "codex": _build_codex,
 }
 
 

@@ -91,10 +91,14 @@ src/agent_bridge/
 ├── protocols.py         # AgentController + PlatformAdapter protocol interfaces
 ├── agents/
 │   ├── registry.py      # name → build(source) → AgentController
-│   └── claude/
-│       ├── config.py    # ClaudeConfig (work_dir, permission_mode, timeout)
-│       ├── controller.py # Subprocess spawner, stream reader, timeout handling
-│       └── events.py    # Claude stream-json parser → BridgeEvent converter
+│   ├── claude/
+│   │   ├── config.py    # ClaudeConfig (work_dir, permission_mode, timeout)
+│   │   ├── controller.py # Subprocess spawner, stream reader, timeout handling
+│   │   └── events.py    # Claude stream-json parser → BridgeEvent converter
+│   └── codex/
+│       ├── config.py    # CodexConfig (work_dir, model, sandbox, timeout, session map)
+│       ├── controller.py # codex exec subprocess + bridge-session → thread-id map
+│       └── events.py    # codex exec --json JSONL parser → BridgeEvent converter
 └── platforms/
     ├── registry.py      # name → build(source, bridge, session_manager) → adapter | None
     ├── slack/
@@ -256,6 +260,11 @@ the entry point (`app.main`) via python-dotenv. Every variable has a matching YA
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Claude |
 | `AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED` | No | `false` | Claude |
 | `AGENT_BRIDGE_CLAUDE_EFFORT` | No | `xhigh` | Claude (one of `low`, `medium`, `high`, `xhigh`, `max`) |
+| `AGENT_BRIDGE_CODEX_WORK_DIR` | No | `.` | Codex |
+| `AGENT_BRIDGE_CODEX_MODEL` | No | — (CLI default) | Codex (optional `-m` model override) |
+| `AGENT_BRIDGE_CODEX_SANDBOX` | No | `workspace-write` | Codex (one of `read-only`, `workspace-write`, `danger-full-access`) |
+| `AGENT_BRIDGE_CODEX_TIMEOUT_SECONDS` | No | `600` | Codex |
+| `AGENT_BRIDGE_CODEX_SESSION_MAP_PATH` | No | `./codex-sessions.json` | Codex (bridge-session → codex-thread mapping) |
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Bridge |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Bridge |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Bridge |

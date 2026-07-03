@@ -91,3 +91,59 @@ def claude_result_line(
     if usage is not None:
         payload["usage"] = usage
     return json.dumps(payload)
+
+
+# --- Codex exec --json line builders ---
+
+
+def codex_thread_started_line(thread_id: str = "thread-1") -> str:
+    return json.dumps({"type": "thread.started", "thread_id": thread_id})
+
+
+def codex_turn_started_line() -> str:
+    return json.dumps({"type": "turn.started"})
+
+
+def codex_agent_message_line(text: str, item_id: str = "item_0") -> str:
+    return json.dumps(
+        {
+            "type": "item.completed",
+            "item": {"id": item_id, "type": "agent_message", "text": text},
+        }
+    )
+
+
+def codex_command_start_line(command: str, item_id: str = "item_1") -> str:
+    return json.dumps(
+        {
+            "type": "item.started",
+            "item": {
+                "id": item_id,
+                "type": "command_execution",
+                "command": command,
+                "status": "in_progress",
+            },
+        }
+    )
+
+
+def codex_turn_completed_line(
+    *,
+    input_tokens: int = 0,
+    cached_input_tokens: int = 0,
+    output_tokens: int = 0,
+) -> str:
+    return json.dumps(
+        {
+            "type": "turn.completed",
+            "usage": {
+                "input_tokens": input_tokens,
+                "cached_input_tokens": cached_input_tokens,
+                "output_tokens": output_tokens,
+            },
+        }
+    )
+
+
+def codex_turn_failed_line(message: str = "boom") -> str:
+    return json.dumps({"type": "turn.failed", "error": {"message": message}})

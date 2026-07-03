@@ -12,7 +12,7 @@
 
 log_level: INFO # AGENT_BRIDGE_LOG_LEVEL
 
-# Which agent handles messages (single active agent). Currently: claude
+# Which agent handles messages (single active agent). One of: claude, codex
 agent: claude # AGENT_BRIDGE_AGENT
 
 bridge:
@@ -92,3 +92,12 @@ agents:
     timeout_seconds: 600 # AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS
     worktree_enabled: false # AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED
     effort: xhigh # AGENT_BRIDGE_CLAUDE_EFFORT (low|medium|high|xhigh|max)
+
+  # OpenAI Codex CLI (`codex exec`). Active when `agent: codex` is selected.
+  # Requires the codex CLI installed and logged in on the host.
+  codex:
+    work_dir: . # AGENT_BRIDGE_CODEX_WORK_DIR
+    sandbox: workspace-write # AGENT_BRIDGE_CODEX_SANDBOX (read-only|workspace-write|danger-full-access)
+    timeout_seconds: 600 # AGENT_BRIDGE_CODEX_TIMEOUT_SECONDS
+    # model: gpt-5-codex               # AGENT_BRIDGE_CODEX_MODEL (unset = CLI default)
+    # session_map_path: ./codex-sessions.json # AGENT_BRIDGE_CODEX_SESSION_MAP_PATH

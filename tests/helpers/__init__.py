@@ -11,6 +11,11 @@ from tests.helpers.fake_cli import (
     codex_turn_failed_line,
     codex_turn_started_line,
     install_fake_cli,
+    opencode_error_line,
+    opencode_step_finish_line,
+    opencode_step_start_line,
+    opencode_text_line,
+    opencode_tool_use_line,
 )
 from tests.helpers.http_server import FakeApiServer, RecordedRequest
 
@@ -31,4 +36,9 @@ __all__ = [
     "collect_events",
     "event_types",
     "install_fake_cli",
+    "opencode_error_line",
+    "opencode_step_finish_line",
+    "opencode_step_start_line",
+    "opencode_text_line",
+    "opencode_tool_use_line",
 ]

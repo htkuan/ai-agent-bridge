@@ -147,3 +147,93 @@ def codex_turn_completed_line(
 
 def codex_turn_failed_line(message: str = "boom") -> str:
     return json.dumps({"type": "turn.failed", "error": {"message": message}})
+
+
+# --- OpenCode run --format json line builders ---
+
+
+def opencode_step_start_line(session_id: str = "ses_fake") -> str:
+    return json.dumps(
+        {
+            "type": "step_start",
+            "timestamp": 0,
+            "sessionID": session_id,
+            "part": {"type": "step-start", "sessionID": session_id},
+        }
+    )
+
+
+def opencode_text_line(text: str, session_id: str = "ses_fake") -> str:
+    return json.dumps(
+        {
+            "type": "text",
+            "timestamp": 0,
+            "sessionID": session_id,
+            "part": {"type": "text", "sessionID": session_id, "text": text},
+        }
+    )
+
+
+def opencode_tool_use_line(
+    tool: str = "bash",
+    title: str = "ls -la",
+    status: str = "completed",
+    session_id: str = "ses_fake",
+) -> str:
+    return json.dumps(
+        {
+            "type": "tool_use",
+            "timestamp": 0,
+            "sessionID": session_id,
+            "part": {
+                "type": "tool",
+                "sessionID": session_id,
+                "tool": tool,
+                "state": {"status": status, "title": title},
+            },
+        }
+    )
+
+
+def opencode_step_finish_line(
+    *,
+    cost: float = 0.0,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    reasoning_tokens: int = 0,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
+    session_id: str = "ses_fake",
+) -> str:
+    return json.dumps(
+        {
+            "type": "step_finish",
+            "timestamp": 0,
+            "sessionID": session_id,
+            "part": {
+                "type": "step-finish",
+                "sessionID": session_id,
+                "reason": "stop",
+                "cost": cost,
+                "tokens": {
+                    "input": input_tokens,
+                    "output": output_tokens,
+                    "reasoning": reasoning_tokens,
+                    "cache": {"read": cache_read_tokens, "write": cache_write_tokens},
+                },
+            },
+        }
+    )
+
+
+def opencode_error_line(
+    message: str = "boom", name: str = "APIError", session_id: str = "ses_fake"
+) -> str:
+    return json.dumps(
+        {
+            "type": "error",
+            "timestamp": 0,
+            "sessionID": session_id,
+            "error": {"name": name, "data": {"message": message}},
+        }
+    )

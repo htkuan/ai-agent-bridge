@@ -95,10 +95,14 @@ src/agent_bridge/
 │   │   ├── config.py    # ClaudeConfig (work_dir, permission_mode, timeout)
 │   │   ├── controller.py # Subprocess spawner, stream reader, timeout handling
 │   │   └── events.py    # Claude stream-json parser → BridgeEvent converter
-│   └── codex/
-│       ├── config.py    # CodexConfig (work_dir, model, sandbox, timeout, session map)
-│       ├── controller.py # codex exec subprocess + bridge-session → thread-id map
-│       └── events.py    # codex exec --json JSONL parser → BridgeEvent converter
+│   ├── codex/
+│   │   ├── config.py    # CodexConfig (work_dir, model, sandbox, timeout, session map)
+│   │   ├── controller.py # codex exec subprocess + bridge-session → thread-id map
+│   │   └── events.py    # codex exec --json JSONL parser → BridgeEvent converter
+│   └── opencode/
+│       ├── config.py    # OpencodeConfig (work_dir, model, timeout, session map)
+│       ├── controller.py # opencode run subprocess + bridge-session → ses-id map
+│       └── events.py    # opencode run --format json JSONL parser → BridgeEvent converter
 └── platforms/
     ├── registry.py      # name → build(source, bridge, session_manager) → adapter | None
     ├── slack/
@@ -265,6 +269,10 @@ the entry point (`app.main`) via python-dotenv. Every variable has a matching YA
 | `AGENT_BRIDGE_CODEX_SANDBOX` | No | `workspace-write` | Codex (one of `read-only`, `workspace-write`, `danger-full-access`) |
 | `AGENT_BRIDGE_CODEX_TIMEOUT_SECONDS` | No | `600` | Codex |
 | `AGENT_BRIDGE_CODEX_SESSION_MAP_PATH` | No | `./codex-sessions.json` | Codex (bridge-session → codex-thread mapping) |
+| `AGENT_BRIDGE_OPENCODE_WORK_DIR` | No | `.` | OpenCode |
+| `AGENT_BRIDGE_OPENCODE_MODEL` | No | — (CLI default) | OpenCode (optional `--model` override, `provider/model` form) |
+| `AGENT_BRIDGE_OPENCODE_TIMEOUT_SECONDS` | No | `600` | OpenCode |
+| `AGENT_BRIDGE_OPENCODE_SESSION_MAP_PATH` | No | `./opencode-sessions.json` | OpenCode (bridge-session → opencode-session mapping) |
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Bridge |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Bridge |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Bridge |

@@ -154,6 +154,17 @@ Active only when selected via `agent: codex` / `AGENT_BRIDGE_AGENT=codex`. Requi
 | `agents.codex.timeout_seconds` | `AGENT_BRIDGE_CODEX_TIMEOUT_SECONDS` | `600` |
 | `agents.codex.session_map_path` | `AGENT_BRIDGE_CODEX_SESSION_MAP_PATH` | `./codex-sessions.json` |
 
+### OpenCode agent
+
+Active only when selected via `agent: opencode` / `AGENT_BRIDGE_AGENT=opencode`. Requires the [OpenCode CLI](agents/opencode.md#prerequisites) installed and authenticated on the host.
+
+| YAML key | Env var | Default |
+|----------|---------|---------|
+| `agents.opencode.work_dir` | `AGENT_BRIDGE_OPENCODE_WORK_DIR` | `.` |
+| `agents.opencode.model` | `AGENT_BRIDGE_OPENCODE_MODEL` | — (CLI default; `provider/model` form) |
+| `agents.opencode.timeout_seconds` | `AGENT_BRIDGE_OPENCODE_TIMEOUT_SECONDS` | `600` |
+| `agents.opencode.session_map_path` | `AGENT_BRIDGE_OPENCODE_SESSION_MAP_PATH` | `./opencode-sessions.json` |
+
 ## Adding config for a new component
 
 1. Give the component a frozen dataclass config with `from_source(source)` and a delegating `from_env()`.

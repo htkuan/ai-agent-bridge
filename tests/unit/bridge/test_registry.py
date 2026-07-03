@@ -46,6 +46,24 @@ def test_build_codex_agent(tmp_path):
     assert isinstance(controller, CodexController)
 
 
+def test_build_opencode_agent(tmp_path):
+    from agent_bridge.agents.opencode.controller import OpencodeController
+
+    source = ConfigSource(
+        {
+            "agents": {
+                "opencode": {
+                    "work_dir": str(tmp_path),
+                    "session_map_path": str(tmp_path / "opencode-sessions.json"),
+                }
+            }
+        },
+        env={},
+    )
+    controller = build_agent("opencode", source)
+    assert isinstance(controller, OpencodeController)
+
+
 def test_unknown_agent_lists_available_names():
     with pytest.raises(ValueError) as exc_info:
         build_agent("gpt9000", ConfigSource({}, env={}))

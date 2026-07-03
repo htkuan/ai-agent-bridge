@@ -12,7 +12,7 @@
 
 log_level: INFO # AGENT_BRIDGE_LOG_LEVEL
 
-# Which agent handles messages (single active agent). One of: claude, codex
+# Which agent handles messages (single active agent). One of: claude, codex, opencode
 agent: claude # AGENT_BRIDGE_AGENT
 
 bridge:
@@ -101,3 +101,12 @@ agents:
     timeout_seconds: 600 # AGENT_BRIDGE_CODEX_TIMEOUT_SECONDS
     # model: gpt-5-codex               # AGENT_BRIDGE_CODEX_MODEL (unset = CLI default)
     # session_map_path: ./codex-sessions.json # AGENT_BRIDGE_CODEX_SESSION_MAP_PATH
+
+  # OpenCode CLI (`opencode run`). Active when `agent: opencode` is selected.
+  # Requires the opencode CLI installed and a provider authenticated on the
+  # host (`opencode auth login`).
+  opencode:
+    work_dir: . # AGENT_BRIDGE_OPENCODE_WORK_DIR
+    timeout_seconds: 600 # AGENT_BRIDGE_OPENCODE_TIMEOUT_SECONDS
+    # model: anthropic/claude-sonnet-4-5 # AGENT_BRIDGE_OPENCODE_MODEL (provider/model; unset = CLI default)
+    # session_map_path: ./opencode-sessions.json # AGENT_BRIDGE_OPENCODE_SESSION_MAP_PATH

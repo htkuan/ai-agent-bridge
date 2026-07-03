@@ -36,9 +36,23 @@ def _build_codex(source: ConfigSource) -> AgentController:
     return CodexController(config)
 
 
+def _build_opencode(source: ConfigSource) -> AgentController:
+    from agent_bridge.agents.opencode.config import OpencodeConfig
+    from agent_bridge.agents.opencode.controller import OpencodeController
+
+    config = OpencodeConfig.from_source(source)
+    logger.info("OpenCode work dir: %s", config.work_dir)
+    if config.model:
+        logger.info("OpenCode model: %s", config.model)
+    logger.info("OpenCode timeout: %s seconds", config.timeout_seconds)
+    logger.info("OpenCode session map: %s", config.session_map_path)
+    return OpencodeController(config)
+
+
 AGENT_BUILDERS: dict[str, AgentBuilder] = {
     "claude": _build_claude,
     "codex": _build_codex,
+    "opencode": _build_opencode,
 }
 
 

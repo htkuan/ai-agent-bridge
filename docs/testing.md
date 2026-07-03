@@ -18,12 +18,13 @@ tests/
 │   ├── agents.py          #   FakeAgentController + RunCall
 │   ├── bridges.py         #   FakeBridge
 │   ├── events.py          #   collect_events, event_types
-│   ├── fake_cli.py        #   install_fake_cli + claude/codex output-line builders
+│   ├── fake_cli.py        #   install_fake_cli + claude/codex/opencode output-line builders
 │   └── http_server.py     #   FakeApiServer (record-and-respond aiohttp fake)
 ├── unit/
 │   ├── bridge/            # bridge, session, dedupe, events, config loader, registries
 │   ├── agents/claude/     # controller + stream-json parsing
 │   ├── agents/codex/      # controller, session map + JSONL parsing
+│   ├── agents/opencode/   # controller, session map + JSONL parsing
 │   └── platforms/
 │       ├── slack/
 │       ├── telegram/
@@ -102,7 +103,7 @@ assert event_types(events) == [Processing, TextDelta, Completion]
 
 ### `install_fake_cli`
 
-Generates an executable shell script that impersonates an agent CLI. This is the standard pattern for testing any subprocess-based controller (Claude and Codex today; OpenCode reuses it as-is with its own output-line builders).
+Generates an executable shell script that impersonates an agent CLI. This is the standard pattern for testing any subprocess-based controller (Claude, Codex, and OpenCode today; a new agent reuses it as-is with its own output-line builders).
 
 ```python
 from tests.helpers import install_fake_cli, claude_result_line
@@ -129,7 +130,7 @@ Knob-to-scenario map:
 | `args_log` | Flag assertions: `--session-id` on first turn, `--resume <id>` on the second |
 | `orphan_pidfile` | Grandchild holding the stdout pipe open — controller must break on the terminal event and reap the process group |
 
-`claude_assistant_line(text)` / `claude_result_line(...)` build valid Claude stream-json lines (including usage payloads); `codex_thread_started_line(...)` / `codex_agent_message_line(...)` / `codex_turn_completed_line(...)` / `codex_turn_failed_line(...)` do the same for `codex exec --json` JSONL.
+`claude_assistant_line(text)` / `claude_result_line(...)` build valid Claude stream-json lines (including usage payloads); `codex_thread_started_line(...)` / `codex_agent_message_line(...)` / `codex_turn_completed_line(...)` / `codex_turn_failed_line(...)` do the same for `codex exec --json` JSONL; `opencode_step_start_line(...)` / `opencode_text_line(...)` / `opencode_tool_use_line(...)` / `opencode_step_finish_line(...)` / `opencode_error_line(...)` for `opencode run --format json` JSONL.
 
 ### `FakeApiServer`
 

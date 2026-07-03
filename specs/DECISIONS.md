@@ -18,3 +18,11 @@
 - **D14 [規劃]** `AgentController` protocol 補上 `cleanup_session`（入口既已呼叫但 protocol 未宣告，屬契約漏洞）。
 - **D15 [規劃]** `BridgeConfig.max_concurrent_sessions` 類別預設 10 與 env 預設 5 不一致 → 統一為 5（.env.example 與 README 已公告 5）。
 - **D16 [規劃]** 根目錄 `issue.md`、`bridge-dedupe-plan.md` 為使用者歷史工作檔，維持 untracked 不動、不 commit。
+- **D17 [T1]** `ConfigSource` 介面定為 `get(env_key, yaml_path, default) -> str | None`，一律回傳字串（env var 語意，呼叫端照舊自行轉型）— YAML 純量字串化：bool → `"true"/"false"`、數字 → `str()`、純量 list → 逗號串接（讓逗號分隔型 env var 可自然寫成 YAML list）；巢狀 mapping 出現在葉節點 → ValueError。`env` 可注入（測試隔離），預設 live 讀 `os.environ`。
+- **D18 [T1]** 空字串 env var 視為未設定（fall through 到 YAML/default）— `.env` 範本慣例含 `KEY=` 空值佔位，不得遮蔽 YAML 值；與現行「空 token 視為缺失」行為一致。
+- **D19 [T1]** `load_dotenv()` 從所有 config 類別移除，只在入口 `app.main()` 呼叫一次（讀 YAML 前，讓 `.env` 同時供覆蓋與 `$(VAR)` 替換）。`from_env()` = `from_source(空 source)`，只讀行程環境、不再隱式改動 `os.environ` — 這同時修復了兩個因開發者本機 `.env` 汙染而失敗的既有測試（effort 預設、heartbeat prompt 必填）。
+- **D20 [T1]** Slack 的 `cleanup_stale_sessions()` 以可選 hook 處理：app 週期清理用 `getattr` 探測各 adapter 是否提供，不納入 `PlatformAdapter` protocol — 單一平台的需求不應加寬共用契約。
+- **D21 [T1]** Platform registry 的 builder 內部才 lazy import 依賴第三方套件的 adapter 模組（slack-bolt 只在 Slack 有配置時載入）— optional extra 未安裝也能跑其他平台；config 模組（無外部相依）維持頂層 import。
+- **D22 [T1]** CLI `-c/--config` 優先於 `AGENT_BRIDGE_CONFIG` env（顯式調用勝過環境）；兩者指定的路徑不存在都直接 ValueError，不 fallback。
+- **D23 [T1]** HeartbeatConfig 的 enabled 解析由 `== "true"` 放寬為共用 truthy 集合 `{true,1,yes,on}`，與 Slack/Claude 的布林 env 解析一致。
+- **D24 [T1]** Slack usage report 的 YAML 鍵採巢狀 `platforms.slack.usage_report.{enabled,template}`（對應既有 env var 不變），鏡射 `bridge.dedupe.*` 的巢狀風格；agent 專屬啟動 log（work_dir 等）移入該 agent 的 registry builder，app 入口保持元件無知。

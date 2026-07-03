@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
+from agent_bridge.config_loader import ConfigSource
 
 VALID_PERMISSION_MODES = {
     "acceptEdits",
@@ -32,16 +31,36 @@ class ClaudeConfig:
 
     @classmethod
     def from_env(cls) -> ClaudeConfig:
-        load_dotenv()
+        return cls.from_source(ConfigSource.empty())
 
+    @classmethod
+    def from_source(cls, source: ConfigSource) -> ClaudeConfig:
         config = cls(
-            work_dir=Path(os.environ.get("AGENT_BRIDGE_CLAUDE_WORK_DIR", ".")).resolve(),
-            permission_mode=os.environ.get("AGENT_BRIDGE_CLAUDE_PERMISSION_MODE", "acceptEdits"),
-            timeout_seconds=float(os.environ.get("AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS", "600")),
-            worktree_enabled=os.environ.get(
-                "AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED", "false"
-            ).lower() in _TRUTHY,
-            effort=os.environ.get("AGENT_BRIDGE_CLAUDE_EFFORT", "xhigh").strip() or "xhigh",
+            work_dir=Path(
+                source.get("AGENT_BRIDGE_CLAUDE_WORK_DIR", "agents.claude.work_dir", ".")
+            ).resolve(),
+            permission_mode=source.get(
+                "AGENT_BRIDGE_CLAUDE_PERMISSION_MODE",
+                "agents.claude.permission_mode",
+                "acceptEdits",
+            ),
+            timeout_seconds=float(
+                source.get(
+                    "AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS",
+                    "agents.claude.timeout_seconds",
+                    "600",
+                )
+            ),
+            worktree_enabled=source.get(
+                "AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED",
+                "agents.claude.worktree_enabled",
+                "false",
+            ).lower()
+            in _TRUTHY,
+            effort=source.get(
+                "AGENT_BRIDGE_CLAUDE_EFFORT", "agents.claude.effort", "xhigh"
+            ).strip()
+            or "xhigh",
         )
         config._validate()
         return config

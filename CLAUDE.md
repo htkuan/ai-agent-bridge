@@ -81,18 +81,22 @@ Defined in `src/agent_bridge/protocols.py`. New agents/platforms implement these
 
 ```
 src/agent_bridge/
-├── __init__.py          # Entry point: wires adapter + bridge + agent, signal handling, cleanup
+├── __init__.py          # Re-exports main/main_sync only
+├── app.py               # Entry point: ConfigSource + registries wiring, signals, periodic cleanup
 ├── config.py            # BridgeConfig (store path, TTL, concurrency)
+├── config_loader.py     # ConfigSource (env > YAML > default), $(VAR) secrets, file discovery
 ├── bridge.py            # Pure routing + global concurrency (Semaphore)
 ├── events.py            # BridgeEvent type union (Processing, TextDelta, StatusUpdate, UserQuestion, Completion)
 ├── session.py           # SessionManager (key → UUID, TTL, JSON persistence)
 ├── protocols.py         # AgentController + PlatformAdapter protocol interfaces
 ├── agents/
+│   ├── registry.py      # name → build(source) → AgentController
 │   └── claude/
 │       ├── config.py    # ClaudeConfig (work_dir, permission_mode, timeout)
 │       ├── controller.py # Subprocess spawner, stream reader, timeout handling
 │       └── events.py    # Claude stream-json parser → BridgeEvent converter
 └── platforms/
+    ├── registry.py      # name → build(source, bridge, session_manager) → adapter | None
     └── slack/
         ├── config.py    # SlackConfig (bot_token, app_token)
         └── adapter.py   # Event handlers, per-session state machine, message rendering
@@ -114,7 +118,7 @@ src/agent_bridge/
 
 - Environment variables: `AGENT_BRIDGE_` prefix for all config
 - Session keys: `{platform}:{scope}:{identifier}` (e.g. `slack:{channel}:{thread_ts}`)
-- Config classes: `{Component}Config` with `from_env()` classmethod + `_validate()`
+- Config classes: `{Component}Config` with `from_source(source)` classmethod (+ `from_env()` delegating to an empty source) + `_validate()`. Every field reads through `source.get(env_key, yaml_path, default)` — YAML keys per `docs/configuration.md`
 - Modules: lowercase, no underscores in package names
 
 ### Error handling
@@ -157,8 +161,8 @@ src/agent_bridge/
 6. Build the `system_prompt` — platform-flavored directives (chat framing, scheduled-invocation framing, webhook-trigger framing, etc.). The agent forwards it as-is
 7. Decide `resumable`: pass `True` (default) if the same `session_key` should be able to resume the same session later (e.g. chat threads); pass `False` for one-shot triggers where every call must be a fresh, untracked session (e.g. heartbeat ticks)
 8. Consume `BridgeEvent`s from `bridge.handle_message(session_key, text, context, system_prompt, resumable)`
-9. Wire up in `__init__.py`
-10. Add documentation in `docs/platforms/{name}.md`
+9. Register a builder in `platforms/registry.py` — return `None` when unconfigured/disabled; import optional third-party deps lazily inside the builder
+10. Add documentation in `docs/platforms/{name}.md`; update `.env.example`, `agent-bridge.example.yaml`, and the env tables
 
 ### Adding a new agent
 
@@ -167,8 +171,8 @@ src/agent_bridge/
 3. Create `agents/{name}/events.py` — parse agent output → `BridgeEvent`s
 4. `run()` yields only generic `BridgeEvent`s — agent-internal events stay internal
 5. Treat `system_prompt` and `prompt` as opaque strings built by the platform — do not parse `context` for platform-specific keys
-6. Wire up in `__init__.py`
-7. Add documentation in `docs/agents/{name}.md`
+6. Implement `cleanup_session(session_id)` (no-op is valid) and register a builder in `agents/registry.py`
+7. Add documentation in `docs/agents/{name}.md`; update `.env.example`, `agent-bridge.example.yaml`, and the env tables
 
 ### Documentation maintenance
 
@@ -201,11 +205,16 @@ bump the minor (not 1.0.0). Full process + one-time setup: `docs/releasing.md`.
 
 ## Environment variables
 
-All config loads from `.env` via python-dotenv. See `.env.example` for the full list.
+Config resolves as **env var > YAML file > built-in default**. `.env` is loaded once at
+the entry point (`app.main`) via python-dotenv. Every variable has a matching YAML key
+(nested; secrets via `$(VAR)`) — see `docs/configuration.md` for the mapping table and
+`agent-bridge.example.yaml` for a full example. See `.env.example` for the env list.
 
 | Variable | Required | Default | Component |
 |----------|----------|---------|-----------|
 | `ANTHROPIC_API_KEY` | No | — | Claude CLI (only if not already authenticated via `claude login`) |
+| `AGENT_BRIDGE_CONFIG` | No | — (`./agent-bridge.yaml` if present) | Global (path to YAML config file; also CLI `-c/--config`) |
+| `AGENT_BRIDGE_AGENT` | No | `claude` | Global (which registered agent handles messages) |
 | `AGENT_BRIDGE_SLACK_BOT_TOKEN` | Yes (if using Slack) | — | Slack |
 | `AGENT_BRIDGE_SLACK_APP_TOKEN` | Yes (if using Slack) | — | Slack |
 | `AGENT_BRIDGE_SLACK_ALLOW_CHANNELS` | No | — (allow all) | Slack (comma-separated channel-name allow-list; non-empty also blocks DMs) |

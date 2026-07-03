@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
-from dotenv import load_dotenv
+from agent_bridge.config_loader import ConfigSource
 
 # Default reply sent when a message arrives from a channel outside the
 # allow-list. Override via AGENT_BRIDGE_SLACK_CHANNEL_NOT_ALLOWED_MESSAGE.
@@ -34,16 +33,24 @@ class SlackConfig:
 
     @classmethod
     def from_env(cls) -> SlackConfig:
-        load_dotenv()
+        return cls.from_source(ConfigSource.empty())
 
-        bot_token = os.environ.get("AGENT_BRIDGE_SLACK_BOT_TOKEN", "")
-        app_token = os.environ.get("AGENT_BRIDGE_SLACK_APP_TOKEN", "")
+    @classmethod
+    def from_source(cls, source: ConfigSource) -> SlackConfig:
+        bot_token = source.get(
+            "AGENT_BRIDGE_SLACK_BOT_TOKEN", "platforms.slack.bot_token", ""
+        )
+        app_token = source.get(
+            "AGENT_BRIDGE_SLACK_APP_TOKEN", "platforms.slack.app_token", ""
+        )
         if not bot_token or not app_token:
             raise ValueError(
                 "AGENT_BRIDGE_SLACK_BOT_TOKEN and AGENT_BRIDGE_SLACK_APP_TOKEN "
-                "environment variables are required"
+                "(platforms.slack.bot_token / app_token) are required"
             )
-        raw_channels = os.environ.get("AGENT_BRIDGE_SLACK_ALLOW_CHANNELS", "")
+        raw_channels = source.get(
+            "AGENT_BRIDGE_SLACK_ALLOW_CHANNELS", "platforms.slack.allow_channels", ""
+        )
         allow_channels = frozenset(
             _normalize_channel(name)
             for name in raw_channels.split(",")
@@ -52,19 +59,29 @@ class SlackConfig:
         return cls(
             bot_token=bot_token,
             app_token=app_token,
-            startup_notify_channel=os.environ.get("AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_CHANNEL"),
-            startup_notify_message=os.environ.get("AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_MESSAGE"),
+            startup_notify_channel=source.get(
+                "AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_CHANNEL",
+                "platforms.slack.startup_notify_channel",
+            ),
+            startup_notify_message=source.get(
+                "AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_MESSAGE",
+                "platforms.slack.startup_notify_message",
+            ),
             allow_channels=allow_channels,
-            channel_not_allowed_message=os.environ.get(
+            channel_not_allowed_message=source.get(
                 "AGENT_BRIDGE_SLACK_CHANNEL_NOT_ALLOWED_MESSAGE",
+                "platforms.slack.channel_not_allowed_message",
                 DEFAULT_CHANNEL_NOT_ALLOWED_MESSAGE,
             ),
-            usage_report_enabled=os.environ.get(
-                "AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED", "false"
+            usage_report_enabled=source.get(
+                "AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED",
+                "platforms.slack.usage_report.enabled",
+                "false",
             ).lower()
             in _TRUTHY,
-            usage_report_template=os.environ.get(
-                "AGENT_BRIDGE_SLACK_USAGE_REPORT_TEMPLATE"
+            usage_report_template=source.get(
+                "AGENT_BRIDGE_SLACK_USAGE_REPORT_TEMPLATE",
+                "platforms.slack.usage_report.template",
             )
             or None,
         )

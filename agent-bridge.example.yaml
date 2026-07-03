@@ -1,0 +1,60 @@
+# Agent Bridge configuration (YAML mode).
+#
+# Copy to ./agent-bridge.yaml (auto-discovered) or point at it explicitly with
+# `agent-bridge -c path/to/file.yaml` or AGENT_BRIDGE_CONFIG=path/to/file.yaml.
+#
+# Precedence: environment variables > this file > built-in defaults.
+# Every key maps 1:1 to an env var — see docs/configuration.md for the table.
+#
+# Secrets: never put them in the file. Write $(VAR) and the value is read from
+# the environment at startup (missing vars fail fast with a clear error).
+# A literal `$(` can be written as `$$(`.
+
+log_level: INFO # AGENT_BRIDGE_LOG_LEVEL
+
+# Which agent handles messages (single active agent). Currently: claude
+agent: claude # AGENT_BRIDGE_AGENT
+
+bridge:
+  session_store_path: ./sessions.json # AGENT_BRIDGE_SESSION_STORE_PATH
+  session_ttl_hours: 72 # AGENT_BRIDGE_SESSION_TTL_HOURS
+  max_concurrent_sessions: 5 # AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS
+  # Cross-session prompt dedupe; ttl_seconds 0 disables the feature.
+  dedupe:
+    ttl_seconds: 0 # AGENT_BRIDGE_DEDUPE_TTL_SECONDS
+    max_entries: 512 # AGENT_BRIDGE_DEDUPE_MAX_ENTRIES
+    simhash_threshold: 0 # AGENT_BRIDGE_DEDUPE_SIMHASH_THRESHOLD
+
+platforms:
+  # Slack activates when both tokens are set; omit the section to disable.
+  slack:
+    bot_token: $(SLACK_BOT_TOKEN) # AGENT_BRIDGE_SLACK_BOT_TOKEN (xoxb-...)
+    app_token: $(SLACK_APP_TOKEN) # AGENT_BRIDGE_SLACK_APP_TOKEN (xapp-...)
+    # Optional: send a message after Socket Mode connects.
+    # startup_notify_channel: C12345678   # AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_CHANNEL
+    # startup_notify_message: Bot is online  # AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_MESSAGE
+    # Optional channel-name allow-list (list or comma-separated string).
+    # Empty/omitted = allow every channel; non-empty also blocks DMs.
+    # allow_channels:                     # AGENT_BRIDGE_SLACK_ALLOW_CHANNELS
+    #   - ops-alerts
+    #   - team-eng
+    # channel_not_allowed_message: Sorry, I'm not available here. # AGENT_BRIDGE_SLACK_CHANNEL_NOT_ALLOWED_MESSAGE
+    # Usage/cost footer appended to the final reply.
+    usage_report:
+      enabled: false # AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED
+      # template: "💵 {cost_usd} | {total_tokens} tokens | {duration_s}s" # AGENT_BRIDGE_SLACK_USAGE_REPORT_TEMPLATE
+
+  # Heartbeat fires a fixed prompt on a fixed interval. Explicit opt-in.
+  heartbeat:
+    enabled: false # AGENT_BRIDGE_HEARTBEAT_ENABLED
+    # interval_minutes: 60              # AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES
+    # prompt: Check your task list and work on the next item. # AGENT_BRIDGE_HEARTBEAT_PROMPT
+    # state_path: ./heartbeat.json      # AGENT_BRIDGE_HEARTBEAT_STATE_PATH
+
+agents:
+  claude:
+    work_dir: . # AGENT_BRIDGE_CLAUDE_WORK_DIR
+    permission_mode: acceptEdits # AGENT_BRIDGE_CLAUDE_PERMISSION_MODE
+    timeout_seconds: 600 # AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS
+    worktree_enabled: false # AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED
+    effort: xhigh # AGENT_BRIDGE_CLAUDE_EFFORT (low|medium|high|xhigh|max)

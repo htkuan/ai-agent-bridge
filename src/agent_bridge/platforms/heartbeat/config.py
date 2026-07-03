@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
+from agent_bridge.config_loader import ConfigSource
+
+_TRUTHY = {"true", "1", "yes", "on"}
 
 
 @dataclass(frozen=True)
@@ -16,20 +17,37 @@ class HeartbeatConfig:
 
     @classmethod
     def from_env(cls) -> HeartbeatConfig:
-        load_dotenv()
+        return cls.from_source(ConfigSource.empty())
 
-        enabled = os.environ.get("AGENT_BRIDGE_HEARTBEAT_ENABLED", "false").lower() == "true"
+    @classmethod
+    def from_source(cls, source: ConfigSource) -> HeartbeatConfig:
+        enabled = (
+            source.get(
+                "AGENT_BRIDGE_HEARTBEAT_ENABLED", "platforms.heartbeat.enabled", "false"
+            ).lower()
+            in _TRUTHY
+        )
         if not enabled:
             return cls()
 
         config = cls(
             enabled=True,
             interval_minutes=int(
-                os.environ.get("AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES", "0")
+                source.get(
+                    "AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES",
+                    "platforms.heartbeat.interval_minutes",
+                    "0",
+                )
             ),
-            prompt=os.environ.get("AGENT_BRIDGE_HEARTBEAT_PROMPT", ""),
+            prompt=source.get(
+                "AGENT_BRIDGE_HEARTBEAT_PROMPT", "platforms.heartbeat.prompt", ""
+            ),
             state_path=Path(
-                os.environ.get("AGENT_BRIDGE_HEARTBEAT_STATE_PATH", "./heartbeat.json")
+                source.get(
+                    "AGENT_BRIDGE_HEARTBEAT_STATE_PATH",
+                    "platforms.heartbeat.state_path",
+                    "./heartbeat.json",
+                )
             ),
         )
         config._validate()

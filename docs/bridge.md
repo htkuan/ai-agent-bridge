@@ -11,7 +11,7 @@ Source: `src/agent_bridge/bridge.py`, plus its collaborators:
 | `src/agent_bridge/session.py` | `SessionManager` — persistent `session_key → session_id` map with TTL |
 | `src/agent_bridge/dedupe.py` | `PromptDedupeCache` — optional cross-session prompt dedupe |
 | `src/agent_bridge/protocols.py` | `AgentController` and `PlatformAdapter` protocols |
-| `src/agent_bridge/config.py` | `BridgeConfig` — env-loaded settings |
+| `src/agent_bridge/config.py` | `BridgeConfig` — settings loaded via `ConfigSource` (env > YAML > default) |
 
 ## What the Bridge Does (and Doesn't)
 
@@ -27,16 +27,18 @@ This deliberately narrow surface is what lets the same Bridge instance serve eve
 
 ## Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AGENT_BRIDGE_SESSION_STORE_PATH` | `./sessions.json` | Where `SessionManager` persists the `session_key → session_id` map. |
-| `AGENT_BRIDGE_SESSION_TTL_HOURS` | `72` | Sessions inactive for longer than this are purged. |
-| `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | `5` | Global Semaphore size. Beyond this, new requests are rejected immediately. |
-| `AGENT_BRIDGE_DEDUPE_TTL_SECONDS` | `0` | Cross-session prompt dedupe TTL. `0` disables the feature entirely. |
-| `AGENT_BRIDGE_DEDUPE_MAX_ENTRIES` | `512` | LRU cap for the dedupe cache. |
-| `AGENT_BRIDGE_DEDUPE_SIMHASH_THRESHOLD` | `0` | Hamming threshold for SimHash fuzzy fallback. `0` = exact canonical match only. |
+Each env var also has a YAML key (env wins — see [docs/configuration.md](configuration.md)).
 
-Validation happens at startup — invalid values raise `ValueError` from `BridgeConfig.from_env()`.
+| Variable | YAML key | Default | Description |
+|----------|----------|---------|-------------|
+| `AGENT_BRIDGE_SESSION_STORE_PATH` | `bridge.session_store_path` | `./sessions.json` | Where `SessionManager` persists the `session_key → session_id` map. |
+| `AGENT_BRIDGE_SESSION_TTL_HOURS` | `bridge.session_ttl_hours` | `72` | Sessions inactive for longer than this are purged. |
+| `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | `bridge.max_concurrent_sessions` | `5` | Global Semaphore size. Beyond this, new requests are rejected immediately. |
+| `AGENT_BRIDGE_DEDUPE_TTL_SECONDS` | `bridge.dedupe.ttl_seconds` | `0` | Cross-session prompt dedupe TTL. `0` disables the feature entirely. |
+| `AGENT_BRIDGE_DEDUPE_MAX_ENTRIES` | `bridge.dedupe.max_entries` | `512` | LRU cap for the dedupe cache. |
+| `AGENT_BRIDGE_DEDUPE_SIMHASH_THRESHOLD` | `bridge.dedupe.simhash_threshold` | `0` | Hamming threshold for SimHash fuzzy fallback. `0` = exact canonical match only. |
+
+Validation happens at startup — invalid values raise `ValueError` from `BridgeConfig.from_source()` (or its `from_env()` shortcut).
 
 ## Data Flow
 
@@ -277,8 +279,12 @@ class AgentController(Protocol):
         context: dict[str, str] | None = None,
         system_prompt: str | None = None,
     ) -> AsyncIterator[BridgeEvent]: ...
+
+    async def cleanup_session(self, session_id: str) -> None: ...
 ```
 
-The controller receives a pre-built `prompt` and `system_prompt` from whatever platform invoked it, runs the agent, and yields exactly one `Completion` at the end. It must not parse platform-specific keys out of `context`.
+The controller receives a pre-built `prompt` and `system_prompt` from whatever platform invoked it, runs the agent, and yields exactly one `Completion` at the end. It must not parse platform-specific keys out of `context`. `cleanup_session` releases per-session resources when the bridge purges an expired session (no-op is valid).
+
+New components register in the explicit dicts in `agents/registry.py` / `platforms/registry.py` — the entry point (`app.py`) contains no component-specific wiring. Full contract: [docs/architecture.md](architecture.md).
 
 See [docs/agents/claude.md](agents/claude.md) for a working example.

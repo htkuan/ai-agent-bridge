@@ -28,6 +28,10 @@ class AgentController(Protocol):
         system_prompt: str | None = None,
     ) -> AsyncIterator[BridgeEvent]: ...
 
+    async def cleanup_session(self, session_id: str) -> None:
+        """Release per-session resources (called when the bridge purges an
+        expired session). No-op is a valid implementation."""
+
 
 class PlatformAdapter(Protocol):
     """Interface for chat platform frontends.

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dotenv import load_dotenv
+from agent_bridge.config_loader import ConfigSource
 
 
 @dataclass(frozen=True)
@@ -13,7 +12,7 @@ class BridgeConfig:
 
     session_store_path: Path = field(default_factory=lambda: Path("./sessions.json"))
     session_ttl_hours: float = 72.0
-    max_concurrent_sessions: int = 10
+    max_concurrent_sessions: int = 5
     # Cross-session prompt dedupe. 0 disables the feature entirely.
     dedupe_ttl_seconds: float = 0.0
     dedupe_max_entries: int = 512
@@ -23,24 +22,47 @@ class BridgeConfig:
 
     @classmethod
     def from_env(cls) -> BridgeConfig:
-        load_dotenv()
+        # dotenv loading happens once at the entry point (app.main), not here.
+        return cls.from_source(ConfigSource.empty())
 
+    @classmethod
+    def from_source(cls, source: ConfigSource) -> BridgeConfig:
         config = cls(
             session_store_path=Path(
-                os.environ.get("AGENT_BRIDGE_SESSION_STORE_PATH", "./sessions.json")
+                source.get(
+                    "AGENT_BRIDGE_SESSION_STORE_PATH",
+                    "bridge.session_store_path",
+                    "./sessions.json",
+                )
             ),
-            session_ttl_hours=float(os.environ.get("AGENT_BRIDGE_SESSION_TTL_HOURS", "72")),
+            session_ttl_hours=float(
+                source.get(
+                    "AGENT_BRIDGE_SESSION_TTL_HOURS", "bridge.session_ttl_hours", "72"
+                )
+            ),
             max_concurrent_sessions=int(
-                os.environ.get("AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS", "5")
+                source.get(
+                    "AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS",
+                    "bridge.max_concurrent_sessions",
+                    "5",
+                )
             ),
             dedupe_ttl_seconds=float(
-                os.environ.get("AGENT_BRIDGE_DEDUPE_TTL_SECONDS", "0")
+                source.get(
+                    "AGENT_BRIDGE_DEDUPE_TTL_SECONDS", "bridge.dedupe.ttl_seconds", "0"
+                )
             ),
             dedupe_max_entries=int(
-                os.environ.get("AGENT_BRIDGE_DEDUPE_MAX_ENTRIES", "512")
+                source.get(
+                    "AGENT_BRIDGE_DEDUPE_MAX_ENTRIES", "bridge.dedupe.max_entries", "512"
+                )
             ),
             dedupe_simhash_threshold=int(
-                os.environ.get("AGENT_BRIDGE_DEDUPE_SIMHASH_THRESHOLD", "0")
+                source.get(
+                    "AGENT_BRIDGE_DEDUPE_SIMHASH_THRESHOLD",
+                    "bridge.dedupe.simhash_threshold",
+                    "0",
+                )
             ),
         )
         config._validate()

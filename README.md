@@ -49,6 +49,18 @@ AGENT_BRIDGE_CLAUDE_WORK_DIR=/path/to/your/project
 
 See [Environment Variables](#environment-variables) for the full list.
 
+Alternatively, use a **YAML config file** for nested, per-component settings — with
+secrets referenced as `$(VAR)` from the environment and any key still overridable
+by its env var:
+
+```bash
+cp agent-bridge.example.yaml agent-bridge.yaml   # auto-discovered in cwd
+uv run agent-bridge                              # or: agent-bridge -c path/to/file.yaml
+```
+
+Precedence: env vars > YAML > built-in defaults. Full key ⇔ env var mapping:
+[docs/configuration.md](docs/configuration.md).
+
 ### Slack App Setup
 
 1. Create a Slack App at [api.slack.com/apps](https://api.slack.com/apps)
@@ -107,9 +119,13 @@ All agent output flows through generic events — the shared language between ag
 
 ## Environment Variables
 
+Every variable also has a YAML config key — see [docs/configuration.md](docs/configuration.md).
+
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | No | — | API key for the Claude Code CLI (skip if already authenticated via `claude login`) |
+| `AGENT_BRIDGE_CONFIG` | No | — | Path to a YAML config file (else `./agent-bridge.yaml` if present, else pure env mode) |
+| `AGENT_BRIDGE_AGENT` | No | `claude` | Which registered agent handles messages |
 | `AGENT_BRIDGE_SLACK_BOT_TOKEN` | Yes (if using Slack) | — | Slack Bot User OAuth Token (`xoxb-...`) |
 | `AGENT_BRIDGE_SLACK_APP_TOKEN` | Yes (if using Slack) | — | Slack App-Level Token for Socket Mode (`xapp-...`) |
 | `AGENT_BRIDGE_CLAUDE_WORK_DIR` | No | `.` | Working directory for Claude Code |

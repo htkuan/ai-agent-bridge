@@ -1,8 +1,14 @@
 # Agent Bridge
 
-Modular bridge that connects **chat platforms** to **AI agents**. Each layer is independent — swap platforms or agents without touching the others.
+[![PyPI](https://img.shields.io/pypi/v/ai-agent-bridge)](https://pypi.org/project/ai-agent-bridge/)
+[![Python](https://img.shields.io/pypi/pyversions/ai-agent-bridge)](https://pypi.org/project/ai-agent-bridge/)
+[![CI](https://github.com/htkuan/ai-agent-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/htkuan/ai-agent-bridge/actions/workflows/ci.yml)
+[![Docs](https://github.com/htkuan/ai-agent-bridge/actions/workflows/docs.yml/badge.svg)](https://htkuan.github.io/ai-agent-bridge/)
+[![License: MIT](https://img.shields.io/github/license/htkuan/ai-agent-bridge)](https://github.com/htkuan/ai-agent-bridge/blob/main/LICENSE)
 
-Currently supports: **Slack**, **Telegram**, **LINE**, **POST API** (generic HTTP entry point), **Heartbeat** (scheduled prompts) + **Claude Code**, **Codex**, **OpenCode**
+Modular bridge that connects **chat platforms** to **AI agents** — message your
+coding agent from Slack, Telegram, LINE, a plain HTTP endpoint, or a scheduler.
+Each layer is independent: swap platforms or agents without touching the others.
 
 ```
 ┌──────────────┐     ┌──────────┐     ┌──────────────┐
@@ -14,29 +20,59 @@ Currently supports: **Slack**, **Telegram**, **LINE**, **POST API** (generic HTT
   UI logic            Concurrency       No UI knowledge
 ```
 
-## Quick Start
+**Documentation: [htkuan.github.io/ai-agent-bridge](https://htkuan.github.io/ai-agent-bridge/)**
 
-### Prerequisites
+## Supported platforms & agents
 
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/)
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated (or the [OpenAI Codex CLI](https://developers.openai.com/codex) / [OpenCode CLI](https://opencode.ai) when running with `AGENT_BRIDGE_AGENT=codex` / `opencode`)
+Every platform works with every agent — pick one from each table:
 
-### Install
+| Platform | Connection mode | Session scope | Docs |
+|----------|----------------|---------------|------|
+| **Slack** | Socket Mode (websocket, no public URL) | Thread | [Slack](https://htkuan.github.io/ai-agent-bridge/platforms/slack/) |
+| **Telegram** | Long polling (no public URL) | Chat / forum topic | [Telegram](https://htkuan.github.io/ai-agent-bridge/platforms/telegram/) |
+| **LINE** | Webhook (needs a public HTTPS URL) | Chat / group / room | [LINE](https://htkuan.github.io/ai-agent-bridge/platforms/line/) |
+| **POST API** | Built-in HTTP server (buffered JSON + SSE) | Client-chosen `session` id | [POST API](https://htkuan.github.io/ai-agent-bridge/platforms/api/) |
+| **Heartbeat** | Internal scheduler (fixed-interval prompts) | One-shot per tick | [Heartbeat](https://htkuan.github.io/ai-agent-bridge/platforms/heartbeat/) |
+
+| Agent | CLI dependency | Docs |
+|-------|---------------|------|
+| **Claude Code** (default) | [`claude`](https://docs.anthropic.com/en/docs/claude-code) — `claude -p --output-format stream-json` | [Claude Code](https://htkuan.github.io/ai-agent-bridge/agents/claude/) |
+| **Codex** | [`codex`](https://developers.openai.com/codex) — `codex exec --json` | [Codex](https://htkuan.github.io/ai-agent-bridge/agents/codex/) |
+| **OpenCode** | [`opencode`](https://opencode.ai) — `opencode run --format json` | [OpenCode](https://htkuan.github.io/ai-agent-bridge/agents/opencode/) |
+
+Multiple platforms run simultaneously against the configured agent
+(`AGENT_BRIDGE_AGENT=claude|codex|opencode`).
+
+## Quick start
+
+Full walkthrough: [Getting Started](https://htkuan.github.io/ai-agent-bridge/getting-started/).
+
+### 1. Install
+
+Requires Python 3.12+ and the CLI of your chosen agent (installed and authenticated).
+
+```bash
+pip install "ai-agent-bridge[all]"   # or [slack] / [telegram] / [line] / [api]
+```
+
+Or from source with [uv](https://docs.astral.sh/uv/):
 
 ```bash
 git clone https://github.com/htkuan/ai-agent-bridge.git
-cd agent-bridge
+cd ai-agent-bridge
 uv sync
 ```
 
-### Configure
+### 2. Configure — `.env` or YAML
+
+Configuration merges three sources, **env vars > YAML > built-in defaults**, so
+either mode works alone and they mix freely.
+
+**Env mode** — copy the template and fill in what you use:
 
 ```bash
 cp .env.example .env
 ```
-
-Edit `.env` with your tokens:
 
 ```bash
 # Required for Slack
@@ -47,37 +83,41 @@ AGENT_BRIDGE_SLACK_APP_TOKEN=xapp-your-app-level-token
 AGENT_BRIDGE_CLAUDE_WORK_DIR=/path/to/your/project
 ```
 
-See [Environment Variables](#environment-variables) for the full list.
-
-Alternatively, use a **YAML config file** for nested, per-component settings — with
-secrets referenced as `$(VAR)` from the environment and any key still overridable
-by its env var:
+**YAML mode** — one nested file for all components, secrets pulled from the
+environment via `$(VAR)` (safe to commit):
 
 ```bash
 cp agent-bridge.example.yaml agent-bridge.yaml   # auto-discovered in cwd
-uv run agent-bridge                              # or: agent-bridge -c path/to/file.yaml
 ```
 
-Precedence: env vars > YAML > built-in defaults. Full key ⇔ env var mapping:
-[docs/configuration.md](docs/configuration.md).
+```yaml
+agent: claude
 
-### Slack App Setup
+platforms:
+  slack:
+    bot_token: $(SLACK_BOT_TOKEN)
+    app_token: $(SLACK_APP_TOKEN)
 
-1. Create a Slack App at [api.slack.com/apps](https://api.slack.com/apps)
-2. Enable **Socket Mode** → generate an App-Level Token (`xapp-...`)
-3. Add **Bot Token Scopes** (OAuth & Permissions):
-   - `app_mentions:read`, `chat:write`, `files:write`, `im:history`, `im:read`
-4. Subscribe to **Events**:
-   - `app_mention`, `message.im`
-5. Install to workspace → copy Bot User OAuth Token (`xoxb-...`)
+agents:
+  claude:
+    work_dir: /path/to/your/project
+```
 
-### Run
+Use `agent-bridge -c path/to/file.yaml` or `AGENT_BRIDGE_CONFIG=...` to point at
+a different file. Full key ⇔ env var mapping:
+[Configuration](https://htkuan.github.io/ai-agent-bridge/configuration/).
+
+Platform credentials (creating the Slack app, the Telegram bot, the LINE
+channel, ...) are covered step by step in each platform's docs page — e.g.
+[Slack setup](https://htkuan.github.io/ai-agent-bridge/platforms/slack/#setup).
+
+### 3. Run
 
 ```bash
-uv run agent-bridge
+agent-bridge          # or from source: uv run agent-bridge
 ```
 
-## Usage
+Then talk to it — for example on Slack:
 
 | Action | How |
 |--------|-----|
@@ -86,21 +126,21 @@ uv run agent-bridge
 | Continue conversation | Reply in the same Slack thread |
 | Attach files | Upload files in the message — the agent receives download URLs |
 
-Each Slack thread is one agent session. The agent remembers context within a thread.
+Each Slack thread (or Telegram topic, LINE chat, API `session` id) is one agent
+session — the agent remembers context within it.
 
 ## Architecture
 
-The system has three independent layers:
+Three independent layers, connected by narrow protocols:
 
-| Layer | Role | Docs |
-|-------|------|------|
-| **Platform Adapter** | Owns session semantics, per-session locking, UI rendering | [Slack](docs/platforms/slack.md) · [Telegram](docs/platforms/telegram.md) · [LINE](docs/platforms/line.md) · [POST API](docs/platforms/api.md) · [Heartbeat](docs/platforms/heartbeat.md) |
-| **Bridge** | Routes messages, maps session keys → IDs, enforces concurrency | Core — see below |
-| **Agent Controller** | Executes prompts, yields generic events | [Claude Agent](docs/agents/claude.md) · [Codex Agent](docs/agents/codex.md) · [OpenCode Agent](docs/agents/opencode.md) |
+| Layer | Role |
+|-------|------|
+| **Platform Adapter** | Owns session semantics, per-session locking, UI rendering |
+| **Bridge** | Routes messages, maps session keys → IDs, enforces global concurrency |
+| **Agent Controller** | Executes prompts, yields generic events |
 
-### Event Model
-
-All agent output flows through generic events — the shared language between agents and platforms:
+All agent output flows through five generic events — the shared language
+between agents and platforms:
 
 | Event | Description |
 |-------|-------------|
@@ -110,16 +150,17 @@ All agent output flows through generic events — the shared language between ag
 | `UserQuestion` | Agent asking user for input |
 | `Completion` | Agent finished (with cost, duration, error status) |
 
-### Session Lifecycle
+Session lifecycle: the platform builds a session key (e.g.
+`slack:{channel}:{thread_ts}`), the bridge resolves it to a UUID session id
+(persisted, TTL-expired — default 72 h), and the agent runs with it (new or
+resumed). The full contract — event semantics, `handle_message` parameters,
+usage reporting: [Architecture](https://htkuan.github.io/ai-agent-bridge/architecture/)
+and [Bridge Core](https://htkuan.github.io/ai-agent-bridge/bridge/).
 
-1. User sends message → Platform constructs session key (e.g. `slack:{channel}:{thread_ts}`)
-2. Bridge resolves key → UUID session ID (creates new if first message)
-3. Agent runs with session ID (new session or resume existing)
-4. Sessions expire after configurable TTL (default 72h)
+## Environment variables
 
-## Environment Variables
-
-Every variable also has a YAML config key — see [docs/configuration.md](docs/configuration.md).
+Every variable also has a YAML config key — see
+[Configuration](https://htkuan.github.io/ai-agent-bridge/configuration/).
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -167,33 +208,40 @@ Every variable also has a YAML config key — see [docs/configuration.md](docs/c
 
 ## Extending
 
-### Add a new platform
+Adding a component never requires touching the bridge core, the other agents,
+or the other platforms:
 
-Create `platforms/{name}/` with `config.py` and `adapter.py`. Implement the `PlatformAdapter` protocol. Define your session key format. See [Slack Adapter docs](docs/platforms/slack.md) for reference.
+- **New platform** — `platforms/{name}/` with `config.py` + `adapter.py`,
+  implementing the `PlatformAdapter` protocol, plus a registry entry.
+- **New agent** — `agents/{name}/` with `config.py`, `controller.py`,
+  `events.py`, implementing the `AgentController` protocol (yield generic
+  `BridgeEvent`s only), plus a registry entry.
 
-### Add a new agent
-
-Create `agents/{name}/` with `config.py`, `controller.py`, and `events.py`. Implement the `AgentController` protocol — your `run()` yields `BridgeEvent`s. See [Claude Agent docs](docs/agents/claude.md) for reference.
-
-Neither change requires modifying the bridge, the other agent, or the other platform.
+The exact contract and step-by-step checklists:
+[Architecture](https://htkuan.github.io/ai-agent-bridge/architecture/) ·
+[Contributing](https://github.com/htkuan/ai-agent-bridge/blob/main/CONTRIBUTING.md).
 
 ## Development
 
 ```bash
-# Run tests (unit + integration; all offline)
-uv run pytest
+uv sync                             # deps incl. dev tools (pytest, ruff, pre-commit)
+uv run pre-commit install           # git hooks: ruff + commitlint
 
-# Fast path: unit tests only
-uv run pytest -m "not integration"
+uv run pytest                       # all tests (unit + integration; fully offline)
+uv run pytest -m "not integration"  # fast path: unit tests only
 
-# Run with debug logging
-AGENT_BRIDGE_LOG_LEVEL=DEBUG uv run agent-bridge
+uv run ruff check .                 # lint
+uv run ruff format --check .        # format check
+
+AGENT_BRIDGE_LOG_LEVEL=DEBUG uv run agent-bridge   # run with debug logging
 ```
 
-Commits follow [Conventional Commits](https://www.conventionalcommits.org/) (lowercase
-types: `feat:`, `fix:`, ...) and are enforced on PRs. Merging to `main` cuts a release
-automatically — see [docs/releasing.md](docs/releasing.md).
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/)
+(lowercase types: `feat:`, `fix:`, ...) and are enforced on PRs. Merging to
+`main` cuts a release automatically — see
+[Releasing](https://htkuan.github.io/ai-agent-bridge/releasing/). Contributions
+welcome: [CONTRIBUTING.md](https://github.com/htkuan/ai-agent-bridge/blob/main/CONTRIBUTING.md).
 
 ## License
 
-MIT
+[MIT](https://github.com/htkuan/ai-agent-bridge/blob/main/LICENSE)

@@ -103,6 +103,9 @@ src/agent_bridge/
     ├── telegram/
     │   ├── config.py    # TelegramConfig (bot_token, allow_chats, poll timeout, state path)
     │   └── adapter.py   # getUpdates long-poll loop, mention/reply filtering, placeholder-edit rendering
+    ├── line/
+    │   ├── config.py    # LineConfig (channel secret/token, webhook host/port/path)
+    │   └── adapter.py   # Webhook server, HMAC signature check, buffered reply→push rendering
     └── heartbeat/
         ├── config.py    # HeartbeatConfig (interval, prompt, state path)
         └── adapter.py   # Scheduled ticks, one-shot (non-resumable) sessions
@@ -235,6 +238,12 @@ the entry point (`app.main`) via python-dotenv. Every variable has a matching YA
 | `AGENT_BRIDGE_TELEGRAM_POLL_TIMEOUT_SECONDS` | No | `30` | Telegram (getUpdates long-poll wait; 0 = short polling) |
 | `AGENT_BRIDGE_TELEGRAM_STATE_PATH` | No | `./telegram.json` | Telegram (persists last processed update_id) |
 | `AGENT_BRIDGE_TELEGRAM_API_BASE_URL` | No | `https://api.telegram.org` | Telegram (Bot API base URL; tests use a fake server) |
+| `AGENT_BRIDGE_LINE_CHANNEL_SECRET` | Yes (if using LINE) | — | LINE (channel secret; webhook signature verification) |
+| `AGENT_BRIDGE_LINE_CHANNEL_ACCESS_TOKEN` | Yes (if using LINE) | — | LINE (channel access token; Messaging API) |
+| `AGENT_BRIDGE_LINE_WEBHOOK_HOST` | No | `0.0.0.0` | LINE (webhook server bind address) |
+| `AGENT_BRIDGE_LINE_WEBHOOK_PORT` | No | `8080` | LINE (webhook server port; 0 = ephemeral, for tests) |
+| `AGENT_BRIDGE_LINE_WEBHOOK_PATH` | No | `/line/webhook` | LINE (webhook endpoint path) |
+| `AGENT_BRIDGE_LINE_API_BASE_URL` | No | `https://api.line.me` | LINE (Messaging API base URL; tests use a fake server) |
 | `AGENT_BRIDGE_CLAUDE_WORK_DIR` | No | `.` | Claude |
 | `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude |
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Claude |

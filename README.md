@@ -2,7 +2,7 @@
 
 Modular bridge that connects **chat platforms** to **AI agents**. Each layer is independent — swap platforms or agents without touching the others.
 
-Currently supports: **Slack**, **Telegram**, **Heartbeat** (scheduled prompts) + **Claude Code**
+Currently supports: **Slack**, **Telegram**, **LINE**, **Heartbeat** (scheduled prompts) + **Claude Code**
 
 ```
 ┌──────────────┐     ┌──────────┐     ┌──────────────┐
@@ -94,7 +94,7 @@ The system has three independent layers:
 
 | Layer | Role | Docs |
 |-------|------|------|
-| **Platform Adapter** | Owns session semantics, per-session locking, UI rendering | [Slack](docs/platforms/slack.md) · [Telegram](docs/platforms/telegram.md) · [Heartbeat](docs/platforms/heartbeat.md) |
+| **Platform Adapter** | Owns session semantics, per-session locking, UI rendering | [Slack](docs/platforms/slack.md) · [Telegram](docs/platforms/telegram.md) · [LINE](docs/platforms/line.md) · [Heartbeat](docs/platforms/heartbeat.md) |
 | **Bridge** | Routes messages, maps session keys → IDs, enforces concurrency | Core — see below |
 | **Agent Controller** | Executes prompts, yields generic events | [Claude Agent](docs/agents/claude.md) |
 
@@ -133,6 +133,12 @@ Every variable also has a YAML config key — see [docs/configuration.md](docs/c
 | `AGENT_BRIDGE_TELEGRAM_POLL_TIMEOUT_SECONDS` | No | `30` | `getUpdates` long-poll wait (seconds) |
 | `AGENT_BRIDGE_TELEGRAM_STATE_PATH` | No | `./telegram.json` | Persists the last processed update id across restarts |
 | `AGENT_BRIDGE_TELEGRAM_API_BASE_URL` | No | `https://api.telegram.org` | Bot API base URL (tests point this at a fake server) |
+| `AGENT_BRIDGE_LINE_CHANNEL_SECRET` | Yes (if using LINE) | — | LINE channel secret (webhook signature verification) |
+| `AGENT_BRIDGE_LINE_CHANNEL_ACCESS_TOKEN` | Yes (if using LINE) | — | LINE channel access token (Messaging API) |
+| `AGENT_BRIDGE_LINE_WEBHOOK_HOST` | No | `0.0.0.0` | Webhook server bind address |
+| `AGENT_BRIDGE_LINE_WEBHOOK_PORT` | No | `8080` | Webhook server port (`0` = ephemeral, for tests) |
+| `AGENT_BRIDGE_LINE_WEBHOOK_PATH` | No | `/line/webhook` | Webhook endpoint path |
+| `AGENT_BRIDGE_LINE_API_BASE_URL` | No | `https://api.line.me` | Messaging API base URL (tests point this at a fake server) |
 | `AGENT_BRIDGE_CLAUDE_WORK_DIR` | No | `.` | Working directory for Claude Code |
 | `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude permission mode |
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Per-invocation timeout (seconds) |

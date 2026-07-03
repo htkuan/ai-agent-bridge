@@ -57,6 +57,18 @@ platforms:
     # state_path: ./telegram.json       # AGENT_BRIDGE_TELEGRAM_STATE_PATH
     # api_base_url: https://api.telegram.org # AGENT_BRIDGE_TELEGRAM_API_BASE_URL
 
+  # LINE activates when both secret and token are set; omit the section to
+  # disable. Webhook — needs a public HTTPS URL in front of the server.
+  # Requires the `line` extra.
+  line:
+    channel_secret: $(LINE_CHANNEL_SECRET) # AGENT_BRIDGE_LINE_CHANNEL_SECRET
+    channel_access_token: $(LINE_CHANNEL_ACCESS_TOKEN) # AGENT_BRIDGE_LINE_CHANNEL_ACCESS_TOKEN
+    # webhook:
+    #   host: 0.0.0.0                     # AGENT_BRIDGE_LINE_WEBHOOK_HOST
+    #   port: 8080                        # AGENT_BRIDGE_LINE_WEBHOOK_PORT
+    #   path: /line/webhook               # AGENT_BRIDGE_LINE_WEBHOOK_PATH
+    # api_base_url: https://api.line.me   # AGENT_BRIDGE_LINE_API_BASE_URL
+
   # Heartbeat fires a fixed prompt on a fixed interval. Explicit opt-in.
   heartbeat:
     enabled: false # AGENT_BRIDGE_HEARTBEAT_ENABLED

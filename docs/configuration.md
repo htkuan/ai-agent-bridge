@@ -95,6 +95,19 @@ Telegram activates when the bot token resolves; otherwise the adapter is disable
 | `platforms.telegram.state_path` | `AGENT_BRIDGE_TELEGRAM_STATE_PATH` | `./telegram.json` |
 | `platforms.telegram.api_base_url` | `AGENT_BRIDGE_TELEGRAM_API_BASE_URL` | `https://api.telegram.org` |
 
+### LINE platform
+
+LINE activates when both the channel secret and the channel access token resolve; otherwise the adapter is disabled with a log line. Requires the `line` extra (`pip install ai-agent-bridge[line]`) and a public HTTPS URL in front of the webhook server.
+
+| YAML key | Env var | Default |
+|----------|---------|---------|
+| `platforms.line.channel_secret` | `AGENT_BRIDGE_LINE_CHANNEL_SECRET` | — (required) |
+| `platforms.line.channel_access_token` | `AGENT_BRIDGE_LINE_CHANNEL_ACCESS_TOKEN` | — (required) |
+| `platforms.line.webhook.host` | `AGENT_BRIDGE_LINE_WEBHOOK_HOST` | `0.0.0.0` |
+| `platforms.line.webhook.port` | `AGENT_BRIDGE_LINE_WEBHOOK_PORT` | `8080` |
+| `platforms.line.webhook.path` | `AGENT_BRIDGE_LINE_WEBHOOK_PATH` | `/line/webhook` |
+| `platforms.line.api_base_url` | `AGENT_BRIDGE_LINE_API_BASE_URL` | `https://api.line.me` |
+
 ### Heartbeat platform
 
 Heartbeat requires an explicit `enabled: true` (there is no secret to infer activation from).

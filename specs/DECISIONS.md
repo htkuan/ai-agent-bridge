@@ -40,3 +40,8 @@
 - **D36 [T3]** `getMe` 放在背景 poll loop 內含重試，而非 `start()` — `start()` 必須快速返回（protocol 契約），且 Telegram 暫時不可達不應讓整個 bridge 啟動失敗。Poll 錯誤採指數退避 1s→30s cap、成功即重置，錯誤只 log 不 crash。
 - **D37 [T3]** 通用 `FakeApiServer`（record-and-respond aiohttp fake，ephemeral port，`route(method, path, handler)` + `requests` 記錄）進 `tests/helpers/http_server.py`；Telegram 專屬行為（getUpdates 首批有料後續回空、訊息 id 遞增）留在整合測試檔內 — 鏡射 D31 的「通用產生器 + 元件專屬建構器」原則，T4 LINE / T5 API 直接復用。
 - **D38 [T3]** `TelegramAdapter` 接受可選 `session_manager` 並提供 `cleanup_stale_sessions()` hook（同 D20 的 getattr 探測機制）— per-session lock dict 需隨 session 過期回收，避免長期執行的記憶體洩漏。
+- **D39 [T4]** LINE webhook 快速 ack：驗簽（`hmac.compare_digest`）失敗回 403；成功後對每個合格 text-message 事件建背景 task 隨即回 200 — LINE 要求 webhook 秒回，agent 執行遠超該預算。`stop()` 先關 HTTP server（不再收新請求），給 in-flight 任務 5 秒收斂窗口，逾時才取消 — 與 Telegram 的立即取消不同，webhook 事件無 offset 可重放，被取消即永久遺失。
+- **D40 [T4]** LINE 渲染不 streaming（reply token 一次性）：TextDelta 緩衝、StatusUpdate/Processing 僅記 log（無佔位訊息可 edit），Completion 一次送出。5000 字切段（換行邊界優先，同 Telegram 邏輯）；前 5 段以單次 Reply API 送出（一次 call 上限 5 則訊息），溢出段落用 Push API 每批 5 則補發；reply 任何失敗（400 token 過期/已用、transport error）→ 全部改走 Push 到來源 chat id（統一 fallback 比區分錯誤碼簡單且不掉訊息）；事件無 replyToken 直接 Push。
+- **D41 [T4]** Prompt 前綴採 `[{userId}]: `，不呼叫 profile API 解析 display name — 維持零額外 API 往返；未加好友的群組成員 webhook 不帶 userId → 以 `unknown` 標記。文件註明未來可擴充 profile 查詢 + 快取。
+- **D42 [T4]** `FakeApiServer` 泛用強化：handler 可直接回傳 `web.StreamResponse`（模擬非 200，如 reply token 400）、`RecordedRequest` 增記 `headers`（斷言 Authorization bearer）— 介面不變，T5 API adapter 的 bearer-auth 測試同樣受益。
+- **D43 [T4]** `AGENT_BRIDGE_LINE_WEBHOOK_PORT=0` 代表綁 ephemeral port（主要供測試，integration 測試以真 HTTP 打真 server），adapter 提供 `bound_port` 回讀實際埠 — 鏡射 Telegram `poll_timeout_seconds=0` 的「測試旋鈕走正式 config」原則。

@@ -26,6 +26,7 @@ tests/
 │   └── platforms/
 │       ├── slack/
 │       ├── telegram/
+│       ├── line/
 │       └── heartbeat/
 └── integration/           # end-to-end, marked `integration`
 ```
@@ -130,7 +131,7 @@ Knob-to-scenario map:
 
 ### `FakeApiServer`
 
-A record-and-respond aiohttp server for faking HTTP APIs (Telegram Bot API today; any webhook/REST platform reuses it). Register an async handler per `(method, path)`; every request is recorded as a `RecordedRequest(method, path, payload)`. `start()` binds an ephemeral localhost port and returns the base URL — point the adapter's `api_base_url`-style config at it.
+A record-and-respond aiohttp server for faking HTTP APIs (Telegram Bot API and LINE Messaging API today; any webhook/REST platform reuses it). Register an async handler per `(method, path)`; every request is recorded as a `RecordedRequest(method, path, payload, headers)`. A handler normally returns a JSON payload; return a full `web.Response` instead to simulate non-200 statuses (e.g. LINE's 400 on an expired reply token). `start()` binds an ephemeral localhost port and returns the base URL — point the adapter's `api_base_url`-style config at it.
 
 ```python
 from tests.helpers import FakeApiServer
@@ -176,7 +177,7 @@ async def test_message_reaches_bridge_with_session_key():
 
 For the integration layer:
 
-- **Webhook-style platforms** (LINE-like): start the adapter's aiohttp app with `aiohttp.test_utils.TestClient`, POST real payloads (valid + invalid signature), assert HTTP status and the outbound API calls recorded by a `FakeApiServer` or mocked client.
+- **Webhook-style platforms** (LINE-like): start the adapter's real HTTP server on an ephemeral port (`webhook_port=0`), POST real signed payloads at it (valid + invalid signature), and assert the HTTP status plus the outbound API calls recorded by a `FakeApiServer`. Reference: `tests/integration/test_line_end_to_end.py`.
 - **Polling-style platforms** (Telegram-like): run a `FakeApiServer` on an ephemeral port, point the adapter's `api_base_url` config at it, and assert the messages the adapter sends back after a full poll → bridge → `FakeAgentController` cycle. Reference: `tests/integration/test_telegram_end_to_end.py`.
 
 ## Playbook: testing a new agent controller

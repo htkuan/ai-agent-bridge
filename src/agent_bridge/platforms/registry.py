@@ -50,6 +50,23 @@ def _build_telegram(
     return TelegramAdapter(config, bridge, session_manager=session_manager)
 
 
+def _build_line(
+    source: ConfigSource, bridge: Bridge, session_manager: SessionManager
+) -> PlatformAdapter | None:
+    from agent_bridge.platforms.line.config import LineConfig
+
+    try:
+        config = LineConfig.from_source(source)
+    except ValueError as e:
+        logger.info("LINE adapter disabled: %s", e)
+        return None
+    # Imported lazily so the optional aiohttp dependency is only required
+    # when LINE is actually configured.
+    from agent_bridge.platforms.line.adapter import LineAdapter
+
+    return LineAdapter(config, bridge, session_manager=session_manager)
+
+
 def _build_heartbeat(
     source: ConfigSource, bridge: Bridge, session_manager: SessionManager
 ) -> PlatformAdapter | None:
@@ -66,6 +83,7 @@ def _build_heartbeat(
 PLATFORM_BUILDERS: dict[str, PlatformBuilder] = {
     "slack": _build_slack,
     "telegram": _build_telegram,
+    "line": _build_line,
     "heartbeat": _build_heartbeat,
 }
 

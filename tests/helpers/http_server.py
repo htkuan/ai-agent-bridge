@@ -7,7 +7,8 @@ from typing import Any
 from aiohttp import web
 
 # A handler receives the parsed JSON body (or {} for empty/non-JSON bodies)
-# and returns the JSON-serializable response payload.
+# and returns either a JSON-serializable response payload or a full
+# aiohttp ``web.Response`` (for non-200 statuses).
 type JsonHandler = Callable[[dict[str, Any]], Awaitable[Any]]
 
 
@@ -16,6 +17,7 @@ class RecordedRequest:
     method: str
     path: str
     payload: dict[str, Any] = field(default_factory=dict)
+    headers: dict[str, str] = field(default_factory=dict)
 
 
 class FakeApiServer:
@@ -47,12 +49,20 @@ class FakeApiServer:
         if not isinstance(payload, dict):
             payload = {"_body": payload}
         self.requests.append(
-            RecordedRequest(method=request.method, path=request.path, payload=payload)
+            RecordedRequest(
+                method=request.method,
+                path=request.path,
+                payload=payload,
+                headers=dict(request.headers),
+            )
         )
         handler = self._handlers.get((request.method, request.path))
         if handler is None:
             return web.json_response({"error": "no handler"}, status=404)
-        return web.json_response(await handler(payload))
+        result = await handler(payload)
+        if isinstance(result, web.StreamResponse):
+            return result
+        return web.json_response(result)
 
     async def start(self) -> str:
         app = web.Application()

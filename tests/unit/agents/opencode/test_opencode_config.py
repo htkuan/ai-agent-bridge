@@ -9,9 +9,7 @@ from agent_bridge.config_loader import ConfigSource
 
 
 def test_defaults(tmp_path: Path):
-    source = ConfigSource(
-        {"agents": {"opencode": {"work_dir": str(tmp_path)}}}, env={}
-    )
+    source = ConfigSource({"agents": {"opencode": {"work_dir": str(tmp_path)}}}, env={})
     cfg = OpencodeConfig.from_source(source)
     assert cfg.work_dir == tmp_path.resolve()
     assert cfg.model is None
@@ -41,11 +39,7 @@ def test_from_source_reads_yaml_keys(tmp_path: Path):
 
 def test_env_overrides_yaml(tmp_path: Path):
     source = ConfigSource(
-        {
-            "agents": {
-                "opencode": {"work_dir": str(tmp_path), "model": "openai/gpt-5"}
-            }
-        },
+        {"agents": {"opencode": {"work_dir": str(tmp_path), "model": "openai/gpt-5"}}},
         env={"AGENT_BRIDGE_OPENCODE_MODEL": "anthropic/claude-opus-4-5"},
     )
     cfg = OpencodeConfig.from_source(source)
@@ -86,8 +80,6 @@ def test_nonpositive_timeout_rejected(tmp_path: Path):
 
 
 def test_missing_work_dir_rejected(tmp_path: Path):
-    source = ConfigSource(
-        {"agents": {"opencode": {"work_dir": str(tmp_path / "nope")}}}, env={}
-    )
+    source = ConfigSource({"agents": {"opencode": {"work_dir": str(tmp_path / "nope")}}}, env={})
     with pytest.raises(ValueError, match="AGENT_BRIDGE_OPENCODE_WORK_DIR"):
         OpencodeConfig.from_source(source)

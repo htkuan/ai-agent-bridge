@@ -152,11 +152,7 @@ def _parse_item(event_type: str, item: dict) -> list[CodexEvent]:
         case "command_execution":
             return [CommandExecutionEvent(command=item.get("command", ""))]
         case "mcp_tool_call":
-            return [
-                McpToolCallEvent(
-                    server=item.get("server", ""), tool=item.get("tool", "")
-                )
-            ]
+            return [McpToolCallEvent(server=item.get("server", ""), tool=item.get("tool", ""))]
         case "web_search":
             return [WebSearchEvent(query=item.get("query", ""))]
         case "file_change":
@@ -186,9 +182,7 @@ def to_bridge_event(event: CodexEvent) -> BridgeEvent | None:
         case WebSearchEvent(query=query):
             return StatusUpdate(status="Searching the web...", detail=_truncate(query))
         case FileChangeEvent(changes=changes):
-            paths = ", ".join(
-                c.get("path", "") for c in changes if isinstance(c, dict)
-            )
+            paths = ", ".join(c.get("path", "") for c in changes if isinstance(c, dict))
             return StatusUpdate(status="Applying file changes...", detail=_truncate(paths))
         case TurnCompletedEvent() as turn:
             # Codex reports OpenAI-style usage: input_tokens *includes* the
@@ -200,9 +194,7 @@ def to_bridge_event(event: CodexEvent) -> BridgeEvent | None:
                 is_error=False,
                 metadata={
                     "usage": {
-                        "input_tokens": max(
-                            turn.input_tokens - turn.cached_input_tokens, 0
-                        ),
+                        "input_tokens": max(turn.input_tokens - turn.cached_input_tokens, 0),
                         "output_tokens": turn.output_tokens,
                         "cache_read_tokens": turn.cached_input_tokens,
                         "cache_creation_tokens": 0,

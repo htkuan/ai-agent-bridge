@@ -34,9 +34,7 @@ _NORMALIZERS: tuple[tuple[re.Pattern[str], str], ...] = (
         "<UUID>",
     ),
     (
-        re.compile(
-            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?"
-        ),
+        re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?"),
         "<TS>",
     ),
     (re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b"), "<EMAIL>"),
@@ -63,9 +61,7 @@ def simhash(text: str, ngram: int = 4) -> int:
     if not text:
         return 0
     grams = (
-        [text]
-        if len(text) < ngram
-        else [text[i : i + ngram] for i in range(len(text) - ngram + 1)]
+        [text] if len(text) < ngram else [text[i : i + ngram] for i in range(len(text) - ngram + 1)]
     )
     bits = [0] * 64
     for g in grams:
@@ -112,9 +108,7 @@ class PromptDedupeCache:
         if max_entries <= 0:
             raise ValueError(f"max_entries must be positive, got {max_entries}")
         if simhash_threshold < 0:
-            raise ValueError(
-                f"simhash_threshold must be >= 0, got {simhash_threshold}"
-            )
+            raise ValueError(f"simhash_threshold must be >= 0, got {simhash_threshold}")
         self._ttl = ttl_seconds
         self._max = max_entries
         self._threshold = simhash_threshold
@@ -123,9 +117,7 @@ class PromptDedupeCache:
         self._entries: OrderedDict[tuple[str, str], DedupeEntry] = OrderedDict()
 
     def _purge_expired(self, now: float) -> None:
-        expired = [
-            k for k, e in self._entries.items() if now - e.started_at >= self._ttl
-        ]
+        expired = [k for k, e in self._entries.items() if now - e.started_at >= self._ttl]
         for k in expired:
             del self._entries[k]
 

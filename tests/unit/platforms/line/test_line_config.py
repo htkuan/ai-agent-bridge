@@ -16,20 +16,14 @@ def test_missing_channel_secret_raises_with_env_var_name():
 
 
 def test_missing_access_token_raises_with_env_var_name():
-    source = ConfigSource(
-        {"platforms": {"line": {"channel_secret": "sec"}}}, env={}
-    )
+    source = ConfigSource({"platforms": {"line": {"channel_secret": "sec"}}}, env={})
     with pytest.raises(ValueError, match="AGENT_BRIDGE_LINE_CHANNEL_ACCESS_TOKEN"):
         LineConfig.from_source(source)
 
 
 def test_defaults():
     source = ConfigSource(
-        {
-            "platforms": {
-                "line": {"channel_secret": "sec", "channel_access_token": "tok"}
-            }
-        },
+        {"platforms": {"line": {"channel_secret": "sec", "channel_access_token": "tok"}}},
         env={},
     )
     config = LineConfig.from_source(source)

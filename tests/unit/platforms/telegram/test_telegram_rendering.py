@@ -127,9 +127,7 @@ async def test_long_completion_splits_into_extra_messages():
 
 
 async def test_error_completion_prefixed():
-    adapter, api, _ = _make_adapter(
-        [Processing(), Completion(text="boom", is_error=True)]
-    )
+    adapter, api, _ = _make_adapter([Processing(), Completion(text="boom", is_error=True)])
     await _run(adapter, _message(), "hello")
     assert api.named("editMessageText")[-1]["text"] == "❌ boom"
 
@@ -214,7 +212,7 @@ async def test_bridge_exception_logged_not_raised():
     class _BoomBridge:
         async def handle_message(self, *args, **kwargs):
             raise RuntimeError("boom")
-            yield  # noqa: unreachable — makes this an async generator
+            yield  # unreachable — makes this an async generator
 
     adapter, _, _ = _make_adapter()
     adapter._bridge = _BoomBridge()  # type: ignore[assignment]

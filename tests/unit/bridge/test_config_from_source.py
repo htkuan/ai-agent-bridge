@@ -13,7 +13,6 @@ from agent_bridge.platforms.slack.config import (
     SlackConfig,
 )
 
-
 # --- BridgeConfig ---
 
 
@@ -183,11 +182,7 @@ def test_heartbeat_from_yaml_values(tmp_path):
 
 
 def test_heartbeat_env_overrides_yaml():
-    data = {
-        "platforms": {
-            "heartbeat": {"enabled": True, "interval_minutes": 15, "prompt": "yaml"}
-        }
-    }
+    data = {"platforms": {"heartbeat": {"enabled": True, "interval_minutes": 15, "prompt": "yaml"}}}
     env = {"AGENT_BRIDGE_HEARTBEAT_PROMPT": "env"}
     config = HeartbeatConfig.from_source(ConfigSource(data, env=env))
     assert config.prompt == "env"

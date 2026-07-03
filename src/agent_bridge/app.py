@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import logging
 import signal
 from pathlib import Path
@@ -88,12 +89,8 @@ async def main(config_path: Path | None = None) -> None:
     # Periodic cleanup task
     async def _periodic_cleanup() -> None:
         while not shutdown_event.is_set():
-            try:
-                await asyncio.wait_for(
-                    shutdown_event.wait(), timeout=CLEANUP_INTERVAL_SECONDS
-                )
-            except asyncio.TimeoutError:
-                pass
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(shutdown_event.wait(), timeout=CLEANUP_INTERVAL_SECONDS)
             if not shutdown_event.is_set():
                 purged_ids = session_manager.purge_expired()
                 # Optional adapter hook: adapters that keep per-session state
@@ -108,9 +105,7 @@ async def main(config_path: Path | None = None) -> None:
                     try:
                         await controller.cleanup_session(sid)
                     except Exception:
-                        logger.exception(
-                            "Agent session cleanup failed for session %s", sid
-                        )
+                        logger.exception("Agent session cleanup failed for session %s", sid)
                 if purged_ids or stale:
                     logger.info(
                         "Cleanup: purged %d expired sessions, %d stale pending",

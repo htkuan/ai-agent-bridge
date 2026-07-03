@@ -11,9 +11,7 @@ from agent_bridge.session import SessionManager
 logger = logging.getLogger(__name__)
 
 # A builder returns None when its platform is not configured/enabled.
-type PlatformBuilder = Callable[
-    [ConfigSource, Bridge, SessionManager], PlatformAdapter | None
-]
+type PlatformBuilder = Callable[[ConfigSource, Bridge, SessionManager], PlatformAdapter | None]
 
 
 def _build_slack(

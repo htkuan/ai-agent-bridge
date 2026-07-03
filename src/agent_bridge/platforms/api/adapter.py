@@ -13,8 +13,7 @@ try:
     from aiohttp import web
 except ImportError:
     raise ImportError(
-        "API dependencies are not installed. "
-        "Install them with: pip install ai-agent-bridge[api]"
+        "API dependencies are not installed. Install them with: pip install ai-agent-bridge[api]"
     ) from None
 
 from agent_bridge.bridge import Bridge
@@ -82,13 +81,11 @@ def parse_request(payload: Any) -> ApiRequest:
         raise ApiRequestError("'system_prompt' must be a string or null")
 
     context = payload.get("context")
-    if context is not None:
-        if not isinstance(context, dict) or not all(
-            isinstance(value, str) for value in context.values()
-        ):
-            raise ApiRequestError(
-                "'context' must be an object mapping strings to strings, or null"
-            )
+    if context is not None and (
+        not isinstance(context, dict)
+        or not all(isinstance(value, str) for value in context.values())
+    ):
+        raise ApiRequestError("'context' must be an object mapping strings to strings, or null")
 
     stream = payload.get("stream", False)
     if not isinstance(stream, bool):
@@ -277,9 +274,7 @@ class ApiAdapter:
         try:
             payload = await request.json()
         except (json.JSONDecodeError, UnicodeDecodeError):
-            return web.json_response(
-                {"error": "request body must be valid JSON"}, status=400
-            )
+            return web.json_response({"error": "request body must be valid JSON"}, status=400)
         try:
             api_request = parse_request(payload)
         except ApiRequestError as e:
@@ -345,9 +340,7 @@ class ApiAdapter:
         # The bridge guarantees a terminal Completion; reaching here means the
         # contract was broken upstream.
         logger.error("API: event stream ended without a Completion")
-        return web.json_response(
-            {"error": "agent produced no completion"}, status=500
-        )
+        return web.json_response({"error": "agent produced no completion"}, status=500)
 
     async def _respond_stream(
         self,
@@ -359,14 +352,8 @@ class ApiAdapter:
         # a lone error Completion before any Processing — surface those as a
         # plain 503 instead of opening a one-event stream.
         first = await anext(events, None)
-        if (
-            isinstance(first, Completion)
-            and first.is_error
-            and is_capacity_full(first)
-        ):
-            return web.json_response(
-                completion_body(api_request.session, first), status=503
-            )
+        if isinstance(first, Completion) and first.is_error and is_capacity_full(first):
+            return web.json_response(completion_body(api_request.session, first), status=503)
 
         response = web.StreamResponse(
             headers={

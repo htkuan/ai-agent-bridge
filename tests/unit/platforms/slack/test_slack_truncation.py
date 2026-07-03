@@ -44,7 +44,7 @@ def test_fit_with_suffix_reserves_room_for_suffix():
 
 
 def test_fit_with_suffix_cjk_regression():
-    # Regression for the 528-char stuck bug: 1334 × '測' = 4002 bytes,
+    # Regression for the 528-char stuck bug: 1334 x '測' = 4002 bytes,
     # which was passing the old char-length check (< 3900) and hitting
     # Slack's msg_too_long. The byte-based fit must trim it.
     text = "測" * 1334
@@ -55,7 +55,7 @@ def test_fit_with_suffix_cjk_regression():
 
 
 def test_fit_with_suffix_cjk_just_under_limit_untouched():
-    # 1300 × '測' = 3900 bytes — exactly at the ceiling, no truncation needed.
+    # 1300 x '測' = 3900 bytes — exactly at the ceiling, no truncation needed.
     text = "測" * 1300
     assert _utf8_len(text) == 3900
     suffix = "\n\n_… (generating response…)_"

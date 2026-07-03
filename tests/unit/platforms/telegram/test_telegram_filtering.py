@@ -133,9 +133,7 @@ def test_channel_post_ignored():
 
 
 def test_message_from_bot_ignored():
-    message = _message(
-        "hello", from_user={"id": 500, "first_name": "OtherBot", "is_bot": True}
-    )
+    message = _message("hello", from_user={"id": 500, "first_name": "OtherBot", "is_bot": True})
     assert _extract(message) is None
 
 

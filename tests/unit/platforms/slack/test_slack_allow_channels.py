@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from unittest.mock import AsyncMock, MagicMock
 
 from agent_bridge.platforms.slack.adapter import SlackAdapter, SlackInfoCache
@@ -49,9 +48,7 @@ def test_normalize_strips_hash_whitespace_case():
 def test_from_env_parses_and_normalizes(monkeypatch):
     monkeypatch.setenv("AGENT_BRIDGE_SLACK_BOT_TOKEN", "xoxb-x")
     monkeypatch.setenv("AGENT_BRIDGE_SLACK_APP_TOKEN", "xapp-x")
-    monkeypatch.setenv(
-        "AGENT_BRIDGE_SLACK_ALLOW_CHANNELS", " #Ops-Alerts , team-eng ,, "
-    )
+    monkeypatch.setenv("AGENT_BRIDGE_SLACK_ALLOW_CHANNELS", " #Ops-Alerts , team-eng ,, ")
     cfg = SlackConfig.from_env()
     assert cfg.allow_channels == frozenset({"ops-alerts", "team-eng"})
 
@@ -100,9 +97,7 @@ async def test_dm_without_name_blocked_when_list_set():
 
 
 async def test_rejected_channel_replies_and_stops():
-    adapter = _make_adapter(
-        frozenset({"ops-alerts"}), channel_not_allowed_message="nope, go away"
-    )
+    adapter = _make_adapter(frozenset({"ops-alerts"}), channel_not_allowed_message="nope, go away")
     adapter._bridge = MagicMock()
     adapter._bridge.handle_message = MagicMock(
         side_effect=AssertionError("agent should not be invoked")

@@ -37,12 +37,8 @@ class SlackConfig:
 
     @classmethod
     def from_source(cls, source: ConfigSource) -> SlackConfig:
-        bot_token = source.get(
-            "AGENT_BRIDGE_SLACK_BOT_TOKEN", "platforms.slack.bot_token", ""
-        )
-        app_token = source.get(
-            "AGENT_BRIDGE_SLACK_APP_TOKEN", "platforms.slack.app_token", ""
-        )
+        bot_token = source.get("AGENT_BRIDGE_SLACK_BOT_TOKEN", "platforms.slack.bot_token", "")
+        app_token = source.get("AGENT_BRIDGE_SLACK_APP_TOKEN", "platforms.slack.app_token", "")
         if not bot_token or not app_token:
             raise ValueError(
                 "AGENT_BRIDGE_SLACK_BOT_TOKEN and AGENT_BRIDGE_SLACK_APP_TOKEN "
@@ -52,9 +48,7 @@ class SlackConfig:
             "AGENT_BRIDGE_SLACK_ALLOW_CHANNELS", "platforms.slack.allow_channels", ""
         )
         allow_channels = frozenset(
-            _normalize_channel(name)
-            for name in raw_channels.split(",")
-            if name.strip()
+            _normalize_channel(name) for name in raw_channels.split(",") if name.strip()
         )
         return cls(
             bot_token=bot_token,

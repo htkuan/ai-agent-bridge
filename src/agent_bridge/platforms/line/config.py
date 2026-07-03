@@ -35,8 +35,7 @@ class LineConfig:
         )
         if not channel_secret:
             raise ValueError(
-                "AGENT_BRIDGE_LINE_CHANNEL_SECRET "
-                "(platforms.line.channel_secret) is required"
+                "AGENT_BRIDGE_LINE_CHANNEL_SECRET (platforms.line.channel_secret) is required"
             )
         channel_access_token = source.get(
             "AGENT_BRIDGE_LINE_CHANNEL_ACCESS_TOKEN",
@@ -82,13 +81,11 @@ class LineConfig:
             raise ValueError("AGENT_BRIDGE_LINE_WEBHOOK_HOST must not be empty")
         if not 0 <= self.webhook_port <= 65535:
             raise ValueError(
-                "AGENT_BRIDGE_LINE_WEBHOOK_PORT must be 0-65535, "
-                f"got {self.webhook_port}"
+                f"AGENT_BRIDGE_LINE_WEBHOOK_PORT must be 0-65535, got {self.webhook_port}"
             )
         if not self.webhook_path.startswith("/"):
             raise ValueError(
-                "AGENT_BRIDGE_LINE_WEBHOOK_PATH must start with '/', "
-                f"got {self.webhook_path!r}"
+                f"AGENT_BRIDGE_LINE_WEBHOOK_PATH must start with '/', got {self.webhook_path!r}"
             )
         if not self.api_base_url:
             raise ValueError("AGENT_BRIDGE_LINE_API_BASE_URL must not be empty")

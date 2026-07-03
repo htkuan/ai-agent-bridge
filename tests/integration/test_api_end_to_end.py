@@ -158,9 +158,7 @@ async def test_sse_event_sequence(api_stack):
     )
 
     async with aiohttp.ClientSession() as client:
-        async with client.post(
-            _url(adapter), json={"text": "greet", "stream": True}
-        ) as resp:
+        async with client.post(_url(adapter), json={"text": "greet", "stream": True}) as resp:
             assert resp.status == 200
             assert resp.headers["Content-Type"] == "text/event-stream"
             assert resp.headers["Cache-Control"] == "no-cache"
@@ -195,18 +193,14 @@ async def test_missing_bearer_token_rejected(api_stack):
 
 async def test_wrong_bearer_token_rejected(api_stack):
     adapter, controller = await api_stack(auth_token="s3cret")
-    status, _body = await _post(
-        adapter, {"text": "hi"}, headers={"Authorization": "Bearer wrong"}
-    )
+    status, _body = await _post(adapter, {"text": "hi"}, headers={"Authorization": "Bearer wrong"})
     assert status == 401
     assert controller.runs == []
 
 
 async def test_correct_bearer_token_accepted(api_stack):
     adapter, _controller = await api_stack(auth_token="s3cret")
-    status, body = await _post(
-        adapter, {"text": "hi"}, headers={"Authorization": "Bearer s3cret"}
-    )
+    status, body = await _post(adapter, {"text": "hi"}, headers={"Authorization": "Bearer s3cret"})
     assert status == 200
     assert body["text"] == "echo:hi"
 
@@ -272,9 +266,7 @@ async def test_capacity_full_returns_503(api_stack):
     assert body["usage"] is None
 
     # SSE requests are rejected the same way, before any stream starts.
-    stream_status, stream_body = await _post(
-        adapter, {"text": "rejected too", "stream": True}
-    )
+    stream_status, stream_body = await _post(adapter, {"text": "rejected too", "stream": True})
     assert stream_status == 503
     assert stream_body["is_error"] is True
 

@@ -58,11 +58,7 @@ class SessionErrorEvent:
 
 
 type OpencodeEvent = (
-    StepStartedEvent
-    | StepFinishedEvent
-    | TextPartEvent
-    | ToolUseEvent
-    | SessionErrorEvent
+    StepStartedEvent | StepFinishedEvent | TextPartEvent | ToolUseEvent | SessionErrorEvent
 )
 
 # `opencode run` has no success terminal event — the CLI simply exits (EOF)
@@ -129,10 +125,7 @@ def parse_stream_line(line: str) -> list[OpencodeEvent]:
             error = data.get("error") or {}
             error_data = error.get("data") or {}
             message = str(
-                error_data.get("message")
-                or error.get("message")
-                or error.get("name")
-                or ""
+                error_data.get("message") or error.get("message") or error.get("name") or ""
             )
             return [SessionErrorEvent(message=message, session_id=session_id)]
         case "reasoning":

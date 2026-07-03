@@ -11,15 +11,11 @@ from agent_bridge.dedupe import (
     simhash,
 )
 
-
 # --- canonicalize ---
 
 
 def test_canonicalize_strips_url():
-    assert (
-        canonicalize("Error fetching https://x.com/orgs/1/msgs/2?x=1")
-        == "Error fetching <URL>"
-    )
+    assert canonicalize("Error fetching https://x.com/orgs/1/msgs/2?x=1") == "Error fetching <URL>"
 
 
 def test_canonicalize_two_urls_collide():
@@ -43,9 +39,7 @@ def test_canonicalize_strips_email():
 
 def test_canonicalize_strips_long_hex():
     # 16 lowercase hex chars
-    assert (
-        canonicalize("sha 1a2b3c4d5e6f7890 done") == "sha <HEX> done"
-    )
+    assert canonicalize("sha 1a2b3c4d5e6f7890 done") == "sha <HEX> done"
 
 
 def test_canonicalize_strips_ipv4():

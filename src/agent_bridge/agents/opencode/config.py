@@ -11,9 +11,7 @@ class OpencodeConfig:
     work_dir: Path
     model: str | None = None
     timeout_seconds: float = 600.0
-    session_map_path: Path = field(
-        default_factory=lambda: Path("./opencode-sessions.json")
-    )
+    session_map_path: Path = field(default_factory=lambda: Path("./opencode-sessions.json"))
 
     @classmethod
     def from_env(cls) -> OpencodeConfig:
@@ -22,14 +20,11 @@ class OpencodeConfig:
     @classmethod
     def from_source(cls, source: ConfigSource) -> OpencodeConfig:
         model = (
-            source.get("AGENT_BRIDGE_OPENCODE_MODEL", "agents.opencode.model", "")
-            or ""
+            source.get("AGENT_BRIDGE_OPENCODE_MODEL", "agents.opencode.model", "") or ""
         ).strip()
         config = cls(
             work_dir=Path(
-                source.get(
-                    "AGENT_BRIDGE_OPENCODE_WORK_DIR", "agents.opencode.work_dir", "."
-                )
+                source.get("AGENT_BRIDGE_OPENCODE_WORK_DIR", "agents.opencode.work_dir", ".")
             ).resolve(),
             model=model or None,
             timeout_seconds=float(

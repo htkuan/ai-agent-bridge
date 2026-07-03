@@ -58,15 +58,11 @@ def test_from_env_reads_environ(tmp_path: Path, monkeypatch, clean_agent_bridge_
 
 
 def test_blank_model_is_none(tmp_path: Path):
-    source = ConfigSource(
-        {"agents": {"codex": {"work_dir": str(tmp_path), "model": "  "}}}, env={}
-    )
+    source = ConfigSource({"agents": {"codex": {"work_dir": str(tmp_path), "model": "  "}}}, env={})
     assert CodexConfig.from_source(source).model is None
 
 
-@pytest.mark.parametrize(
-    "sandbox", ["read-only", "workspace-write", "danger-full-access"]
-)
+@pytest.mark.parametrize("sandbox", ["read-only", "workspace-write", "danger-full-access"])
 def test_valid_sandbox_modes(tmp_path: Path, sandbox: str):
     source = ConfigSource(
         {"agents": {"codex": {"work_dir": str(tmp_path), "sandbox": sandbox}}}, env={}
@@ -92,8 +88,6 @@ def test_nonpositive_timeout_rejected(tmp_path: Path):
 
 
 def test_missing_work_dir_rejected(tmp_path: Path):
-    source = ConfigSource(
-        {"agents": {"codex": {"work_dir": str(tmp_path / "nope")}}}, env={}
-    )
+    source = ConfigSource({"agents": {"codex": {"work_dir": str(tmp_path / "nope")}}}, env={})
     with pytest.raises(ValueError, match="AGENT_BRIDGE_CODEX_WORK_DIR"):
         CodexConfig.from_source(source)

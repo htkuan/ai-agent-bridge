@@ -32,15 +32,12 @@ class TelegramConfig:
         )
         if not bot_token:
             raise ValueError(
-                "AGENT_BRIDGE_TELEGRAM_BOT_TOKEN "
-                "(platforms.telegram.bot_token) is required"
+                "AGENT_BRIDGE_TELEGRAM_BOT_TOKEN (platforms.telegram.bot_token) is required"
             )
         raw_chats = source.get(
             "AGENT_BRIDGE_TELEGRAM_ALLOW_CHATS", "platforms.telegram.allow_chats", ""
         )
-        allow_chats = frozenset(
-            chat.strip() for chat in raw_chats.split(",") if chat.strip()
-        )
+        allow_chats = frozenset(chat.strip() for chat in raw_chats.split(",") if chat.strip())
         config = cls(
             bot_token=bot_token,
             allow_chats=allow_chats,

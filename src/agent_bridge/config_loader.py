@@ -40,9 +40,7 @@ class ConfigSource:
     def empty(cls) -> ConfigSource:
         return cls({})
 
-    def get(
-        self, env_key: str, yaml_path: str, default: str | None = None
-    ) -> str | None:
+    def get(self, env_key: str, yaml_path: str, default: str | None = None) -> str | None:
         env = os.environ if self._env is None else self._env
         # Empty-string env values are treated as unset: .env templates commonly
         # ship `KEY=` placeholders which must not shadow YAML values.
@@ -76,9 +74,7 @@ def _stringify(yaml_path: str, value: Any) -> str | None:
         case list():
             items = [_stringify(yaml_path, item) for item in value]
             if any(item is None for item in items):
-                raise ValueError(
-                    f"Config key {yaml_path!r} contains a null list item"
-                )
+                raise ValueError(f"Config key {yaml_path!r} contains a null list item")
             return ",".join(items)  # type: ignore[arg-type]
         case _:
             raise ValueError(
@@ -122,9 +118,7 @@ def substitute_secrets(data: Any, env: Mapping[str, str] | None = None) -> Any:
     result = _walk(data)
     if missing:
         names = ", ".join(sorted(set(missing)))
-        raise ValueError(
-            f"Config file references undefined environment variables: {names}"
-        )
+        raise ValueError(f"Config file references undefined environment variables: {names}")
     return result
 
 
@@ -158,7 +152,6 @@ def load_config_source(config_path: Path | None = None) -> ConfigSource:
         raw = {}
     if not isinstance(raw, Mapping):
         raise ValueError(
-            f"Config file {path} must contain a top-level mapping, "
-            f"got {type(raw).__name__}"
+            f"Config file {path} must contain a top-level mapping, got {type(raw).__name__}"
         )
     return ConfigSource(substitute_secrets(raw), path=path)

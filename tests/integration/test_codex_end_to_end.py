@@ -33,9 +33,7 @@ def _happy_lines(text: str = "all done") -> list[str]:
         codex_turn_started_line(),
         codex_command_start_line("ls -la"),
         codex_agent_message_line(text),
-        codex_turn_completed_line(
-            input_tokens=1200, cached_input_tokens=1000, output_tokens=300
-        ),
+        codex_turn_completed_line(input_tokens=1200, cached_input_tokens=1000, output_tokens=300),
     ]
 
 
@@ -58,9 +56,7 @@ def _make_config(tmp_path) -> CodexConfig:
 @pytest.fixture
 def bridge_setup(tmp_path, prepend_path, clean_agent_bridge_env):
     args_log = tmp_path / "cli-args.log"
-    install_fake_cli(
-        tmp_path / "bin", name="codex", lines=_happy_lines(), args_log=args_log
-    )
+    install_fake_cli(tmp_path / "bin", name="codex", lines=_happy_lines(), args_log=args_log)
     prepend_path(tmp_path / "bin")
 
     config = _make_config(tmp_path)
@@ -127,12 +123,8 @@ async def test_second_turn_resumes_native_thread(bridge_setup):
     assert json.loads(config.session_map_path.read_text()) == {session_id: THREAD_ID}
 
 
-async def test_timeout_yields_error_completion(
-    tmp_path, prepend_path, clean_agent_bridge_env
-):
-    install_fake_cli(
-        tmp_path / "bin", name="codex", lines=_happy_lines(), line_delay=2.0
-    )
+async def test_timeout_yields_error_completion(tmp_path, prepend_path, clean_agent_bridge_env):
+    install_fake_cli(tmp_path / "bin", name="codex", lines=_happy_lines(), line_delay=2.0)
     prepend_path(tmp_path / "bin")
     config = CodexConfig.from_source(
         ConfigSource(
@@ -198,13 +190,9 @@ async def test_lost_mapping_falls_back_to_fresh_thread(bridge_setup, tmp_path):
     # Simulate a restart that lost the map file: same session store, fresh
     # controller with an empty mapping.
     config.session_map_path.unlink()
-    bridge_after_restart = Bridge(
-        session_manager, CodexController(config), max_concurrent=2
-    )
+    bridge_after_restart = Bridge(session_manager, CodexController(config), max_concurrent=2)
 
-    events = await collect_events(
-        bridge_after_restart.handle_message("slack:C1:t1", "second")
-    )
+    events = await collect_events(bridge_after_restart.handle_message("slack:C1:t1", "second"))
 
     completion = events[-1]
     assert isinstance(completion, Completion)

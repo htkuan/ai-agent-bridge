@@ -33,9 +33,7 @@ def _happy_lines(text: str = "all done") -> list[str]:
     return [
         opencode_step_start_line(session_id=SESSION_ID),
         opencode_text_line("Let me check...", session_id=SESSION_ID),
-        opencode_tool_use_line(
-            tool="bash", title="ls -la", session_id=SESSION_ID
-        ),
+        opencode_tool_use_line(tool="bash", title="ls -la", session_id=SESSION_ID),
         opencode_step_finish_line(
             cost=0.001,
             input_tokens=100,
@@ -76,9 +74,7 @@ def _make_config(tmp_path, **extra) -> OpencodeConfig:
 @pytest.fixture
 def bridge_setup(tmp_path, prepend_path, clean_agent_bridge_env):
     args_log = tmp_path / "cli-args.log"
-    install_fake_cli(
-        tmp_path / "bin", name="opencode", lines=_happy_lines(), args_log=args_log
-    )
+    install_fake_cli(tmp_path / "bin", name="opencode", lines=_happy_lines(), args_log=args_log)
     prepend_path(tmp_path / "bin")
 
     config = _make_config(tmp_path)
@@ -153,12 +149,8 @@ async def test_second_turn_resumes_native_session(bridge_setup):
     assert json.loads(config.session_map_path.read_text()) == {session_id: SESSION_ID}
 
 
-async def test_timeout_yields_error_completion(
-    tmp_path, prepend_path, clean_agent_bridge_env
-):
-    install_fake_cli(
-        tmp_path / "bin", name="opencode", lines=_happy_lines(), line_delay=2.0
-    )
+async def test_timeout_yields_error_completion(tmp_path, prepend_path, clean_agent_bridge_env):
+    install_fake_cli(tmp_path / "bin", name="opencode", lines=_happy_lines(), line_delay=2.0)
     prepend_path(tmp_path / "bin")
     config = _make_config(tmp_path, timeout_seconds=0.5)
     bridge = Bridge(
@@ -239,13 +231,9 @@ async def test_lost_mapping_falls_back_to_fresh_session(bridge_setup, tmp_path):
     # Simulate a restart that lost the map file: same session store, fresh
     # controller with an empty mapping.
     config.session_map_path.unlink()
-    bridge_after_restart = Bridge(
-        session_manager, OpencodeController(config), max_concurrent=2
-    )
+    bridge_after_restart = Bridge(session_manager, OpencodeController(config), max_concurrent=2)
 
-    events = await collect_events(
-        bridge_after_restart.handle_message("slack:C1:t1", "second")
-    )
+    events = await collect_events(bridge_after_restart.handle_message("slack:C1:t1", "second"))
 
     completion = events[-1]
     assert isinstance(completion, Completion)

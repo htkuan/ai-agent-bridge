@@ -117,9 +117,7 @@ def test_format_multiple_questions_numbered():
 
 def test_system_prompt_mentions_platform_and_speaker_convention():
     adapter = _make_adapter()
-    prompt = adapter._build_system_prompt(
-        {"chat_id": "42", "chat_type": "private", "user_id": "7"}
-    )
+    prompt = adapter._build_system_prompt({"chat_id": "42", "chat_type": "private", "user_id": "7"})
     assert "Telegram" in prompt
     assert "[display_name (user_id)]" in prompt
     assert "Chat id: 42 (private)" in prompt

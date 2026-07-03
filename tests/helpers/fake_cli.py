@@ -36,7 +36,7 @@ def install_fake_cli(
     """
     script = ["#!/bin/sh"]
     if args_log is not None:
-        script.append(f'printf \'%s\\n\' "$*" >> {_sh_single_quote(str(args_log))}')
+        script.append(f"printf '%s\\n' \"$*\" >> {_sh_single_quote(str(args_log))}")
     if orphan_pidfile is not None:
         script.append("sleep 30 &")
         script.append(f"echo $! > {_sh_single_quote(str(orphan_pidfile))}")

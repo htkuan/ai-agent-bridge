@@ -57,9 +57,7 @@ class ClaudeConfig:
                 "false",
             ).lower()
             in _TRUTHY,
-            effort=source.get(
-                "AGENT_BRIDGE_CLAUDE_EFFORT", "agents.claude.effort", "xhigh"
-            ).strip()
+            effort=source.get("AGENT_BRIDGE_CLAUDE_EFFORT", "agents.claude.effort", "xhigh").strip()
             or "xhigh",
         )
         config._validate()
@@ -68,7 +66,8 @@ class ClaudeConfig:
     def _validate(self) -> None:
         if not self.work_dir.is_dir():
             raise ValueError(
-                f"AGENT_BRIDGE_CLAUDE_WORK_DIR does not exist or is not a directory: {self.work_dir}"
+                "AGENT_BRIDGE_CLAUDE_WORK_DIR does not exist or is not a directory: "
+                f"{self.work_dir}"
             )
         if self.permission_mode not in VALID_PERMISSION_MODES:
             raise ValueError(

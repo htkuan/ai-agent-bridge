@@ -117,7 +117,7 @@ async def run_cycle(tmp_path, session_manager):
 
 
 async def test_private_message_full_cycle(run_cycle, session_manager, tmp_path):
-    adapter, server, controller, config = await run_cycle(
+    _, server, controller, _ = await run_cycle(
         [[_private_update(500, "hello")]],
         agent_events=[TextDelta(text="hi there"), Completion(text="hi there")],
     )
@@ -156,7 +156,7 @@ async def test_private_message_full_cycle(run_cycle, session_manager, tmp_path):
 
 
 async def test_group_messages_require_mention(run_cycle):
-    adapter, server, controller, _ = await run_cycle(
+    _, server, controller, _ = await run_cycle(
         [
             [
                 _group_update(600, "just chatting", message_id=20),

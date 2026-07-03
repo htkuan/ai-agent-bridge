@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -81,11 +81,7 @@ class SessionManager:
         return _now() - last_used > self._ttl
 
     def _purge_expired(self) -> list[str]:
-        expired = [
-            (k, v["session_id"])
-            for k, v in self._sessions.items()
-            if self._is_expired(v)
-        ]
+        expired = [(k, v["session_id"]) for k, v in self._sessions.items() if self._is_expired(v)]
         for key, _ in expired:
             logger.info("Purging expired session for key %s", key)
             del self._sessions[key]
@@ -115,7 +111,7 @@ class SessionManager:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _now_iso() -> str:

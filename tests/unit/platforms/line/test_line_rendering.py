@@ -28,9 +28,8 @@ class _ApiRecorder:
 
     async def __call__(self, path: str, payload: dict) -> bool:
         self.calls.append((path, payload))
-        if path == REPLY and not self.reply_ok:
-            return False  # simulate an expired/already-used reply token (400)
-        return True
+        # False on REPLY simulates an expired/already-used reply token (400)
+        return self.reply_ok or path != REPLY
 
     def named(self, path: str) -> list[dict[str, Any]]:
         return [payload for name, payload in self.calls if name == path]
@@ -102,9 +101,7 @@ async def test_status_updates_are_log_only():
 
 
 async def test_error_completion_prefixed():
-    adapter, api, _ = _make_adapter(
-        [Processing(), Completion(text="boom", is_error=True)]
-    )
+    adapter, api, _ = _make_adapter([Processing(), Completion(text="boom", is_error=True)])
     await _run(adapter, _event(), "hello")
     assert _texts(api.named(REPLY)[0]["messages"]) == ["❌ boom"]
 
@@ -175,9 +172,7 @@ async def test_push_overflow_batches_of_five():
 
 
 async def test_reply_failure_falls_back_to_push():
-    adapter, api, _ = _make_adapter(
-        [Processing(), Completion(text="the answer")], reply_ok=False
-    )
+    adapter, api, _ = _make_adapter([Processing(), Completion(text="the answer")], reply_ok=False)
     await _run(adapter, _event(), "hello")
 
     # Reply was attempted first, then everything went out via push.
@@ -213,9 +208,7 @@ async def test_bridge_receives_tagged_prompt_context_and_system_prompt():
 
 
 async def test_group_event_scopes_session_to_group():
-    adapter, api, bridge = _make_adapter(
-        [Processing(), Completion(text="ok")], reply_ok=False
-    )
+    adapter, api, bridge = _make_adapter([Processing(), Completion(text="ok")], reply_ok=False)
     event = _event()
     event["source"] = {"type": "group", "groupId": "G456", "userId": "U123"}
     await _run(adapter, event, "hello")
@@ -229,7 +222,7 @@ async def test_bridge_exception_logged_not_raised():
     class _BoomBridge:
         async def handle_message(self, *args, **kwargs):
             raise RuntimeError("boom")
-            yield  # noqa: unreachable — makes this an async generator
+            yield  # unreachable — makes this an async generator
 
     adapter, _, _ = _make_adapter()
     adapter._bridge = _BoomBridge()  # type: ignore[assignment]

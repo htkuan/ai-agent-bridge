@@ -11,9 +11,7 @@ BODY = b'{"destination":"U0","events":[]}'
 
 
 def _sign(body: bytes, secret: str = SECRET) -> str:
-    return base64.b64encode(
-        hmac.new(secret.encode(), body, hashlib.sha256).digest()
-    ).decode()
+    return base64.b64encode(hmac.new(secret.encode(), body, hashlib.sha256).digest()).decode()
 
 
 def test_valid_signature_accepted():

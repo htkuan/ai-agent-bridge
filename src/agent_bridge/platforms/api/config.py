@@ -32,9 +32,7 @@ class ApiConfig:
     @classmethod
     def from_source(cls, source: ConfigSource) -> ApiConfig:
         enabled = (
-            source.get(
-                "AGENT_BRIDGE_API_ENABLED", "platforms.api.enabled", "false"
-            ).lower()
+            source.get("AGENT_BRIDGE_API_ENABLED", "platforms.api.enabled", "false").lower()
             in _TRUTHY
         )
         if not enabled:
@@ -43,14 +41,8 @@ class ApiConfig:
         config = cls(
             enabled=True,
             host=source.get("AGENT_BRIDGE_API_HOST", "platforms.api.host", DEFAULT_HOST),
-            port=int(
-                source.get(
-                    "AGENT_BRIDGE_API_PORT", "platforms.api.port", str(DEFAULT_PORT)
-                )
-            ),
-            auth_token=source.get(
-                "AGENT_BRIDGE_API_AUTH_TOKEN", "platforms.api.auth_token", ""
-            ),
+            port=int(source.get("AGENT_BRIDGE_API_PORT", "platforms.api.port", str(DEFAULT_PORT))),
+            auth_token=source.get("AGENT_BRIDGE_API_AUTH_TOKEN", "platforms.api.auth_token", ""),
         )
         config._validate()
         return config
@@ -59,6 +51,4 @@ class ApiConfig:
         if not self.host:
             raise ValueError("AGENT_BRIDGE_API_HOST must not be empty")
         if not 0 <= self.port <= 65535:
-            raise ValueError(
-                f"AGENT_BRIDGE_API_PORT must be 0-65535, got {self.port}"
-            )
+            raise ValueError(f"AGENT_BRIDGE_API_PORT must be 0-65535, got {self.port}")

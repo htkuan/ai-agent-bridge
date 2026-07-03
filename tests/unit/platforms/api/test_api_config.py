@@ -13,9 +13,7 @@ def test_disabled_by_default():
 
 def test_disabled_ignores_other_keys():
     # Not enabled → other keys are not read or validated (invalid port here).
-    source = ConfigSource(
-        {"platforms": {"api": {"port": 99999, "host": ""}}}, env={}
-    )
+    source = ConfigSource({"platforms": {"api": {"port": 99999, "host": ""}}}, env={})
     config = ApiConfig.from_source(source)
     assert config.enabled is False
     assert config.port == DEFAULT_PORT

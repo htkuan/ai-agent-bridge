@@ -67,12 +67,7 @@ class ResultEvent:
 
 
 type ClaudeEvent = (
-    InitEvent
-    | AssistantTextEvent
-    | ThinkingEvent
-    | ToolUseEvent
-    | ToolResultEvent
-    | ResultEvent
+    InitEvent | AssistantTextEvent | ThinkingEvent | ToolUseEvent | ToolResultEvent | ResultEvent
 )
 
 

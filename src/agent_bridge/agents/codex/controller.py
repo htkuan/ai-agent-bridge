@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -22,9 +23,7 @@ logger = logging.getLogger(__name__)
 
 # `codex exec` has no stable system-prompt flag; platform directives are
 # prepended to the prompt with an explicit delimiter (documented behavior).
-_DIRECTIVES_TEMPLATE = (
-    "<platform-directives>\n{system_prompt}\n</platform-directives>\n\n{prompt}"
-)
+_DIRECTIVES_TEMPLATE = "<platform-directives>\n{system_prompt}\n</platform-directives>\n\n{prompt}"
 
 
 class CodexSessionMap:
@@ -62,9 +61,7 @@ class CodexSessionMap:
             logger.warning("Failed to load codex session map: %s", e)
             return
         if not isinstance(data, dict):
-            logger.warning(
-                "Codex session map is not a JSON object, ignoring: %s", self._store_path
-            )
+            logger.warning("Codex session map is not a JSON object, ignoring: %s", self._store_path)
             return
         self._map = {str(k): str(v) for k, v in data.items()}
 
@@ -104,9 +101,7 @@ class CodexController:
                 )
 
         cmd = self._build_command(prompt, native_id, system_prompt)
-        logger.info(
-            "Running codex: %s (cwd=%s, timeout=%ss)", cmd, self._config.work_dir, timeout
-        )
+        logger.info("Running codex: %s (cwd=%s, timeout=%ss)", cmd, self._config.work_dir, timeout)
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -146,7 +141,7 @@ class CodexController:
                         (asyncio.get_event_loop().time() - started_at) * 1000
                     )
                 yield bridge_event
-        except asyncio.TimeoutError:
+        except TimeoutError:
             timed_out = True
             logger.error("Codex process timed out after %ss", timeout)
             yield Completion(
@@ -160,13 +155,13 @@ class CodexController:
             self._kill_process_tree(process, graceful=True)
             try:
                 await asyncio.wait_for(process.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._kill_process_tree(process, graceful=False)
                 await process.wait()
 
             try:
                 stderr_text = await asyncio.wait_for(stderr_task, timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 stderr_task.cancel()
                 stderr_text = ""
             return_code = process.returncode
@@ -198,9 +193,7 @@ class CodexController:
         if self._config.model:
             cmd.extend(["-m", self._config.model])
         if system_prompt:
-            prompt = _DIRECTIVES_TEMPLATE.format(
-                system_prompt=system_prompt, prompt=prompt
-            )
+            prompt = _DIRECTIVES_TEMPLATE.format(system_prompt=system_prompt, prompt=prompt)
         cmd.append(prompt)
         return cmd
 
@@ -218,10 +211,8 @@ class CodexController:
         while True:
             remaining = deadline - asyncio.get_event_loop().time()
             if remaining <= 0:
-                raise asyncio.TimeoutError()
-            line_bytes = await asyncio.wait_for(
-                process.stdout.readline(), timeout=remaining
-            )
+                raise TimeoutError()
+            line_bytes = await asyncio.wait_for(process.stdout.readline(), timeout=remaining)
             if not line_bytes:
                 break
             line = line_bytes.decode(errors="replace")
@@ -232,9 +223,7 @@ class CodexController:
                     return
 
     @staticmethod
-    def _kill_process_tree(
-        process: asyncio.subprocess.Process, *, graceful: bool
-    ) -> None:
+    def _kill_process_tree(process: asyncio.subprocess.Process, *, graceful: bool) -> None:
         """Kill the entire process group (main process + all children)."""
         pid = process.pid
         if pid is None:
@@ -248,10 +237,8 @@ class CodexController:
             pass  # entire group already exited
         except OSError:
             logger.warning("killpg failed for pid=%d, falling back to direct kill", pid)
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 process.terminate() if graceful else process.kill()
-            except ProcessLookupError:
-                pass
 
     @staticmethod
     async def _drain_stderr(process: asyncio.subprocess.Process) -> str:

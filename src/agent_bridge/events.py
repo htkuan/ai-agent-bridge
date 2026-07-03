@@ -64,8 +64,7 @@ class Usage:
             input_tokens=self.input_tokens + other.input_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
             cache_read_tokens=self.cache_read_tokens + other.cache_read_tokens,
-            cache_creation_tokens=self.cache_creation_tokens
-            + other.cache_creation_tokens,
+            cache_creation_tokens=self.cache_creation_tokens + other.cache_creation_tokens,
             num_turns=self.num_turns + other.num_turns,
             duration_api_ms=self.duration_api_ms + other.duration_api_ms,
             duration_ms=self.duration_ms + other.duration_ms,

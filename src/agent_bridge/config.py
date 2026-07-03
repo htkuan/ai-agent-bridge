@@ -17,7 +17,7 @@ class BridgeConfig:
     dedupe_ttl_seconds: float = 0.0
     dedupe_max_entries: int = 512
     # SimHash Hamming-distance threshold. 0 ⇒ exact canonical match only.
-    # Positive values enable fuzzy match (typical range 3–10).
+    # Positive values enable fuzzy match (typical range 3-10).
     dedupe_simhash_threshold: int = 0
 
     @classmethod
@@ -36,9 +36,7 @@ class BridgeConfig:
                 )
             ),
             session_ttl_hours=float(
-                source.get(
-                    "AGENT_BRIDGE_SESSION_TTL_HOURS", "bridge.session_ttl_hours", "72"
-                )
+                source.get("AGENT_BRIDGE_SESSION_TTL_HOURS", "bridge.session_ttl_hours", "72")
             ),
             max_concurrent_sessions=int(
                 source.get(
@@ -48,14 +46,10 @@ class BridgeConfig:
                 )
             ),
             dedupe_ttl_seconds=float(
-                source.get(
-                    "AGENT_BRIDGE_DEDUPE_TTL_SECONDS", "bridge.dedupe.ttl_seconds", "0"
-                )
+                source.get("AGENT_BRIDGE_DEDUPE_TTL_SECONDS", "bridge.dedupe.ttl_seconds", "0")
             ),
             dedupe_max_entries=int(
-                source.get(
-                    "AGENT_BRIDGE_DEDUPE_MAX_ENTRIES", "bridge.dedupe.max_entries", "512"
-                )
+                source.get("AGENT_BRIDGE_DEDUPE_MAX_ENTRIES", "bridge.dedupe.max_entries", "512")
             ),
             dedupe_simhash_threshold=int(
                 source.get(
@@ -75,7 +69,8 @@ class BridgeConfig:
             )
         if self.max_concurrent_sessions <= 0:
             raise ValueError(
-                f"AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS must be positive, got {self.max_concurrent_sessions}"
+                "AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS must be positive, "
+                f"got {self.max_concurrent_sessions}"
             )
         if self.dedupe_ttl_seconds < 0:
             raise ValueError(
@@ -84,8 +79,7 @@ class BridgeConfig:
             )
         if self.dedupe_max_entries <= 0:
             raise ValueError(
-                "AGENT_BRIDGE_DEDUPE_MAX_ENTRIES must be positive, "
-                f"got {self.dedupe_max_entries}"
+                f"AGENT_BRIDGE_DEDUPE_MAX_ENTRIES must be positive, got {self.dedupe_max_entries}"
             )
         if self.dedupe_simhash_threshold < 0:
             raise ValueError(

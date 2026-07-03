@@ -4,9 +4,7 @@ from agent_bridge.events import Completion, Usage
 
 
 def test_usage_total_tokens_is_real_total():
-    u = Usage(
-        input_tokens=10, output_tokens=20, cache_read_tokens=30, cache_creation_tokens=40
-    )
+    u = Usage(input_tokens=10, output_tokens=20, cache_read_tokens=30, cache_creation_tokens=40)
     assert u.total_tokens == 100
 
 

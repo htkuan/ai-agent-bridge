@@ -28,16 +28,12 @@ def _item_line(phase: str, item: dict) -> str:
 
 
 def test_parse_thread_started():
-    events = parse_stream_line(
-        json.dumps({"type": "thread.started", "thread_id": "th-42"})
-    )
+    events = parse_stream_line(json.dumps({"type": "thread.started", "thread_id": "th-42"}))
     assert events == [ThreadStartedEvent(thread_id="th-42")]
 
 
 def test_parse_turn_started():
-    assert parse_stream_line(json.dumps({"type": "turn.started"})) == [
-        TurnStartedEvent()
-    ]
+    assert parse_stream_line(json.dumps({"type": "turn.started"})) == [TurnStartedEvent()]
 
 
 def test_parse_agent_message_completed():
@@ -73,9 +69,7 @@ def test_parse_command_execution_completed_is_internal():
 
 def test_parse_mcp_tool_call_started():
     events = parse_stream_line(
-        _item_line(
-            "started", {"id": "i", "type": "mcp_tool_call", "server": "gh", "tool": "pr"}
-        )
+        _item_line("started", {"id": "i", "type": "mcp_tool_call", "server": "gh", "tool": "pr"})
     )
     assert events == [McpToolCallEvent(server="gh", tool="pr")]
 
@@ -116,16 +110,12 @@ def test_parse_turn_completed_with_usage():
         )
     )
     assert events == [
-        TurnCompletedEvent(
-            input_tokens=1200, cached_input_tokens=1000, output_tokens=300
-        )
+        TurnCompletedEvent(input_tokens=1200, cached_input_tokens=1000, output_tokens=300)
     ]
 
 
 def test_parse_turn_completed_without_usage():
-    assert parse_stream_line(json.dumps({"type": "turn.completed"})) == [
-        TurnCompletedEvent()
-    ]
+    assert parse_stream_line(json.dumps({"type": "turn.completed"})) == [TurnCompletedEvent()]
 
 
 def test_parse_turn_failed():
@@ -229,9 +219,7 @@ def test_turn_completed_maps_usage_to_canonical_keys():
 
 
 def test_turn_completed_clamps_negative_input():
-    completion = to_bridge_event(
-        TurnCompletedEvent(input_tokens=10, cached_input_tokens=50)
-    )
+    completion = to_bridge_event(TurnCompletedEvent(input_tokens=10, cached_input_tokens=50))
     assert isinstance(completion, Completion)
     assert completion.metadata["usage"]["input_tokens"] == 0
 

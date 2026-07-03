@@ -84,9 +84,7 @@ def test_oneshot_body_has_null_session():
 def test_questions_included_only_when_present():
     plain = completion_body(None, Completion(text="ok"))
     assert "questions" not in plain
-    asked = completion_body(
-        None, Completion(text=""), questions=[{"question": "Which one?"}]
-    )
+    asked = completion_body(None, Completion(text=""), questions=[{"question": "Which one?"}])
     assert asked["questions"] == [{"question": "Which one?"}]
 
 
@@ -112,8 +110,7 @@ def test_is_capacity_full_reads_metadata_error_code():
 def test_status_line_with_and_without_detail():
     assert status_line(StatusUpdate(status="Running Bash")) == "Running Bash"
     assert (
-        status_line(StatusUpdate(status="Running Bash", detail="ls -la"))
-        == "Running Bash: ls -la"
+        status_line(StatusUpdate(status="Running Bash", detail="ls -la")) == "Running Bash: ls -la"
     )
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
@@ -197,10 +198,8 @@ class TelegramAdapter:
         self._stopping.set()
         if self._poll_task is not None:
             self._poll_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._poll_task
-            except asyncio.CancelledError:
-                pass
         for task in list(self._tasks):
             task.cancel()
         if self._tasks:
@@ -276,10 +275,8 @@ class TelegramAdapter:
     async def _backoff(self, backoff: float) -> float:
         """Wait out a poll error (or return early on stop). Returns the next delay."""
         logger.info("Telegram: retrying poll in %.1fs", backoff)
-        try:
+        with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(self._stopping.wait(), timeout=backoff)
-        except asyncio.TimeoutError:
-            pass
         return min(backoff * 2, BACKOFF_MAX_SECONDS)
 
     # --- Message handling ---
@@ -387,10 +384,7 @@ class TelegramAdapter:
                     accumulated += chunk
                 case StatusUpdate(status=status):
                     now = time.monotonic()
-                    if (
-                        placeholder is not None
-                        and now - last_edit >= EDIT_THROTTLE_SECONDS
-                    ):
+                    if placeholder is not None and now - last_edit >= EDIT_THROTTLE_SECONDS:
                         await self._edit_message(
                             chat_id, placeholder, f"⏳ {status}", markdown=False
                         )
@@ -429,9 +423,7 @@ class TelegramAdapter:
         if not delivered:
             # No placeholder (e.g. lone error Completion) or the edit failed —
             # deliver the first chunk as a fresh reply instead.
-            await self._send_message(
-                chat_id, chunks[0], reply_to=reply_to, thread_id=thread_id
-            )
+            await self._send_message(chat_id, chunks[0], reply_to=reply_to, thread_id=thread_id)
         for chunk in chunks[1:]:
             await self._send_message(chat_id, chunk, thread_id=thread_id)
 
@@ -500,13 +492,11 @@ class TelegramAdapter:
                 data = await resp.json(content_type=None)
         except asyncio.CancelledError:
             raise
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as e:
+        except (TimeoutError, aiohttp.ClientError, ValueError) as e:
             logger.warning("Telegram API %s failed: %s", method, e)
             return None
         if not isinstance(data, dict) or not data.get("ok"):
-            description = (
-                data.get("description") if isinstance(data, dict) else repr(data)
-            )
+            description = data.get("description") if isinstance(data, dict) else repr(data)
             logger.warning("Telegram API %s error: %s", method, description)
             return None
         return data.get("result")

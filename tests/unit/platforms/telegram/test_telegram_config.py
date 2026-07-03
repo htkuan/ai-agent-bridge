@@ -17,9 +17,7 @@ def test_missing_bot_token_raises_with_env_var_name():
 
 
 def test_defaults():
-    source = ConfigSource(
-        {"platforms": {"telegram": {"bot_token": "123:abc"}}}, env={}
-    )
+    source = ConfigSource({"platforms": {"telegram": {"bot_token": "123:abc"}}}, env={})
     config = TelegramConfig.from_source(source)
     assert config.bot_token == "123:abc"
     assert config.allow_chats == frozenset()

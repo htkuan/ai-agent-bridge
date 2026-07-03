@@ -8,7 +8,7 @@ with a fresh state file so no tick fires during the test.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -81,16 +81,14 @@ async def test_wired_heartbeat_adapter_lifecycle(source, tmp_path):
 
     # Recent state file → the loop sleeps instead of firing the (real) agent.
     (tmp_path / "heartbeat.json").write_text(
-        json.dumps({"last_run": datetime.now(timezone.utc).isoformat()})
+        json.dumps({"last_run": datetime.now(UTC).isoformat()})
     )
 
     await adapter.start()
     await adapter.stop()
 
 
-def test_wiring_with_nothing_configured_builds_no_platforms(
-    tmp_path, clean_agent_bridge_env
-):
+def test_wiring_with_nothing_configured_builds_no_platforms(tmp_path, clean_agent_bridge_env):
     empty = tmp_path / "empty.yaml"
     empty.write_text(f"agents:\n  claude:\n    work_dir: {tmp_path}\n")
     source = load_config_source(empty)

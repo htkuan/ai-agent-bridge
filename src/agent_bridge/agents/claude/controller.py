@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import signal
@@ -57,7 +58,7 @@ class ClaudeController:
                 if isinstance(event, Completion):
                     result_seen = True
                 yield event
-        except asyncio.TimeoutError:
+        except TimeoutError:
             timed_out = True
             logger.error("Claude process timed out after %ss", timeout)
             yield Completion(
@@ -72,13 +73,13 @@ class ClaudeController:
             self._kill_process_tree(process, graceful=True)
             try:
                 await asyncio.wait_for(process.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._kill_process_tree(process, graceful=False)
                 await process.wait()
 
             try:
                 stderr_text = await asyncio.wait_for(stderr_task, timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 stderr_task.cancel()
                 stderr_text = ""
             return_code = process.returncode
@@ -142,12 +143,10 @@ class ClaudeController:
         while True:
             remaining = deadline - asyncio.get_event_loop().time()
             if remaining <= 0:
-                raise asyncio.TimeoutError()
+                raise TimeoutError()
             try:
-                line_bytes = await asyncio.wait_for(
-                    process.stdout.readline(), timeout=remaining
-                )
-            except asyncio.TimeoutError:
+                line_bytes = await asyncio.wait_for(process.stdout.readline(), timeout=remaining)
+            except TimeoutError:
                 raise
             if not line_bytes:
                 break
@@ -168,9 +167,7 @@ class ClaudeController:
                     return
 
     @staticmethod
-    def _kill_process_tree(
-        process: asyncio.subprocess.Process, *, graceful: bool
-    ) -> None:
+    def _kill_process_tree(process: asyncio.subprocess.Process, *, graceful: bool) -> None:
         """Kill the entire process group (main process + all children).
 
         Requires the subprocess to have been started with start_new_session=True
@@ -190,10 +187,8 @@ class ClaudeController:
         except OSError:
             # Fallback: kill just the main process
             logger.warning("killpg failed for pid=%d, falling back to direct kill", pid)
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 process.terminate() if graceful else process.kill()
-            except ProcessLookupError:
-                pass
 
     @staticmethod
     async def _drain_stderr(process: asyncio.subprocess.Process) -> str:
@@ -217,9 +212,7 @@ class ClaudeController:
         branch_name = f"worktree-{session_id}"
 
         if worktree_path.exists():
-            rc, err = await self._run_git(
-                repo_root, "worktree", "remove", str(worktree_path)
-            )
+            rc, err = await self._run_git(repo_root, "worktree", "remove", str(worktree_path))
             if rc != 0:
                 # Common cause: untracked or modified files in the worktree.
                 logger.info(
@@ -256,7 +249,7 @@ class ClaudeController:
         )
         try:
             _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             await proc.wait()
             return -1, "timeout"

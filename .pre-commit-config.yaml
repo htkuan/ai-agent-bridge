@@ -1,14 +1,16 @@
-# Local guard that rejects non-Conventional-Commit messages at commit time.
-# Uses the SAME engine and config as the CI check
-# (.github/workflows/commitlint.yml + commitlint.config.mjs), so a message that
-# passes locally also passes CI — including the lowercase-type rule (Feat: fails,
-# feat: passes). pre-commit manages the Node toolchain itself; no manual install.
+# Local guards that run at commit time:
+#   - commit-msg stage: rejects non-Conventional-Commit messages using the SAME
+#     engine and config as the CI check (.github/workflows/commitlint.yml +
+#     commitlint.config.mjs), so a message that passes locally also passes CI —
+#     including the lowercase-type rule (Feat: fails, feat: passes).
+#   - pre-commit stage: ruff lint + format on staged files, mirroring the CI
+#     lint job (.github/workflows/ci.yml).
 #
-# One-time setup per clone (writes the git hook into .git/hooks/commit-msg):
+# One-time setup per clone (writes the git hooks into .git/hooks/):
 #   uv sync                  # installs the pre-commit tool (dev group)
 #   uv run pre-commit install
-# default_install_hook_types makes that install wire the commit-msg stage.
-default_install_hook_types: [commit-msg]
+# default_install_hook_types makes that install wire both stages.
+default_install_hook_types: [pre-commit, commit-msg]
 
 repos:
   - repo: https://github.com/alessandrojcm/commitlint-pre-commit-hook
@@ -17,3 +19,11 @@ repos:
       - id: commitlint
         stages: [commit-msg]
         additional_dependencies: ["@commitlint/config-conventional"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Keep in sync with the ruff version in the dev dependency group.
+    rev: v0.15.20
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format

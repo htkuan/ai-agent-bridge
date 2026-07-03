@@ -11,7 +11,6 @@ from agent_bridge.events import (
 )
 from tests.helpers import FakeAgentController, collect_events
 
-
 # --- Basic event flow ---
 
 
@@ -66,9 +65,7 @@ async def test_resumable_false_does_not_touch_session_store(session_manager):
     """resumable=False: bridge mints an ephemeral UUID, store stays empty."""
     bridge = Bridge(session_manager, FakeAgentController(), max_concurrent=5)
 
-    async for _ in bridge.handle_message(
-        "heartbeat:tick:2026-01-01", "hi", resumable=False
-    ):
+    async for _ in bridge.handle_message("heartbeat:tick:2026-01-01", "hi", resumable=False):
         pass
 
     # Key never reaches the store
@@ -158,7 +155,7 @@ async def test_semaphore_released_after_error(session_manager):
     class FailingController:
         async def run(self, session_id, prompt, is_new, context=None, system_prompt=None):
             raise RuntimeError("boom")
-            yield  # noqa: RET503 — make this an async generator
+            yield
 
     bridge = Bridge(session_manager, FailingController(), max_concurrent=1)
 
@@ -234,9 +231,7 @@ async def test_dedupe_in_flight_skips_controller(session_manager):
     cache = PromptDedupeCache(ttl_seconds=60.0)
     bridge = Bridge(session_manager, controller, max_concurrent=5, dedupe=cache)
 
-    task1 = asyncio.create_task(
-        collect_events(bridge.handle_message("slack:C1:t1", "alert"))
-    )
+    task1 = asyncio.create_task(collect_events(bridge.handle_message("slack:C1:t1", "alert")))
     await asyncio.sleep(0.05)
 
     events2 = [e async for e in bridge.handle_message("slack:C1:t2", "alert")]
@@ -272,9 +267,7 @@ async def test_dedupe_url_variants_collapse_via_canonicalize(session_manager):
     cache = PromptDedupeCache(ttl_seconds=60.0)
     bridge = Bridge(session_manager, controller, max_concurrent=5, dedupe=cache)
 
-    async for _ in bridge.handle_message(
-        "slack:C1:t1", "Error fetching https://x.com/orgs/123"
-    ):
+    async for _ in bridge.handle_message("slack:C1:t1", "Error fetching https://x.com/orgs/123"):
         pass
     events2 = [
         e
@@ -331,13 +324,9 @@ async def test_dedupe_skipped_for_non_resumable(session_manager):
     cache = PromptDedupeCache(ttl_seconds=60.0)
     bridge = Bridge(session_manager, controller, max_concurrent=5, dedupe=cache)
 
-    async for _ in bridge.handle_message(
-        "heartbeat:tick:T1", "scheduled work", resumable=False
-    ):
+    async for _ in bridge.handle_message("heartbeat:tick:T1", "scheduled work", resumable=False):
         pass
-    async for _ in bridge.handle_message(
-        "heartbeat:tick:T2", "scheduled work", resumable=False
-    ):
+    async for _ in bridge.handle_message("heartbeat:tick:T2", "scheduled work", resumable=False):
         pass
 
     assert controller.calls == ["scheduled work", "scheduled work"]
@@ -384,13 +373,11 @@ async def test_dedupe_controller_exception_releases_cache_slot(session_manager):
         def __init__(self) -> None:
             self.calls = 0
 
-        async def run(
-            self, session_id, prompt, is_new, context=None, system_prompt=None
-        ):
+        async def run(self, session_id, prompt, is_new, context=None, system_prompt=None):
             self.calls += 1
             if self.calls == 1:
                 raise RuntimeError("boom")
-                yield  # noqa: RET503 — async generator marker
+                yield
             yield Completion(text="recovered")
 
     controller = FlakyController()
@@ -413,9 +400,7 @@ async def test_dedupe_capacity_full_releases_cache_slot(session_manager):
     cache = PromptDedupeCache(ttl_seconds=60.0)
     bridge = Bridge(session_manager, controller, max_concurrent=1, dedupe=cache)
 
-    occupier = asyncio.create_task(
-        collect_events(bridge.handle_message("slack:C1:t1", "first"))
-    )
+    occupier = asyncio.create_task(collect_events(bridge.handle_message("slack:C1:t1", "first")))
     await asyncio.sleep(0.05)
 
     # Different prompt in different scope — gets rejected by capacity gate.
@@ -478,20 +463,15 @@ def _usage_controller(cost_usd: float = 0.01) -> FakeAgentController:
                 text="ok",
                 cost_usd=cost_usd,
                 duration_ms=100,
-                metadata={
-                    "usage": _usage_meta(input_tokens=10, output_tokens=5, num_turns=1)
-                },
+                metadata={"usage": _usage_meta(input_tokens=10, output_tokens=5, num_turns=1)},
             )
         ]
     )
 
 
 async def _completion(bridge, key, text="hi", **kw):
-    return [
-        e
-        async for e in bridge.handle_message(key, text, **kw)
-        if isinstance(e, Completion)
-    ][0]
+    events = [e async for e in bridge.handle_message(key, text, **kw)]
+    return next(e for e in events if isinstance(e, Completion))
 
 
 @pytest.mark.asyncio

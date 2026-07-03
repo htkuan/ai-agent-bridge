@@ -29,9 +29,7 @@ PUSH_PATH = "/v2/bot/message/push"
 
 
 def _sign(body: bytes, secret: str = CHANNEL_SECRET) -> str:
-    return base64.b64encode(
-        hmac.new(secret.encode(), body, hashlib.sha256).digest()
-    ).decode()
+    return base64.b64encode(hmac.new(secret.encode(), body, hashlib.sha256).digest()).decode()
 
 
 def _text_event(text: str, *, reply_token: str = "rt-1") -> dict:
@@ -48,9 +46,7 @@ def _line_api_server(*, reply_status: int = 200) -> FakeApiServer:
 
     async def reply(_payload: dict):
         if reply_status != 200:
-            return web.json_response(
-                {"message": "Invalid reply token"}, status=reply_status
-            )
+            return web.json_response({"message": "Invalid reply token"}, status=reply_status)
         return {}
 
     async def push(_payload: dict):
@@ -146,14 +142,10 @@ async def test_valid_signature_full_cycle(line_stack, session_manager):
     assert session_manager.get("line:user:U123") is not None
 
 
-async def test_invalid_signature_rejected_without_processing(
-    line_stack, session_manager
-):
+async def test_invalid_signature_rejected_without_processing(line_stack, session_manager):
     adapter, api, controller = await line_stack()
 
-    status = await _post_webhook(
-        adapter, [_text_event("hello")], signature="bad-signature"
-    )
+    status = await _post_webhook(adapter, [_text_event("hello")], signature="bad-signature")
     assert status == 403
 
     # Nothing reached the bridge or the Messaging API.

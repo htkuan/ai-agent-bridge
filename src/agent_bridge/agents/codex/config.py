@@ -14,9 +14,7 @@ class CodexConfig:
     model: str | None = None
     sandbox: str = "workspace-write"
     timeout_seconds: float = 600.0
-    session_map_path: Path = field(
-        default_factory=lambda: Path("./codex-sessions.json")
-    )
+    session_map_path: Path = field(default_factory=lambda: Path("./codex-sessions.json"))
 
     @classmethod
     def from_env(cls) -> CodexConfig:
@@ -24,9 +22,7 @@ class CodexConfig:
 
     @classmethod
     def from_source(cls, source: ConfigSource) -> CodexConfig:
-        model = (
-            source.get("AGENT_BRIDGE_CODEX_MODEL", "agents.codex.model", "") or ""
-        ).strip()
+        model = (source.get("AGENT_BRIDGE_CODEX_MODEL", "agents.codex.model", "") or "").strip()
         config = cls(
             work_dir=Path(
                 source.get("AGENT_BRIDGE_CODEX_WORK_DIR", "agents.codex.work_dir", ".")

@@ -297,9 +297,7 @@ def test_bridge_event_from_tool_use():
 
 
 def test_bridge_event_from_result():
-    event = ResultEvent(
-        session_id="s1", result_text="Done", cost_usd=0.05, duration_ms=3000
-    )
+    event = ResultEvent(session_id="s1", result_text="Done", cost_usd=0.05, duration_ms=3000)
     result = to_bridge_event(event)
     assert isinstance(result, Completion)
     assert result.text == "Done"
@@ -356,9 +354,7 @@ def test_bridge_event_from_ask_user_question_fallback():
 
 def test_bridge_event_other_tool_still_status_update():
     """Non-AskUserQuestion tools remain StatusUpdate."""
-    event = ToolUseEvent(
-        session_id="s1", tool_name="Bash", tool_input={"command": "ls"}
-    )
+    event = ToolUseEvent(session_id="s1", tool_name="Bash", tool_input={"command": "ls"})
     result = to_bridge_event(event)
     assert isinstance(result, StatusUpdate)
     assert result.status == "Using Bash..."

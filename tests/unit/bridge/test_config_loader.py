@@ -8,7 +8,6 @@ from agent_bridge.config_loader import (
     substitute_secrets,
 )
 
-
 # --- ConfigSource precedence ---
 
 
@@ -24,9 +23,7 @@ def test_get_yaml_overrides_default():
 
 
 def test_get_env_overrides_yaml():
-    source = ConfigSource(
-        {"a": {"b": {"c": "from-yaml"}}}, env={"SOME_KEY": "from-env"}
-    )
+    source = ConfigSource({"a": {"b": {"c": "from-yaml"}}}, env={"SOME_KEY": "from-env"})
     assert source.get("SOME_KEY", "a.b.c", "fallback") == "from-env"
 
 
@@ -58,7 +55,7 @@ def test_get_stringifies_yaml_scalars():
 
 def test_get_rejects_mapping_at_leaf():
     source = ConfigSource({"a": {"b": {"c": 1}}}, env={})
-    with pytest.raises(ValueError, match="a.b"):
+    with pytest.raises(ValueError, match=r"a\.b"):
         source.get("K", "a.b")
 
 
@@ -77,9 +74,7 @@ def test_substitute_replaces_vars_in_nested_structures():
         "items": ["$(A)", "plain"],
         "count": 3,
     }
-    result = substitute_secrets(
-        data, env={"MY_TOKEN": "s3cret", "HOST": "example.com", "A": "x"}
-    )
+    result = substitute_secrets(data, env={"MY_TOKEN": "s3cret", "HOST": "example.com", "A": "x"})
     assert result == {
         "token": "s3cret",
         "nested": {"url": "https://example.com/api"},

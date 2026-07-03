@@ -39,9 +39,7 @@ class HeartbeatConfig:
                     "0",
                 )
             ),
-            prompt=source.get(
-                "AGENT_BRIDGE_HEARTBEAT_PROMPT", "platforms.heartbeat.prompt", ""
-            ),
+            prompt=source.get("AGENT_BRIDGE_HEARTBEAT_PROMPT", "platforms.heartbeat.prompt", ""),
             state_path=Path(
                 source.get(
                     "AGENT_BRIDGE_HEARTBEAT_STATE_PATH",
@@ -60,6 +58,4 @@ class HeartbeatConfig:
                 f"got {self.interval_minutes}"
             )
         if not self.prompt:
-            raise ValueError(
-                "AGENT_BRIDGE_HEARTBEAT_PROMPT is required when heartbeat is enabled"
-            )
+            raise ValueError("AGENT_BRIDGE_HEARTBEAT_PROMPT is required when heartbeat is enabled")

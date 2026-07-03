@@ -82,9 +82,7 @@ def _usage_fields(usage: Usage, prefix: str = "") -> dict[str, object]:
     }
 
 
-def _render_usage_template(
-    template: str, turn: Usage, session: Usage | None
-) -> str:
+def _render_usage_template(template: str, turn: Usage, session: Usage | None) -> str:
     """Substitute {placeholders} in a user-supplied template. Session fields
     fall back to zeros when the session total isn't tracked. Malformed
     templates degrade to the raw string rather than crashing the reply.
@@ -355,11 +353,7 @@ class SlackAdapter:
             for f in files:
                 name = f.get("name", "unknown")
                 mimetype = f.get("mimetype", "unknown")
-                url = (
-                    f.get("url_private_download")
-                    or f.get("url_private")
-                    or ""
-                )
+                url = f.get("url_private_download") or f.get("url_private") or ""
                 parts.append(f"- {name} ({mimetype}): {url}")
             token = self._config.bot_token
             hint = (
@@ -386,17 +380,13 @@ class SlackAdapter:
                 state.processing = True
             elif state.processing:
                 # Session busy — replace the pending slot (keep only latest)
-                context = await self._resolve_context(
-                    channel, user_id, thread_ts, client
-                )
+                context = await self._resolve_context(channel, user_id, thread_ts, client)
                 result = await say(
                     text=":hourglass: Waiting for previous task to finish...",
                     thread_ts=thread_ts,
                 )
                 if state.pending is not None:
-                    await self._delete_message(
-                        state.pending.channel, state.pending.message_ts
-                    )
+                    await self._delete_message(state.pending.channel, state.pending.message_ts)
                 state.pending = _PendingMessage(
                     text=text,
                     context=context,
@@ -411,9 +401,7 @@ class SlackAdapter:
 
         # --- Processing happens outside the lock so new messages can queue ---
         try:
-            context = await self._resolve_context(
-                channel, user_id, thread_ts, client
-            )
+            context = await self._resolve_context(channel, user_id, thread_ts, client)
             status = await self._stream_response(
                 channel, thread_ts, session_key, text, context, say
             )
@@ -517,7 +505,9 @@ class SlackAdapter:
                             len(accumulated_text),
                         )
                         await self._update_message(
-                            channel, message_ts, accumulated_text + tool_status,
+                            channel,
+                            message_ts,
+                            accumulated_text + tool_status,
                         )
                         last_update_time = now
 
@@ -527,13 +517,9 @@ class SlackAdapter:
                     if now - last_update_time >= UPDATE_THROTTLE_SECONDS and message_ts:
                         logger.debug("Session %s: StatusUpdate → %s", session_key, status)
                         display = (
-                            accumulated_text + tool_status
-                            if accumulated_text
-                            else tool_status
+                            accumulated_text + tool_status if accumulated_text else tool_status
                         )
-                        await self._update_message(
-                            channel, message_ts, display
-                        )
+                        await self._update_message(channel, message_ts, display)
                         last_update_time = now
 
                 case UserQuestion(questions=questions):
@@ -553,15 +539,15 @@ class SlackAdapter:
                     completed = True
                     if pending_user_questions:
                         logger.debug(
-                            "Session %s: Completion with pending questions → posting questions to Slack",
+                            "Session %s: Completion with pending questions → posting to Slack",
                             session_key,
                         )
-                        formatted = self._format_questions_for_slack(
-                            pending_user_questions
-                        )
+                        formatted = self._format_questions_for_slack(pending_user_questions)
                         if message_ts:
                             await self._update_message(
-                                channel, message_ts, formatted,
+                                channel,
+                                message_ts,
+                                formatted,
                             )
                         elif say is not None:
                             await say(text=formatted, thread_ts=thread_ts)
@@ -596,15 +582,9 @@ class SlackAdapter:
                     # it. Keep it out of both the upload-size decision and the
                     # uploaded file, and always render it inline (it's tiny) so
                     # it survives even when the body is truncated to a snippet.
-                    footer = (
-                        ""
-                        if is_error
-                        else self._build_usage_footer(usage, session_usage)
-                    )
+                    footer = "" if is_error else self._build_usage_footer(usage, session_usage)
                     if _utf8_len(final) > SLACK_MSG_MAX_BYTES:
-                        uploaded = await self._upload_snippet(
-                            channel, thread_ts, final
-                        )
+                        uploaded = await self._upload_snippet(channel, thread_ts, final)
                         notice = (
                             "\n\n_… Full response uploaded as file below._"
                             if uploaded
@@ -614,9 +594,7 @@ class SlackAdapter:
                             1000,
                             SLACK_MSG_MAX_BYTES - _utf8_len(notice) - _utf8_len(footer),
                         )
-                        short = (
-                            _truncate_to_bytes(final, preview_budget) + notice + footer
-                        )
+                        short = _truncate_to_bytes(final, preview_budget) + notice + footer
                         if message_ts:
                             await self._update_message(channel, message_ts, short)
                         elif say is not None:
@@ -633,17 +611,13 @@ class SlackAdapter:
                 session_key,
             )
             if _utf8_len(accumulated_text) > SLACK_MSG_MAX_BYTES:
-                uploaded = await self._upload_snippet(
-                    channel, thread_ts, accumulated_text
-                )
+                uploaded = await self._upload_snippet(channel, thread_ts, accumulated_text)
                 notice = (
                     "\n\n_… Full response uploaded as file below._"
                     if uploaded
                     else "\n\n_… (response too long; upload failed — please retry)_"
                 )
-                preview_budget = min(
-                    1000, SLACK_MSG_MAX_BYTES - _utf8_len(notice)
-                )
+                preview_budget = min(1000, SLACK_MSG_MAX_BYTES - _utf8_len(notice))
                 short = _truncate_to_bytes(accumulated_text, preview_budget) + notice
                 await self._update_message(channel, message_ts, short)
             else:
@@ -651,18 +625,14 @@ class SlackAdapter:
 
         return None
 
-    def _build_usage_footer(
-        self, usage: Usage | None, session_usage: Usage | None
-    ) -> str:
+    def _build_usage_footer(self, usage: Usage | None, session_usage: Usage | None) -> str:
         """Compose the usage footer (with a leading blank line), or '' when the
         feature is off or no usage was reported. Template wins over the default.
         """
         if not self._config.usage_report_enabled or usage is None:
             return ""
         if self._config.usage_report_template:
-            body = _render_usage_template(
-                self._config.usage_report_template, usage, session_usage
-            )
+            body = _render_usage_template(self._config.usage_report_template, usage, session_usage)
         else:
             body = _default_usage_footer(usage, session_usage)
         return f"\n\n{_as_footnote(body)}" if body else ""
@@ -701,14 +671,10 @@ class SlackAdapter:
         try:
             await self._app.client.chat_delete(channel=channel, ts=ts)
         except SlackApiError as e:
-            logger.warning(
-                "Failed to delete Slack message %s: %s", ts, e.response["error"]
-            )
+            logger.warning("Failed to delete Slack message %s: %s", ts, e.response["error"])
 
     async def _update_message(self, channel: str, ts: str, text: str) -> None:
-        text = _fit_with_suffix(
-            text, SLACK_MSG_MAX_BYTES, "\n\n_… (generating response…)_"
-        )
+        text = _fit_with_suffix(text, SLACK_MSG_MAX_BYTES, "\n\n_… (generating response…)_")
         try:
             await self._app.client.chat_update(
                 channel=channel,
@@ -733,13 +699,9 @@ class SlackAdapter:
             SLACK_MSG_MAX_BYTES // 2,
             SLACK_MSG_MAX_BYTES // 4,
         ):
-            short = _fit_with_suffix(
-                text, budget, "\n\n_… (response truncated)_"
-            )
+            short = _fit_with_suffix(text, budget, "\n\n_… (response truncated)_")
             try:
-                await self._app.client.chat_update(
-                    channel=channel, ts=ts, text=short
-                )
+                await self._app.client.chat_update(channel=channel, ts=ts, text=short)
                 return
             except SlackApiError as retry_err:
                 if retry_err.response["error"] != "msg_too_long":
@@ -749,13 +711,9 @@ class SlackAdapter:
                         retry_err.response["error"],
                     )
                     return
-        logger.warning(
-            "Slack rejected update to %s at all fallback sizes", ts
-        )
+        logger.warning("Slack rejected update to %s at all fallback sizes", ts)
 
-    async def _upload_snippet(
-        self, channel: str, thread_ts: str, content: str
-    ) -> bool:
+    async def _upload_snippet(self, channel: str, thread_ts: str, content: str) -> bool:
         try:
             await self._app.client.files_upload_v2(
                 channel=channel,
@@ -770,9 +728,7 @@ class SlackAdapter:
             return False
 
     async def start(self) -> None:
-        self._handler = AsyncSocketModeHandler(
-            self._app, self._config.app_token
-        )
+        self._handler = AsyncSocketModeHandler(self._app, self._config.app_token)
         logger.info("Starting Slack adapter (Socket Mode)")
         await self._handler.connect_async()
 
@@ -785,9 +741,7 @@ class SlackAdapter:
                 self._bot_user_id,
             )
         except SlackApiError as e:
-            logger.warning(
-                "Failed to resolve bot identity: %s", e.response["error"]
-            )
+            logger.warning("Failed to resolve bot identity: %s", e.response["error"])
 
         if self._config.startup_notify_channel and self._config.startup_notify_message:
             try:

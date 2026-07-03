@@ -97,9 +97,7 @@ def test_telegram_builder_returns_none_without_token(bridge, session_manager):
 def test_telegram_builder_returns_adapter_with_token(bridge, session_manager):
     from agent_bridge.platforms.telegram.adapter import TelegramAdapter
 
-    source = ConfigSource(
-        {"platforms": {"telegram": {"bot_token": "123:abc"}}}, env={}
-    )
+    source = ConfigSource({"platforms": {"telegram": {"bot_token": "123:abc"}}}, env={})
     adapter = PLATFORM_BUILDERS["telegram"](source, bridge, session_manager)
     assert isinstance(adapter, TelegramAdapter)
 
@@ -113,11 +111,7 @@ def test_line_builder_returns_adapter_with_credentials(bridge, session_manager):
     from agent_bridge.platforms.line.adapter import LineAdapter
 
     source = ConfigSource(
-        {
-            "platforms": {
-                "line": {"channel_secret": "sec", "channel_access_token": "tok"}
-            }
-        },
+        {"platforms": {"line": {"channel_secret": "sec", "channel_access_token": "tok"}}},
         env={},
     )
     adapter = PLATFORM_BUILDERS["line"](source, bridge, session_manager)
@@ -138,9 +132,7 @@ def test_api_builder_returns_adapter_when_enabled(bridge, session_manager):
 
 
 def test_heartbeat_builder_returns_none_when_disabled(bridge, session_manager):
-    adapter = PLATFORM_BUILDERS["heartbeat"](
-        ConfigSource({}, env={}), bridge, session_manager
-    )
+    adapter = PLATFORM_BUILDERS["heartbeat"](ConfigSource({}, env={}), bridge, session_manager)
     assert adapter is None
 
 

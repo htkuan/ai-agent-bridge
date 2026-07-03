@@ -78,10 +78,7 @@ class Bridge:
         # Skip dedupe for non-resumable triggers (e.g. heartbeat ticks where
         # the same prompt firing on a schedule is meaningful, not a duplicate).
         dedupe_on = (
-            self._dedupe is not None
-            and resumable
-            and ":" in session_key
-            and bool(text.strip())
+            self._dedupe is not None and resumable and ":" in session_key and bool(text.strip())
         )
         dedupe_scope: str | None = None
         dedupe_canonical: str | None = None
@@ -90,13 +87,9 @@ class Bridge:
             # session_key format is `{platform}:{scope}:{identifier}` — drop
             # the identifier so cross-thread duplicates collapse.
             dedupe_scope = session_key.rpartition(":")[0]
-            result = self._dedupe.lookup_or_claim(
-                dedupe_scope, text, first_session_key=session_key
-            )
+            result = self._dedupe.lookup_or_claim(dedupe_scope, text, first_session_key=session_key)
             if result.hit is not None:
-                state = (
-                    "in_flight" if result.hit.completed_at is None else "recent_hit"
-                )
+                state = "in_flight" if result.hit.completed_at is None else "recent_hit"
                 logger.info(
                     "dedupe_hit scope=%s state=%s match=%s hamming=%d "
                     "first_session=%s canonical=%r",

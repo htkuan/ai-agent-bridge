@@ -49,9 +49,7 @@ def test_parse_tool_use_completed():
 
 
 def test_parse_tool_use_error():
-    events = parse_stream_line(
-        opencode_tool_use_line(tool="edit", title="a.py", status="error")
-    )
+    events = parse_stream_line(opencode_tool_use_line(tool="edit", title="a.py", status="error"))
     assert events[0].failed is True
 
 
@@ -87,22 +85,14 @@ def test_parse_step_finish_without_tokens_defaults_to_zero():
 
 
 def test_parse_error_prefers_nested_data_message():
-    events = parse_stream_line(
-        opencode_error_line(message="rate limited", name="APIError")
-    )
-    assert events == [
-        SessionErrorEvent(message="rate limited", session_id="ses_fake")
-    ]
+    events = parse_stream_line(opencode_error_line(message="rate limited", name="APIError"))
+    assert events == [SessionErrorEvent(message="rate limited", session_id="ses_fake")]
 
 
 def test_parse_error_falls_back_to_flat_message_then_name():
-    flat = json.dumps(
-        {"type": "error", "sessionID": "s", "error": {"message": "boom"}}
-    )
+    flat = json.dumps({"type": "error", "sessionID": "s", "error": {"message": "boom"}})
     assert parse_stream_line(flat)[0].message == "boom"
-    name_only = json.dumps(
-        {"type": "error", "sessionID": "s", "error": {"name": "UnknownError"}}
-    )
+    name_only = json.dumps({"type": "error", "sessionID": "s", "error": {"name": "UnknownError"}})
     assert parse_stream_line(name_only)[0].message == "UnknownError"
 
 

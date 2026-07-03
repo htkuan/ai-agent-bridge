@@ -120,9 +120,7 @@ def test_build_command_prepends_system_prompt_with_delimiter(tmp_path: Path):
 def test_build_command_passes_prompt_verbatim_without_system_prompt(tmp_path: Path):
     controller = OpencodeController(_config(tmp_path))
     for system_prompt in (None, ""):
-        cmd = controller._build_command(
-            "[alice]: hi", native_id=None, system_prompt=system_prompt
-        )
+        cmd = controller._build_command("[alice]: hi", native_id=None, system_prompt=system_prompt)
         assert cmd[-1] == "[alice]: hi"
         assert PREFIX not in cmd[-1]
 

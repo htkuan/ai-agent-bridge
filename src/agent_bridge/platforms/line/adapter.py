@@ -13,8 +13,7 @@ try:
     from aiohttp import web
 except ImportError:
     raise ImportError(
-        "LINE dependencies are not installed. "
-        "Install them with: pip install ai-agent-bridge[line]"
+        "LINE dependencies are not installed. Install them with: pip install ai-agent-bridge[line]"
     ) from None
 
 from agent_bridge.bridge import Bridge
@@ -178,9 +177,7 @@ class LineAdapter:
         app.router.add_post(self._config.webhook_path, self._handle_webhook)
         self._runner = web.AppRunner(app)
         await self._runner.setup()
-        site = web.TCPSite(
-            self._runner, self._config.webhook_host, self._config.webhook_port
-        )
+        site = web.TCPSite(self._runner, self._config.webhook_host, self._config.webhook_port)
         await site.start()
         logger.info(
             "LINE webhook listening on %s:%s%s",
@@ -196,9 +193,7 @@ class LineAdapter:
             await self._runner.cleanup()
             self._runner = None
         if self._tasks:
-            _done, pending = await asyncio.wait(
-                self._tasks, timeout=STOP_GRACE_SECONDS
-            )
+            _done, pending = await asyncio.wait(self._tasks, timeout=STOP_GRACE_SECONDS)
             for task in pending:
                 task.cancel()
             if pending:
@@ -378,12 +373,10 @@ class LineAdapter:
                 if resp.status == 200:
                     return True
                 detail = (await resp.text())[:200]
-                logger.warning(
-                    "LINE API %s returned %d: %s", path, resp.status, detail
-                )
+                logger.warning("LINE API %s returned %d: %s", path, resp.status, detail)
                 return False
         except asyncio.CancelledError:
             raise
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        except (TimeoutError, aiohttp.ClientError) as e:
             logger.warning("LINE API %s failed: %s", path, e)
             return False

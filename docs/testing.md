@@ -27,6 +27,7 @@ tests/
 │       ├── slack/
 │       ├── telegram/
 │       ├── line/
+│       ├── api/
 │       └── heartbeat/
 └── integration/           # end-to-end, marked `integration`
 ```
@@ -179,6 +180,7 @@ For the integration layer:
 
 - **Webhook-style platforms** (LINE-like): start the adapter's real HTTP server on an ephemeral port (`webhook_port=0`), POST real signed payloads at it (valid + invalid signature), and assert the HTTP status plus the outbound API calls recorded by a `FakeApiServer`. Reference: `tests/integration/test_line_end_to_end.py`.
 - **Polling-style platforms** (Telegram-like): run a `FakeApiServer` on an ephemeral port, point the adapter's `api_base_url` config at it, and assert the messages the adapter sends back after a full poll → bridge → `FakeAgentController` cycle. Reference: `tests/integration/test_telegram_end_to_end.py`.
+- **Server-style platforms** (the POST API): the test client *is* the platform user — start the adapter's real server on an ephemeral port (`port=0`) and make real HTTP requests, asserting status codes, JSON bodies, and (for SSE) the parsed event frames; no `FakeApiServer` needed since there are no outbound calls. Reference: `tests/integration/test_api_end_to_end.py`.
 
 ## Playbook: testing a new agent controller
 

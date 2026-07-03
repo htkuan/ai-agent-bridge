@@ -108,6 +108,17 @@ LINE activates when both the channel secret and the channel access token resolve
 | `platforms.line.webhook.path` | `AGENT_BRIDGE_LINE_WEBHOOK_PATH` | `/line/webhook` |
 | `platforms.line.api_base_url` | `AGENT_BRIDGE_LINE_API_BASE_URL` | `https://api.line.me` |
 
+### POST API platform
+
+The POST API adapter requires an explicit `enabled: true` (auth is optional, so there is no secret to infer activation from). Requires the `api` extra (`pip install ai-agent-bridge[api]`). Binds loopback by default — see [docs/platforms/api.md](platforms/api.md) for the security notes.
+
+| YAML key | Env var | Default |
+|----------|---------|---------|
+| `platforms.api.enabled` | `AGENT_BRIDGE_API_ENABLED` | `false` |
+| `platforms.api.host` | `AGENT_BRIDGE_API_HOST` | `127.0.0.1` |
+| `platforms.api.port` | `AGENT_BRIDGE_API_PORT` | `8081` |
+| `platforms.api.auth_token` | `AGENT_BRIDGE_API_AUTH_TOKEN` | — (no auth) |
+
 ### Heartbeat platform
 
 Heartbeat requires an explicit `enabled: true` (there is no secret to infer activation from).

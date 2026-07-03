@@ -88,6 +88,19 @@ def test_line_builder_returns_adapter_with_credentials(bridge, session_manager):
     assert isinstance(adapter, LineAdapter)
 
 
+def test_api_builder_returns_none_when_disabled(bridge, session_manager):
+    adapter = PLATFORM_BUILDERS["api"](ConfigSource({}, env={}), bridge, session_manager)
+    assert adapter is None
+
+
+def test_api_builder_returns_adapter_when_enabled(bridge, session_manager):
+    from agent_bridge.platforms.api.adapter import ApiAdapter
+
+    source = ConfigSource({"platforms": {"api": {"enabled": True}}}, env={})
+    adapter = PLATFORM_BUILDERS["api"](source, bridge, session_manager)
+    assert isinstance(adapter, ApiAdapter)
+
+
 def test_heartbeat_builder_returns_none_when_disabled(bridge, session_manager):
     adapter = PLATFORM_BUILDERS["heartbeat"](
         ConfigSource({}, env={}), bridge, session_manager

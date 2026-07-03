@@ -23,7 +23,8 @@ dependencies = [
 slack = ["slack-bolt>=1.21.0", "aiohttp>=3.9.0"]
 telegram = ["aiohttp>=3.9.0"]
 line = ["aiohttp>=3.9.0"]
-all = ["ai-agent-bridge[slack,telegram,line]"]
+api = ["aiohttp>=3.9.0"]
+all = ["ai-agent-bridge[slack,telegram,line,api]"]
 
 [project.urls]
 Repository = "https://github.com/htkuan/ai-agent-bridge"

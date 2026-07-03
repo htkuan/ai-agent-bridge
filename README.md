@@ -2,7 +2,7 @@
 
 Modular bridge that connects **chat platforms** to **AI agents**. Each layer is independent — swap platforms or agents without touching the others.
 
-Currently supports: **Slack**, **Telegram**, **LINE**, **Heartbeat** (scheduled prompts) + **Claude Code**
+Currently supports: **Slack**, **Telegram**, **LINE**, **POST API** (generic HTTP entry point), **Heartbeat** (scheduled prompts) + **Claude Code**
 
 ```
 ┌──────────────┐     ┌──────────┐     ┌──────────────┐
@@ -94,7 +94,7 @@ The system has three independent layers:
 
 | Layer | Role | Docs |
 |-------|------|------|
-| **Platform Adapter** | Owns session semantics, per-session locking, UI rendering | [Slack](docs/platforms/slack.md) · [Telegram](docs/platforms/telegram.md) · [LINE](docs/platforms/line.md) · [Heartbeat](docs/platforms/heartbeat.md) |
+| **Platform Adapter** | Owns session semantics, per-session locking, UI rendering | [Slack](docs/platforms/slack.md) · [Telegram](docs/platforms/telegram.md) · [LINE](docs/platforms/line.md) · [POST API](docs/platforms/api.md) · [Heartbeat](docs/platforms/heartbeat.md) |
 | **Bridge** | Routes messages, maps session keys → IDs, enforces concurrency | Core — see below |
 | **Agent Controller** | Executes prompts, yields generic events | [Claude Agent](docs/agents/claude.md) |
 
@@ -139,6 +139,10 @@ Every variable also has a YAML config key — see [docs/configuration.md](docs/c
 | `AGENT_BRIDGE_LINE_WEBHOOK_PORT` | No | `8080` | Webhook server port (`0` = ephemeral, for tests) |
 | `AGENT_BRIDGE_LINE_WEBHOOK_PATH` | No | `/line/webhook` | Webhook endpoint path |
 | `AGENT_BRIDGE_LINE_API_BASE_URL` | No | `https://api.line.me` | Messaging API base URL (tests point this at a fake server) |
+| `AGENT_BRIDGE_API_ENABLED` | No | `false` | Enable the generic HTTP POST API (buffered JSON + SSE streaming) |
+| `AGENT_BRIDGE_API_HOST` | No | `127.0.0.1` | API server bind address (loopback by default) |
+| `AGENT_BRIDGE_API_PORT` | No | `8081` | API server port (`0` = ephemeral, for tests) |
+| `AGENT_BRIDGE_API_AUTH_TOKEN` | No | — (no auth) | Bearer token required on every `/v1` request when set |
 | `AGENT_BRIDGE_CLAUDE_WORK_DIR` | No | `.` | Working directory for Claude Code |
 | `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude permission mode |
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Per-invocation timeout (seconds) |

@@ -16,6 +16,9 @@ all = [
     { name = "aiohttp" },
     { name = "slack-bolt" },
 ]
+api = [
+    { name = "aiohttp" },
+]
 line = [
     { name = "aiohttp" },
 ]
@@ -38,7 +41,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ai-agent-bridge", extras = ["slack", "telegram", "line"], marker = "extra == 'all'" },
+    { name = "ai-agent-bridge", extras = ["slack", "telegram", "line", "api"], marker = "extra == 'all'" },
+    { name = "aiohttp", marker = "extra == 'api'", specifier = ">=3.9.0" },
     { name = "aiohttp", marker = "extra == 'line'", specifier = ">=3.9.0" },
     { name = "aiohttp", marker = "extra == 'slack'", specifier = ">=3.9.0" },
     { name = "aiohttp", marker = "extra == 'telegram'", specifier = ">=3.9.0" },
@@ -46,7 +50,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "slack-bolt", marker = "extra == 'slack'", specifier = ">=1.21.0" },
 ]
-provides-extras = ["slack", "telegram", "line", "all"]
+provides-extras = ["slack", "telegram", "line", "api", "all"]
 
 [package.metadata.requires-dev]
 dev = [

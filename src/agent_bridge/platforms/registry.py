@@ -67,6 +67,22 @@ def _build_line(
     return LineAdapter(config, bridge, session_manager=session_manager)
 
 
+def _build_api(
+    source: ConfigSource, bridge: Bridge, session_manager: SessionManager
+) -> PlatformAdapter | None:
+    from agent_bridge.platforms.api.config import ApiConfig
+
+    config = ApiConfig.from_source(source)
+    # Disabled is the normal state (explicit opt-in, like heartbeat) — no log.
+    if not config.enabled:
+        return None
+    # Imported lazily so the optional aiohttp dependency is only required
+    # when the API server is actually enabled.
+    from agent_bridge.platforms.api.adapter import ApiAdapter
+
+    return ApiAdapter(config, bridge, session_manager=session_manager)
+
+
 def _build_heartbeat(
     source: ConfigSource, bridge: Bridge, session_manager: SessionManager
 ) -> PlatformAdapter | None:
@@ -84,6 +100,7 @@ PLATFORM_BUILDERS: dict[str, PlatformBuilder] = {
     "slack": _build_slack,
     "telegram": _build_telegram,
     "line": _build_line,
+    "api": _build_api,
     "heartbeat": _build_heartbeat,
 }
 

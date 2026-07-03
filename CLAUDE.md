@@ -106,6 +106,9 @@ src/agent_bridge/
     ├── line/
     │   ├── config.py    # LineConfig (channel secret/token, webhook host/port/path)
     │   └── adapter.py   # Webhook server, HMAC signature check, buffered reply→push rendering
+    ├── api/
+    │   ├── config.py    # ApiConfig (enabled, host, port, auth_token)
+    │   └── adapter.py   # POST /v1/messages (buffered JSON + SSE), bearer auth, healthz
     └── heartbeat/
         ├── config.py    # HeartbeatConfig (interval, prompt, state path)
         └── adapter.py   # Scheduled ticks, one-shot (non-resumable) sessions
@@ -244,6 +247,10 @@ the entry point (`app.main`) via python-dotenv. Every variable has a matching YA
 | `AGENT_BRIDGE_LINE_WEBHOOK_PORT` | No | `8080` | LINE (webhook server port; 0 = ephemeral, for tests) |
 | `AGENT_BRIDGE_LINE_WEBHOOK_PATH` | No | `/line/webhook` | LINE (webhook endpoint path) |
 | `AGENT_BRIDGE_LINE_API_BASE_URL` | No | `https://api.line.me` | LINE (Messaging API base URL; tests use a fake server) |
+| `AGENT_BRIDGE_API_ENABLED` | No | `false` | API (generic HTTP POST entry point; explicit opt-in) |
+| `AGENT_BRIDGE_API_HOST` | No | `127.0.0.1` | API (bind address; loopback by default) |
+| `AGENT_BRIDGE_API_PORT` | No | `8081` | API (server port; 0 = ephemeral, for tests) |
+| `AGENT_BRIDGE_API_AUTH_TOKEN` | No | — (no auth) | API (bearer token required on `/v1` requests when set) |
 | `AGENT_BRIDGE_CLAUDE_WORK_DIR` | No | `.` | Claude |
 | `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude |
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Claude |

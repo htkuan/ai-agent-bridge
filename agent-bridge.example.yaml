@@ -69,6 +69,15 @@ platforms:
     #   path: /line/webhook               # AGENT_BRIDGE_LINE_WEBHOOK_PATH
     # api_base_url: https://api.line.me   # AGENT_BRIDGE_LINE_API_BASE_URL
 
+  # Generic HTTP POST entry point (buffered JSON or SSE streaming).
+  # Explicit opt-in; binds loopback by default. Requires the `api` extra.
+  api:
+    enabled: false # AGENT_BRIDGE_API_ENABLED
+    # host: 127.0.0.1                   # AGENT_BRIDGE_API_HOST (0.0.0.0 to expose — read docs/platforms/api.md first)
+    # port: 8081                        # AGENT_BRIDGE_API_PORT
+    # Optional bearer token required on every /v1 request when set.
+    # auth_token: $(API_AUTH_TOKEN)     # AGENT_BRIDGE_API_AUTH_TOKEN
+
   # Heartbeat fires a fixed prompt on a fixed interval. Explicit opt-in.
   heartbeat:
     enabled: false # AGENT_BRIDGE_HEARTBEAT_ENABLED

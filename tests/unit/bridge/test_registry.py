@@ -9,21 +9,14 @@ from agent_bridge.config_loader import ConfigSource
 from agent_bridge.platforms.heartbeat.adapter import HeartbeatAdapter
 from agent_bridge.platforms.registry import PLATFORM_BUILDERS, build_platforms
 from agent_bridge.platforms.slack.adapter import SlackAdapter
-from agent_bridge.session import SessionManager
 
 
 @pytest.fixture
-def bridge(tmp_path):
-    session_manager = SessionManager(tmp_path / "sessions.json", ttl_hours=1)
+def bridge(tmp_path, session_manager):
     controller = build_agent(
         "claude", ConfigSource({"agents": {"claude": {"work_dir": str(tmp_path)}}}, env={})
     )
     return Bridge(session_manager, controller)
-
-
-@pytest.fixture
-def session_manager(tmp_path):
-    return SessionManager(tmp_path / "sessions.json", ttl_hours=1)
 
 
 # --- Agent registry ---

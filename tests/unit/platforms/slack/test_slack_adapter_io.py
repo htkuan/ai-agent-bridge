@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from slack_sdk.errors import SlackApiError
 
 from agent_bridge.events import Completion, Processing, Usage
@@ -11,6 +10,7 @@ from agent_bridge.platforms.slack.adapter import (
     SlackAdapter,
 )
 from agent_bridge.platforms.slack.config import SlackConfig
+from tests.helpers import FakeBridge
 
 
 def _make_adapter() -> SlackAdapter:
@@ -23,26 +23,12 @@ def _make_adapter() -> SlackAdapter:
     return adapter
 
 
-class _FakeBridge:
-    """Yields a fixed event sequence from handle_message()."""
-
-    def __init__(self, events: list) -> None:
-        self._events = events
-
-    def handle_message(self, **_kwargs):
-        async def gen():
-            for e in self._events:
-                yield e
-
-        return gen()
-
-
 def _usage_adapter(events: list, *, enabled: bool = True) -> SlackAdapter:
     adapter = _make_adapter()
     adapter._config = SlackConfig(
         bot_token="x", app_token="y", usage_report_enabled=enabled
     )
-    adapter._bridge = _FakeBridge(events)
+    adapter._bridge = FakeBridge(events)
     return adapter
 
 

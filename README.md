@@ -156,8 +156,11 @@ Neither change requires modifying the bridge, the other agent, or the other plat
 ## Development
 
 ```bash
-# Run tests
-uv run pytest tests/ -v
+# Run tests (unit + integration; all offline)
+uv run pytest
+
+# Fast path: unit tests only
+uv run pytest -m "not integration"
 
 # Run with debug logging
 AGENT_BRIDGE_LOG_LEVEL=DEBUG uv run agent-bridge

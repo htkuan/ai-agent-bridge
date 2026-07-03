@@ -48,6 +48,9 @@ packages = ["src/agent_bridge"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: end-to-end tests wiring real components together (config chain, fake CLI through real controller/bridge); still fully offline",
+]
 
 [tool.semantic_release]
 # Version lives in [project].version; PSR bumps it from Conventional Commits.

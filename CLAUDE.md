@@ -137,10 +137,13 @@ src/agent_bridge/
 
 ### Testing
 
-- Run tests: `uv run pytest tests/ -v`
-- Test files: `tests/test_*.py`
+- Run all tests: `uv run pytest` — unit only: `uv run pytest -m "not integration"`, end-to-end only: `uv run pytest -m integration`
+- Layout: `tests/unit/` mirrors `src/agent_bridge/` (`tests/unit/platforms/slack/`, `tests/unit/agents/claude/`, ...); `tests/integration/` holds end-to-end tests marked with `pytestmark = pytest.mark.integration`
+- Every test directory has an `__init__.py` (package mode); shared fixtures live in `tests/conftest.py`, reusable fakes in `tests/helpers/` (`FakeAgentController`, `FakeBridge`, `collect_events`, `install_fake_cli`)
+- All tests are offline — external CLIs are faked with generated scripts (`install_fake_cli` + `prepend_path`), never real tokens/network
 - Async tests run automatically (`asyncio_mode = "auto"`)
 - Test naming: `test_{feature}_{scenario}`
+- Full guide (component checklists + templates): `docs/testing.md`
 
 ### Commits
 
@@ -192,7 +195,7 @@ uv sync
 uv run agent-bridge
 
 # Run tests
-uv run pytest tests/ -v
+uv run pytest
 ```
 
 ## Releasing

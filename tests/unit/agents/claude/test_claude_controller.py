@@ -10,6 +10,7 @@ import pytest
 from agent_bridge.agents.claude.config import ClaudeConfig
 from agent_bridge.agents.claude.controller import ClaudeController
 from agent_bridge.events import Completion
+from tests.helpers import claude_result_line, install_fake_cli
 
 
 def _config(
@@ -257,34 +258,20 @@ async def test_cleanup_session_removes_clean_worktree(tmp_path: Path):
 # --- run() stream handling: backgrounded grandchild holding stdout open ---
 
 
-def _fake_claude_with_orphan(bin_dir: Path, pidfile: Path) -> None:
-    """Install a fake `claude` that emits a result line, then leaves a
-    backgrounded child holding the stdout pipe open (mimicking a nested
-    `claude -p` spawned by a skill). Without breaking on `result`, the bridge's
-    readline()/wait() would block until the overall timeout fires.
-    """
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    script = bin_dir / "claude"
-    script.write_text(
-        "#!/bin/sh\n"
-        # Background child inherits stdout; keeps the pipe write-end open.
-        "sleep 30 &\n"
-        f'echo $! > "{pidfile}"\n'
-        '{ echo \'{"type":"result","subtype":"success","session_id":"s1",'
-        '"result":"done","total_cost_usd":0.01,"duration_ms":1000,'
-        '"is_error":false}\'; }\n'
-        "exit 0\n"
-    )
-    script.chmod(0o755)
-
-
 async def test_run_breaks_on_result_despite_orphan_holding_stdout(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, prepend_path
 ):
+    # A fake `claude` that emits a result line, then leaves a backgrounded
+    # child holding the stdout pipe open (mimicking a nested `claude -p`
+    # spawned by a skill). Without breaking on `result`, the controller's
+    # readline()/wait() would block until the overall timeout fires.
     pidfile = tmp_path / "orphan.pid"
-    bin_dir = tmp_path / "bin"
-    _fake_claude_with_orphan(bin_dir, pidfile)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    install_fake_cli(
+        tmp_path / "bin",
+        lines=[claude_result_line("done", session_id="s1", duration_ms=1000)],
+        orphan_pidfile=pidfile,
+    )
+    prepend_path(tmp_path / "bin")
 
     # Small timeout: if the loop waited for EOF it would fail here.
     controller = ClaudeController(_config(tmp_path, timeout_seconds=5.0))

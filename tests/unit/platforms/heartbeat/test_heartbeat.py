@@ -18,37 +18,10 @@ from agent_bridge.events import (
 )
 from agent_bridge.platforms.heartbeat.adapter import HeartbeatAdapter
 from agent_bridge.platforms.heartbeat.config import HeartbeatConfig
+from tests.helpers import FakeBridge
 
 
 # --- Stubs ---
-
-
-class _StubBridge:
-    def __init__(self, events: list[BridgeEvent] | None = None) -> None:
-        self.calls: list[dict] = []
-        self._events: list[BridgeEvent] = (
-            events if events is not None else [Completion(text="ok")]
-        )
-
-    async def handle_message(
-        self,
-        session_key: str,
-        text: str,
-        context: dict[str, str] | None = None,
-        system_prompt: str | None = None,
-        resumable: bool = True,
-    ) -> AsyncIterator[BridgeEvent]:
-        self.calls.append(
-            {
-                "session_key": session_key,
-                "text": text,
-                "context": context,
-                "system_prompt": system_prompt,
-                "resumable": resumable,
-            }
-        )
-        for event in self._events:
-            yield event
 
 
 class _BoomBridge:
@@ -68,14 +41,14 @@ def make_adapter(tmp_path: Path):
         interval_minutes: int = 60,
         prompt: str = "ping",
         events: list[BridgeEvent] | None = None,
-    ) -> tuple[HeartbeatAdapter, _StubBridge, HeartbeatConfig]:
+    ) -> tuple[HeartbeatAdapter, FakeBridge, HeartbeatConfig]:
         config = HeartbeatConfig(
             enabled=True,
             interval_minutes=interval_minutes,
             prompt=prompt,
             state_path=tmp_path / "heartbeat.json",
         )
-        bridge = _StubBridge(events=events)
+        bridge = FakeBridge(events=events)
         adapter = HeartbeatAdapter(config, bridge)  # type: ignore[arg-type]
         return adapter, bridge, config
 

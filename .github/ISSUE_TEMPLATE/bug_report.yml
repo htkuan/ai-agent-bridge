@@ -1,0 +1,98 @@
+name: Bug report
+description: Something in Agent Bridge doesn't behave as documented
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Before filing, please check
+        [existing issues](https://github.com/htkuan/ai-agent-bridge/issues) and the
+        [documentation](https://htkuan.github.io/ai-agent-bridge/).
+
+        **Do not report security vulnerabilities here** — use
+        [private vulnerability reporting](https://github.com/htkuan/ai-agent-bridge/security/advisories/new)
+        instead (see SECURITY.md).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: What happened, and what did you expect instead?
+      placeholder: The Slack adapter posts the placeholder message but never edits it when...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to trigger the behavior. Include relevant config (YAML keys or env vars) — **redact all tokens/secrets**.
+      placeholder: |
+        1. Configure `platforms.slack` with ...
+        2. Run `uv run agent-bridge`
+        3. Send `@bot hello` in a channel
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Agent Bridge version
+      description: "`pip show ai-agent-bridge` / `uv pip show ai-agent-bridge`, or the git commit if running from source."
+      placeholder: "0.2.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform adapter
+      description: Which platform adapter is involved?
+      options:
+        - Slack
+        - Telegram
+        - LINE
+        - POST API
+        - Heartbeat
+        - Not platform-specific / core bridge
+    validations:
+      required: true
+
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent controller
+      description: Which agent controller is involved?
+      options:
+        - Claude Code
+        - Codex
+        - OpenCode
+        - Not agent-specific / core bridge
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS and Python version (plus the agent CLI version if relevant).
+      placeholder: "macOS 15 / Python 3.12.9 / claude 1.x"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Relevant log output — `AGENT_BRIDGE_LOG_LEVEL=DEBUG` output is ideal.
+        **Redact tokens, secrets, and any private message content.**
+      render: shell

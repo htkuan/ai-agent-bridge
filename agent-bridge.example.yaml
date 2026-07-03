@@ -44,6 +44,19 @@ platforms:
       enabled: false # AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED
       # template: "💵 {cost_usd} | {total_tokens} tokens | {duration_s}s" # AGENT_BRIDGE_SLACK_USAGE_REPORT_TEMPLATE
 
+  # Telegram activates when the bot token is set; omit the section to disable.
+  # Long polling — no public URL needed. Requires the `telegram` extra.
+  telegram:
+    bot_token: $(TELEGRAM_BOT_TOKEN) # AGENT_BRIDGE_TELEGRAM_BOT_TOKEN (from @BotFather)
+    # Optional chat-id allow-list (list or comma-separated string; group ids
+    # are negative). Empty/omitted = allow every chat.
+    # allow_chats:                      # AGENT_BRIDGE_TELEGRAM_ALLOW_CHATS
+    #   - "-1001234567890"
+    #   - "987654321"
+    # poll_timeout_seconds: 30          # AGENT_BRIDGE_TELEGRAM_POLL_TIMEOUT_SECONDS
+    # state_path: ./telegram.json       # AGENT_BRIDGE_TELEGRAM_STATE_PATH
+    # api_base_url: https://api.telegram.org # AGENT_BRIDGE_TELEGRAM_API_BASE_URL
+
   # Heartbeat fires a fixed prompt on a fixed interval. Explicit opt-in.
   heartbeat:
     enabled: false # AGENT_BRIDGE_HEARTBEAT_ENABLED

@@ -97,9 +97,15 @@ src/agent_bridge/
 │       └── events.py    # Claude stream-json parser → BridgeEvent converter
 └── platforms/
     ├── registry.py      # name → build(source, bridge, session_manager) → adapter | None
-    └── slack/
-        ├── config.py    # SlackConfig (bot_token, app_token)
-        └── adapter.py   # Event handlers, per-session state machine, message rendering
+    ├── slack/
+    │   ├── config.py    # SlackConfig (bot_token, app_token)
+    │   └── adapter.py   # Event handlers, per-session state machine, message rendering
+    ├── telegram/
+    │   ├── config.py    # TelegramConfig (bot_token, allow_chats, poll timeout, state path)
+    │   └── adapter.py   # getUpdates long-poll loop, mention/reply filtering, placeholder-edit rendering
+    └── heartbeat/
+        ├── config.py    # HeartbeatConfig (interval, prompt, state path)
+        └── adapter.py   # Scheduled ticks, one-shot (non-resumable) sessions
 ```
 
 ## Conventions
@@ -224,6 +230,11 @@ the entry point (`app.main`) via python-dotenv. Every variable has a matching YA
 | `AGENT_BRIDGE_SLACK_CHANNEL_NOT_ALLOWED_MESSAGE` | No | (fixed English notice) | Slack (reply sent to non-allowed channels) |
 | `AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED` | No | `false` | Slack (append usage/cost footer to the final reply) |
 | `AGENT_BRIDGE_SLACK_USAGE_REPORT_TEMPLATE` | No | — (built-in default) | Slack (`{placeholder}` template for the usage footer) |
+| `AGENT_BRIDGE_TELEGRAM_BOT_TOKEN` | Yes (if using Telegram) | — | Telegram (bot token from @BotFather) |
+| `AGENT_BRIDGE_TELEGRAM_ALLOW_CHATS` | No | — (allow all) | Telegram (comma-separated chat-id allow-list; others silently ignored) |
+| `AGENT_BRIDGE_TELEGRAM_POLL_TIMEOUT_SECONDS` | No | `30` | Telegram (getUpdates long-poll wait; 0 = short polling) |
+| `AGENT_BRIDGE_TELEGRAM_STATE_PATH` | No | `./telegram.json` | Telegram (persists last processed update_id) |
+| `AGENT_BRIDGE_TELEGRAM_API_BASE_URL` | No | `https://api.telegram.org` | Telegram (Bot API base URL; tests use a fake server) |
 | `AGENT_BRIDGE_CLAUDE_WORK_DIR` | No | `.` | Claude |
 | `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude |
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Claude |

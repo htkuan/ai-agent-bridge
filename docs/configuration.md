@@ -83,6 +83,18 @@ Slack activates when both tokens resolve; otherwise the adapter is disabled with
 | `platforms.slack.usage_report.enabled` | `AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED` | `false` |
 | `platforms.slack.usage_report.template` | `AGENT_BRIDGE_SLACK_USAGE_REPORT_TEMPLATE` | built-in layout |
 
+### Telegram platform
+
+Telegram activates when the bot token resolves; otherwise the adapter is disabled with a log line. Requires the `telegram` extra (`pip install ai-agent-bridge[telegram]`).
+
+| YAML key | Env var | Default |
+|----------|---------|---------|
+| `platforms.telegram.bot_token` | `AGENT_BRIDGE_TELEGRAM_BOT_TOKEN` | — (required) |
+| `platforms.telegram.allow_chats` | `AGENT_BRIDGE_TELEGRAM_ALLOW_CHATS` | — (allow all) |
+| `platforms.telegram.poll_timeout_seconds` | `AGENT_BRIDGE_TELEGRAM_POLL_TIMEOUT_SECONDS` | `30` |
+| `platforms.telegram.state_path` | `AGENT_BRIDGE_TELEGRAM_STATE_PATH` | `./telegram.json` |
+| `platforms.telegram.api_base_url` | `AGENT_BRIDGE_TELEGRAM_API_BASE_URL` | `https://api.telegram.org` |
+
 ### Heartbeat platform
 
 Heartbeat requires an explicit `enabled: true` (there is no secret to infer activation from).

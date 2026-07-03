@@ -2,7 +2,7 @@
 
 Modular bridge that connects **chat platforms** to **AI agents**. Each layer is independent — swap platforms or agents without touching the others.
 
-Currently supports: **Slack** + **Claude Code**
+Currently supports: **Slack**, **Telegram**, **Heartbeat** (scheduled prompts) + **Claude Code**
 
 ```
 ┌──────────────┐     ┌──────────┐     ┌──────────────┐
@@ -94,7 +94,7 @@ The system has three independent layers:
 
 | Layer | Role | Docs |
 |-------|------|------|
-| **Platform Adapter** | Owns session semantics, per-session locking, UI rendering | [Slack Adapter](docs/platforms/slack.md) |
+| **Platform Adapter** | Owns session semantics, per-session locking, UI rendering | [Slack](docs/platforms/slack.md) · [Telegram](docs/platforms/telegram.md) · [Heartbeat](docs/platforms/heartbeat.md) |
 | **Bridge** | Routes messages, maps session keys → IDs, enforces concurrency | Core — see below |
 | **Agent Controller** | Executes prompts, yields generic events | [Claude Agent](docs/agents/claude.md) |
 
@@ -128,6 +128,11 @@ Every variable also has a YAML config key — see [docs/configuration.md](docs/c
 | `AGENT_BRIDGE_AGENT` | No | `claude` | Which registered agent handles messages |
 | `AGENT_BRIDGE_SLACK_BOT_TOKEN` | Yes (if using Slack) | — | Slack Bot User OAuth Token (`xoxb-...`) |
 | `AGENT_BRIDGE_SLACK_APP_TOKEN` | Yes (if using Slack) | — | Slack App-Level Token for Socket Mode (`xapp-...`) |
+| `AGENT_BRIDGE_TELEGRAM_BOT_TOKEN` | Yes (if using Telegram) | — | Telegram bot token from @BotFather |
+| `AGENT_BRIDGE_TELEGRAM_ALLOW_CHATS` | No | — (allow all) | Comma-separated chat-id allow-list; other chats silently ignored |
+| `AGENT_BRIDGE_TELEGRAM_POLL_TIMEOUT_SECONDS` | No | `30` | `getUpdates` long-poll wait (seconds) |
+| `AGENT_BRIDGE_TELEGRAM_STATE_PATH` | No | `./telegram.json` | Persists the last processed update id across restarts |
+| `AGENT_BRIDGE_TELEGRAM_API_BASE_URL` | No | `https://api.telegram.org` | Bot API base URL (tests point this at a fake server) |
 | `AGENT_BRIDGE_CLAUDE_WORK_DIR` | No | `.` | Working directory for Claude Code |
 | `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude permission mode |
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Per-invocation timeout (seconds) |

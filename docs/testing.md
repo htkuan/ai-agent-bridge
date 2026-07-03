@@ -18,12 +18,14 @@ tests/
 │   ├── agents.py          #   FakeAgentController + RunCall
 │   ├── bridges.py         #   FakeBridge
 │   ├── events.py          #   collect_events, event_types
-│   └── fake_cli.py        #   install_fake_cli + claude stream-json line builders
+│   ├── fake_cli.py        #   install_fake_cli + claude stream-json line builders
+│   └── http_server.py     #   FakeApiServer (record-and-respond aiohttp fake)
 ├── unit/
 │   ├── bridge/            # bridge, session, dedupe, events, config loader, registries
 │   ├── agents/claude/     # controller + stream-json parsing
 │   └── platforms/
 │       ├── slack/
+│       ├── telegram/
 │       └── heartbeat/
 └── integration/           # end-to-end, marked `integration`
 ```
@@ -126,6 +128,23 @@ Knob-to-scenario map:
 
 `claude_assistant_line(text)` / `claude_result_line(...)` build valid Claude stream-json lines (including usage payloads).
 
+### `FakeApiServer`
+
+A record-and-respond aiohttp server for faking HTTP APIs (Telegram Bot API today; any webhook/REST platform reuses it). Register an async handler per `(method, path)`; every request is recorded as a `RecordedRequest(method, path, payload)`. `start()` binds an ephemeral localhost port and returns the base URL — point the adapter's `api_base_url`-style config at it.
+
+```python
+from tests.helpers import FakeApiServer
+
+server = FakeApiServer()
+server.route("POST", "/bot123:abc/sendMessage", lambda payload: ...)
+base_url = await server.start()
+...
+assert server.requests_for("/bot123:abc/sendMessage")[0].payload["text"] == "hi"
+await server.stop()
+```
+
+API-specific behavior (e.g. Telegram's `getUpdates` returning one batch then empties) stays in the test file that needs it — only the generic server lives in helpers (same philosophy as `install_fake_cli` vs. the Claude line builders).
+
 ## Playbook: testing a new platform adapter
 
 Unit tests live in `tests/unit/platforms/{name}/`; wire the adapter to a `FakeBridge` so no agent runs. Checklist:
@@ -157,8 +176,8 @@ async def test_message_reaches_bridge_with_session_key():
 
 For the integration layer:
 
-- **Webhook-style platforms** (LINE-like): start the adapter's aiohttp app with `aiohttp.test_utils.TestClient`, POST real payloads (valid + invalid signature), assert HTTP status and the outbound API calls recorded by a fake API server or mocked client.
-- **Polling-style platforms** (Telegram-like): run a local `aiohttp` fake API server on an ephemeral port, point the adapter's `api_base_url` config at it, and assert the messages the adapter sends back after a full poll → bridge → `FakeAgentController` cycle.
+- **Webhook-style platforms** (LINE-like): start the adapter's aiohttp app with `aiohttp.test_utils.TestClient`, POST real payloads (valid + invalid signature), assert HTTP status and the outbound API calls recorded by a `FakeApiServer` or mocked client.
+- **Polling-style platforms** (Telegram-like): run a `FakeApiServer` on an ephemeral port, point the adapter's `api_base_url` config at it, and assert the messages the adapter sends back after a full poll → bridge → `FakeAgentController` cycle. Reference: `tests/integration/test_telegram_end_to_end.py`.
 
 ## Playbook: testing a new agent controller
 

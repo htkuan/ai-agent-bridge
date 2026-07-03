@@ -33,6 +33,23 @@ def _build_slack(
     return SlackAdapter(config, bridge, session_manager=session_manager)
 
 
+def _build_telegram(
+    source: ConfigSource, bridge: Bridge, session_manager: SessionManager
+) -> PlatformAdapter | None:
+    from agent_bridge.platforms.telegram.config import TelegramConfig
+
+    try:
+        config = TelegramConfig.from_source(source)
+    except ValueError as e:
+        logger.info("Telegram adapter disabled: %s", e)
+        return None
+    # Imported lazily so the optional aiohttp dependency is only required
+    # when Telegram is actually configured.
+    from agent_bridge.platforms.telegram.adapter import TelegramAdapter
+
+    return TelegramAdapter(config, bridge, session_manager=session_manager)
+
+
 def _build_heartbeat(
     source: ConfigSource, bridge: Bridge, session_manager: SessionManager
 ) -> PlatformAdapter | None:
@@ -48,6 +65,7 @@ def _build_heartbeat(
 
 PLATFORM_BUILDERS: dict[str, PlatformBuilder] = {
     "slack": _build_slack,
+    "telegram": _build_telegram,
     "heartbeat": _build_heartbeat,
 }
 

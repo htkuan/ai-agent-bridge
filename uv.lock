@@ -20,6 +20,9 @@ slack = [
     { name = "aiohttp" },
     { name = "slack-bolt" },
 ]
+telegram = [
+    { name = "aiohttp" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -32,13 +35,14 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ai-agent-bridge", extras = ["slack"], marker = "extra == 'all'" },
+    { name = "ai-agent-bridge", extras = ["slack", "telegram"], marker = "extra == 'all'" },
     { name = "aiohttp", marker = "extra == 'slack'", specifier = ">=3.9.0" },
+    { name = "aiohttp", marker = "extra == 'telegram'", specifier = ">=3.9.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "slack-bolt", marker = "extra == 'slack'", specifier = ">=1.21.0" },
 ]
-provides-extras = ["slack", "all"]
+provides-extras = ["slack", "telegram", "all"]
 
 [package.metadata.requires-dev]
 dev = [

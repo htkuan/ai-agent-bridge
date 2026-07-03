@@ -169,6 +169,12 @@ Every variable also has a YAML config key — see
 | `AGENT_BRIDGE_AGENT` | No | `claude` | Which registered agent handles messages |
 | `AGENT_BRIDGE_SLACK_BOT_TOKEN` | Yes (if using Slack) | — | Slack Bot User OAuth Token (`xoxb-...`) |
 | `AGENT_BRIDGE_SLACK_APP_TOKEN` | Yes (if using Slack) | — | Slack App-Level Token for Socket Mode (`xapp-...`) |
+| `AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_CHANNEL` | No | — | Channel to notify after Socket Mode connects |
+| `AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_MESSAGE` | No | — | Message sent to the startup-notify channel |
+| `AGENT_BRIDGE_SLACK_ALLOW_CHANNELS` | No | — (allow all) | Comma-separated channel-name allow-list; non-empty also blocks DMs |
+| `AGENT_BRIDGE_SLACK_CHANNEL_NOT_ALLOWED_MESSAGE` | No | built-in English notice | Reply sent to messages from non-allowed channels |
+| `AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED` | No | `false` | Append a usage/cost footer to the final reply |
+| `AGENT_BRIDGE_SLACK_USAGE_REPORT_TEMPLATE` | No | built-in layout | `{placeholder}` template for the usage footer |
 | `AGENT_BRIDGE_TELEGRAM_BOT_TOKEN` | Yes (if using Telegram) | — | Telegram bot token from @BotFather |
 | `AGENT_BRIDGE_TELEGRAM_ALLOW_CHATS` | No | — (allow all) | Comma-separated chat-id allow-list; other chats silently ignored |
 | `AGENT_BRIDGE_TELEGRAM_POLL_TIMEOUT_SECONDS` | No | `30` | `getUpdates` long-poll wait (seconds) |
@@ -188,6 +194,7 @@ Every variable also has a YAML config key — see
 | `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude permission mode |
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Per-invocation timeout (seconds) |
 | `AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED` | No | `false` | Run each session in an isolated git worktree (requires `origin/HEAD`) |
+| `AGENT_BRIDGE_CLAUDE_EFFORT` | No | `xhigh` | Claude effort level: `low` / `medium` / `high` / `xhigh` / `max` |
 | `AGENT_BRIDGE_CODEX_WORK_DIR` | No | `.` | Working directory for Codex |
 | `AGENT_BRIDGE_CODEX_MODEL` | No | — (CLI default) | Optional Codex model override (`-m`) |
 | `AGENT_BRIDGE_CODEX_SANDBOX` | No | `workspace-write` | Codex sandbox: `read-only` / `workspace-write` / `danger-full-access` |
@@ -200,6 +207,9 @@ Every variable also has a YAML config key — see
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Session mapping file path |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Session TTL (hours) |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Max concurrent agent processes |
+| `AGENT_BRIDGE_DEDUPE_TTL_SECONDS` | No | `0` | Cross-session prompt dedupe window (seconds); `0` disables |
+| `AGENT_BRIDGE_DEDUPE_MAX_ENTRIES` | No | `512` | Dedupe cache LRU cap |
+| `AGENT_BRIDGE_DEDUPE_SIMHASH_THRESHOLD` | No | `0` | SimHash Hamming threshold for fuzzy dedupe; `0` = exact canonical only |
 | `AGENT_BRIDGE_HEARTBEAT_ENABLED` | No | `false` | Enable the heartbeat platform — fires a fixed prompt on a fixed interval |
 | `AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES` | Yes (if heartbeat enabled) | — | Interval between heartbeat ticks (minutes) |
 | `AGENT_BRIDGE_HEARTBEAT_PROMPT` | Yes (if heartbeat enabled) | — | Prompt sent on every heartbeat tick |

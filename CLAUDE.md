@@ -88,6 +88,7 @@ src/agent_bridge/
 ├── config.py            # BridgeConfig (store path, TTL, concurrency)
 ├── config_loader.py     # ConfigSource (env > YAML > default), $(VAR) secrets, file discovery
 ├── bridge.py            # Pure routing + global concurrency (Semaphore)
+├── dedupe.py            # PromptDedupeCache (canonicalization + SimHash cross-session dedupe)
 ├── events.py            # BridgeEvent type union (Processing, TextDelta, StatusUpdate, UserQuestion, Completion)
 ├── session.py           # SessionManager (key → UUID, TTL, JSON persistence)
 ├── protocols.py         # AgentController + PlatformAdapter protocol interfaces
@@ -257,6 +258,8 @@ the entry point (`app.main`) via python-dotenv. Every variable has a matching YA
 | `AGENT_BRIDGE_AGENT` | No | `claude` | Global (which registered agent handles messages) |
 | `AGENT_BRIDGE_SLACK_BOT_TOKEN` | Yes (if using Slack) | — | Slack |
 | `AGENT_BRIDGE_SLACK_APP_TOKEN` | Yes (if using Slack) | — | Slack |
+| `AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_CHANNEL` | No | — | Slack (channel to notify after Socket Mode connects) |
+| `AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_MESSAGE` | No | — | Slack (message sent to the startup-notify channel) |
 | `AGENT_BRIDGE_SLACK_ALLOW_CHANNELS` | No | — (allow all) | Slack (comma-separated channel-name allow-list; non-empty also blocks DMs) |
 | `AGENT_BRIDGE_SLACK_CHANNEL_NOT_ALLOWED_MESSAGE` | No | (fixed English notice) | Slack (reply sent to non-allowed channels) |
 | `AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED` | No | `false` | Slack (append usage/cost footer to the final reply) |

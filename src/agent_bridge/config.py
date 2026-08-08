@@ -18,7 +18,7 @@ class BridgeConfig:
     dedupe_ttl_seconds: float = 0.0
     dedupe_max_entries: int = 512
     # SimHash Hamming-distance threshold. 0 ⇒ exact canonical match only.
-    # Positive values enable fuzzy match (typical range 3–10).
+    # Positive values enable fuzzy match (typical range 3-10).
     dedupe_simhash_threshold: int = 0
 
     @classmethod
@@ -29,7 +29,9 @@ class BridgeConfig:
             session_store_path=Path(
                 os.environ.get("AGENT_BRIDGE_SESSION_STORE_PATH", "./sessions.json")
             ),
-            session_ttl_hours=float(os.environ.get("AGENT_BRIDGE_SESSION_TTL_HOURS", "72")),
+            session_ttl_hours=float(
+                os.environ.get("AGENT_BRIDGE_SESSION_TTL_HOURS", "72")
+            ),
             max_concurrent_sessions=int(
                 os.environ.get("AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS", "5")
             ),
@@ -49,11 +51,13 @@ class BridgeConfig:
     def _validate(self) -> None:
         if self.session_ttl_hours <= 0:
             raise ValueError(
-                f"AGENT_BRIDGE_SESSION_TTL_HOURS must be positive, got {self.session_ttl_hours}"
+                "AGENT_BRIDGE_SESSION_TTL_HOURS must be positive, "
+                f"got {self.session_ttl_hours}"
             )
         if self.max_concurrent_sessions <= 0:
             raise ValueError(
-                f"AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS must be positive, got {self.max_concurrent_sessions}"
+                "AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS must be positive, "
+                f"got {self.max_concurrent_sessions}"
             )
         if self.dedupe_ttl_seconds < 0:
             raise ValueError(

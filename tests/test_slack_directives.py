@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from agent_bridge.platforms.slack.adapter import SlackAdapter
 
-
 # --- Prompt tagging (Slack owns sender identity) ---
 
 

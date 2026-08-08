@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from agent_bridge.bridge import Bridge
 from agent_bridge.events import (
@@ -35,13 +36,16 @@ class HeartbeatAdapter:
             initial_delay = 0.0
             logger.info(
                 "Heartbeat: firing on startup (last_run=%s, interval=%dm)",
-                last_run, self._config.interval_minutes,
+                last_run,
+                self._config.interval_minutes,
             )
         else:
             initial_delay = ((last_run + interval) - now).total_seconds()
             logger.info(
                 "Heartbeat: next fire in %.1fs (last_run=%s, interval=%dm)",
-                initial_delay, last_run, self._config.interval_minutes,
+                initial_delay,
+                last_run,
+                self._config.interval_minutes,
             )
 
         self._task = asyncio.create_task(self._run_loop(initial_delay))
@@ -50,10 +54,8 @@ class HeartbeatAdapter:
         self._stopping.set()
         if self._task is not None:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
 
     async def _run_loop(self, initial_delay: float) -> None:
         if initial_delay > 0 and await self._sleep_or_stop(initial_delay):
@@ -66,11 +68,11 @@ class HeartbeatAdapter:
                 return
 
     async def _sleep_or_stop(self, seconds: float) -> bool:
-        """Sleep for ``seconds``. Return True if stop was signalled (caller should exit)."""
+        """Sleep for ``seconds``; return True if stop was signalled (exit)."""
         try:
             await asyncio.wait_for(self._stopping.wait(), timeout=seconds)
             return True
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return False
 
     async def _fire_once(self) -> None:
@@ -79,7 +81,8 @@ class HeartbeatAdapter:
         session_key = f"heartbeat:tick:{fired_at.isoformat()}"
         logger.info(
             "Heartbeat tick: session_key=%s prompt=%r",
-            session_key, self._config.prompt,
+            session_key,
+            self._config.prompt,
         )
 
         context = {"source": "heartbeat", "fired_at": fired_at.isoformat()}
@@ -114,24 +117,37 @@ class HeartbeatAdapter:
             case StatusUpdate(status=status, detail=detail):
                 logger.info(
                     "Heartbeat %s: status=%s detail=%s",
-                    session_key, status, detail,
+                    session_key,
+                    status,
+                    detail,
                 )
             case UserQuestion(questions=questions):
                 # No human is on the other end of a heartbeat — surface loudly.
                 logger.warning(
-                    "Heartbeat %s: agent asked %d question(s) but no human can answer: %s",
-                    session_key, len(questions), questions,
+                    "Heartbeat %s: agent asked %d question(s) "
+                    "but no human can answer: %s",
+                    session_key,
+                    len(questions),
+                    questions,
                 )
-            case Completion(text=text, is_error=is_error, cost_usd=cost, duration_ms=duration):
+            case Completion(
+                text=text, is_error=is_error, cost_usd=cost, duration_ms=duration
+            ):
                 if is_error:
                     logger.error(
-                        "Heartbeat %s: completion error cost=$%.4f duration=%dms text=%s",
-                        session_key, cost, duration, text,
+                        "Heartbeat %s: completion error "
+                        "cost=$%.4f duration=%dms text=%s",
+                        session_key,
+                        cost,
+                        duration,
+                        text,
                     )
                 else:
                     logger.info(
                         "Heartbeat %s: completion cost=$%.4f duration=%dms",
-                        session_key, cost, duration,
+                        session_key,
+                        cost,
+                        duration,
                     )
                     logger.info("Heartbeat %s: final reply: %s", session_key, text)
 
@@ -159,4 +175,4 @@ class HeartbeatAdapter:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)

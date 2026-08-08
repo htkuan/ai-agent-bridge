@@ -35,13 +35,21 @@ class ClaudeConfig:
         load_dotenv()
 
         config = cls(
-            work_dir=Path(os.environ.get("AGENT_BRIDGE_CLAUDE_WORK_DIR", ".")).resolve(),
-            permission_mode=os.environ.get("AGENT_BRIDGE_CLAUDE_PERMISSION_MODE", "acceptEdits"),
-            timeout_seconds=float(os.environ.get("AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS", "600")),
+            work_dir=Path(
+                os.environ.get("AGENT_BRIDGE_CLAUDE_WORK_DIR", ".")
+            ).resolve(),
+            permission_mode=os.environ.get(
+                "AGENT_BRIDGE_CLAUDE_PERMISSION_MODE", "acceptEdits"
+            ),
+            timeout_seconds=float(
+                os.environ.get("AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS", "600")
+            ),
             worktree_enabled=os.environ.get(
                 "AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED", "false"
-            ).lower() in _TRUTHY,
-            effort=os.environ.get("AGENT_BRIDGE_CLAUDE_EFFORT", "xhigh").strip() or "xhigh",
+            ).lower()
+            in _TRUTHY,
+            effort=os.environ.get("AGENT_BRIDGE_CLAUDE_EFFORT", "xhigh").strip()
+            or "xhigh",
         )
         config._validate()
         return config
@@ -49,16 +57,19 @@ class ClaudeConfig:
     def _validate(self) -> None:
         if not self.work_dir.is_dir():
             raise ValueError(
-                f"AGENT_BRIDGE_CLAUDE_WORK_DIR does not exist or is not a directory: {self.work_dir}"
+                f"AGENT_BRIDGE_CLAUDE_WORK_DIR does not exist or is not a directory: "
+                f"{self.work_dir}"
             )
         if self.permission_mode not in VALID_PERMISSION_MODES:
             raise ValueError(
-                f"Invalid AGENT_BRIDGE_CLAUDE_PERMISSION_MODE: {self.permission_mode!r}. "
+                f"Invalid AGENT_BRIDGE_CLAUDE_PERMISSION_MODE: "
+                f"{self.permission_mode!r}. "
                 f"Must be one of: {', '.join(sorted(VALID_PERMISSION_MODES))}"
             )
         if self.timeout_seconds <= 0:
             raise ValueError(
-                f"AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS must be positive, got {self.timeout_seconds}"
+                f"AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS must be positive, "
+                f"got {self.timeout_seconds}"
             )
         if self.effort not in VALID_EFFORT_LEVELS:
             raise ValueError(
@@ -71,19 +82,24 @@ class ClaudeConfig:
     def _validate_worktree_prereqs(self) -> None:
         if not (self.work_dir / ".git").exists():
             raise ValueError(
-                f"AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED=true but work_dir is not a git repository: "
-                f"{self.work_dir}"
+                f"AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED=true "
+                f"but work_dir is not a git repository: {self.work_dir}"
             )
         # Claude's -w uses origin/HEAD as the base branch; fail fast if it's not set.
         try:
+            # git deliberately resolved from PATH, args are all literals.
             subprocess.run(
-                ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+                ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],  # noqa: S607
                 cwd=self.work_dir,
                 check=True,
                 capture_output=True,
                 timeout=10,
             )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            FileNotFoundError,
+        ) as e:
             raise ValueError(
                 f"AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED=true but {self.work_dir} has no "
                 f"'origin' remote with a resolvable default branch. "

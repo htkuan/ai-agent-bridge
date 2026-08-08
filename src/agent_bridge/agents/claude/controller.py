@@ -28,12 +28,11 @@ class ClaudeController:
         session_id: str,
         prompt: str,
         is_new: bool,
-        work_dir: Path | None = None,
         context: dict[str, str] | None = None,
         system_prompt: str | None = None,
     ) -> AsyncIterator[BridgeEvent]:
         """Run a Claude Code prompt and yield streaming BridgeEvents."""
-        cwd = work_dir or self._config.work_dir
+        cwd = self._config.work_dir
         timeout = self._config.timeout_seconds
 
         cmd = self._build_command(session_id, prompt, is_new, system_prompt)

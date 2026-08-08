@@ -13,7 +13,7 @@ class SessionManager:
     def __init__(self, store_path: Path, ttl_hours: float = 72.0) -> None:
         self._store_path = store_path
         self._ttl = timedelta(hours=ttl_hours)
-        self._sessions: dict[str, dict] = {}
+        self._sessions: dict[str, dict[str, str]] = {}
         self._load()
         self._purge_expired()
 
@@ -66,7 +66,7 @@ class SessionManager:
             return True
         return False
 
-    def list_sessions(self) -> dict[str, dict]:
+    def list_sessions(self) -> dict[str, dict[str, str]]:
         """Return a copy of all non-expired session mappings."""
         return {k: v for k, v in self._sessions.items() if not self._is_expired(v)}
 
@@ -74,7 +74,7 @@ class SessionManager:
         """Remove all expired sessions. Returns session IDs of purged entries."""
         return self._purge_expired()
 
-    def _is_expired(self, entry: dict) -> bool:
+    def _is_expired(self, entry: dict[str, str]) -> bool:
         last_used = _parse_iso(entry.get("last_used", ""))
         if last_used is None:
             return True

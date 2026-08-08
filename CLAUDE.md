@@ -76,6 +76,7 @@ Defined in `src/agent_bridge/protocols.py`. New agents/platforms implement these
 | Env config | **python-dotenv** | `.env` file loading |
 | Testing | **pytest + pytest-asyncio** | `asyncio_mode = "auto"` |
 | Lint / format | **ruff** | one tool for both; `[tool.ruff]` in pyproject.toml |
+| Type checking | **pyright (strict)** | `src/` only; `[tool.pyright]` in pyproject.toml |
 | Claude CLI | `claude -p` with `--output-format stream-json` | Non-interactive, real-time streaming |
 
 ## Project structure
@@ -110,6 +111,13 @@ src/agent_bridge/
   `# noqa: C901` — don't add new ones; refactor instead.
 - Suppress a rule only with a targeted `# noqa: <code>` plus a one-line reason
   (see the `assert`/S101 narrowing sites) — never blanket-disable in config.
+- **Pyright strict** on `src/` (`uv run pyright`). slack-bolt is untyped: its
+  `Any`-ness is contained at the adapter boundary (params annotated `Any`;
+  Unknown-type rules relaxed for the slack package only). Suppress only with
+  targeted `# pyright: ignore[<rule>]` plus a reason.
+- Dataclass collection fields parametrize the factory —
+  `field(default_factory=list[str])`, not `field(default_factory=list)` —
+  or pyright infers `list[Unknown]`.
 - **No docstrings** on obvious methods. Only add comments where logic is non-obvious.
 - **Frozen dataclasses** for config objects (`@dataclass(frozen=True)`)
 - **Plain dataclasses** for events and internal state
@@ -201,6 +209,9 @@ uv run pytest tests/ -v
 # Lint + format (same checks as CI and the pre-commit hooks)
 uv run ruff check --fix
 uv run ruff format
+
+# Type check (strict, src/ only)
+uv run pyright
 ```
 
 ## Releasing

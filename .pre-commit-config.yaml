@@ -6,6 +6,8 @@
 #   pre-commit stage — ruff lint (with autofix) + ruff format, same config as
 #     `uv run ruff` and the CI lint job (pyproject.toml [tool.ruff]). Keep the
 #     rev below in sync with the ruff version pinned in the dev group.
+#     pyright runs as a local hook through `uv run` so it type-checks against
+#     the real dependency set (slack-bolt etc.), not an isolated hook venv.
 #
 # One-time setup per clone (writes the git hooks into .git/hooks/):
 #   uv sync                  # installs the pre-commit tool (dev group)
@@ -20,6 +22,15 @@ repos:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        entry: uv run pyright
+        language: system
+        files: ^src/.*\.py$
+        pass_filenames: false
 
   - repo: https://github.com/alessandrojcm/commitlint-pre-commit-hook
     rev: v9.25.0

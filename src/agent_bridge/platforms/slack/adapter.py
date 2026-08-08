@@ -5,6 +5,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 try:
     from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
@@ -25,7 +26,7 @@ from agent_bridge.events import (
     Usage,
     UserQuestion,
 )
-from agent_bridge.platforms.slack.config import SlackConfig, _normalize_channel
+from agent_bridge.platforms.slack.config import SlackConfig, normalize_channel
 from agent_bridge.session import SessionManager
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ def _fit_with_suffix(text: str, max_bytes: int, suffix: str) -> str:
     return _truncate_to_bytes(text, budget) + suffix
 
 
-class _SafeDict(dict):
+class _SafeDict(dict[str, object]):
     """Leaves unknown {placeholders} blank instead of raising KeyError."""
 
     def __missing__(self, key: str) -> str:
@@ -159,7 +160,7 @@ class SlackInfoCache:
         self.channels: dict[str, str] = {}
         self.users: dict[str, str] = {}
 
-    async def resolve_channel(self, channel: str, client) -> str:
+    async def resolve_channel(self, channel: str, client: Any) -> str:
         """Return the channel name, fetching only on cache miss.
 
         DMs/group-DMs have no name; falls back to the channel id.
@@ -177,7 +178,9 @@ class SlackInfoCache:
                 self.channels[channel] = channel
         return self.channels[channel]
 
-    async def resolve(self, channel: str, user_id: str, client) -> tuple[str, str, str]:
+    async def resolve(
+        self, channel: str, user_id: str, client: Any
+    ) -> tuple[str, str, str]:
         """Return (workspace_name, channel_name, user_name), fetching only
         on cache miss."""
         if self.workspace is None:
@@ -258,11 +261,17 @@ class SlackAdapter:
 
     def _register_handlers(self) -> None:
         @self._app.event("app_mention")
-        async def handle_mention(event: dict, say, client) -> None:
+        # Never called by name: the decorator registers it with bolt.
+        async def handle_mention(  # pyright: ignore[reportUnusedFunction]
+            event: dict[str, Any], say: Any, client: Any
+        ) -> None:
             await self._process_message(event, say, client)
 
         @self._app.event("message")
-        async def handle_dm(event: dict, say, client) -> None:
+        # Never called by name: the decorator registers it with bolt.
+        async def handle_dm(  # pyright: ignore[reportUnusedFunction]
+            event: dict[str, Any], say: Any, client: Any
+        ) -> None:
             # Only handle DMs (channel type "im"), skip bot messages
             if event.get("channel_type") != "im":
                 return
@@ -270,7 +279,7 @@ class SlackAdapter:
                 return
             await self._process_message(event, say, client)
 
-    async def _channel_allowed(self, channel: str, client) -> bool:
+    async def _channel_allowed(self, channel: str, client: Any) -> bool:
         """Gate by the configured channel allow-list.
 
         Empty allow-list = allow everything. Otherwise only channels whose
@@ -279,10 +288,10 @@ class SlackAdapter:
         if not self._config.allow_channels:
             return True
         channel_name = await self._name_cache.resolve_channel(channel, client)
-        return _normalize_channel(channel_name) in self._config.allow_channels
+        return normalize_channel(channel_name) in self._config.allow_channels
 
     async def _resolve_context(
-        self, channel: str, user_id: str, thread_ts: str, client
+        self, channel: str, user_id: str, thread_ts: str, client: Any
     ) -> dict[str, str]:
         """Resolve display names via cache and build context dict."""
         workspace, channel_name, user_name = await self._name_cache.resolve(
@@ -333,7 +342,9 @@ class SlackAdapter:
         )
 
     # Complexity hotspot (14 > 10); refactor tracked separately.
-    async def _process_message(self, event: dict, say, client) -> None:  # noqa: C901
+    async def _process_message(  # noqa: C901
+        self, event: dict[str, Any], say: Any, client: Any
+    ) -> None:
         channel = event.get("channel", "")
         user_id = event.get("user", "")
         text = event.get("text", "")
@@ -462,7 +473,7 @@ class SlackAdapter:
         session_key: str,
         text: str,
         context: dict[str, str],
-        say=None,
+        say: Any = None,
         existing_message_ts: str | None = None,
     ) -> str | None:
         """Stream agent events and update the Slack message.
@@ -478,7 +489,7 @@ class SlackAdapter:
         accumulated_text = ""
         tool_status = ""
         last_update_time = 0.0
-        pending_user_questions: list[dict] = []
+        pending_user_questions: list[dict[str, Any]] = []
         completed = False
 
         async for event_obj in self._bridge.handle_message(
@@ -673,7 +684,7 @@ class SlackAdapter:
         return f"\n\n{_as_footnote(body)}" if body else ""
 
     @staticmethod
-    def _format_questions_for_slack(questions: list[dict]) -> str:
+    def _format_questions_for_slack(questions: list[dict[str, Any]]) -> str:
         """Format AskUserQuestion questions for Slack display."""
         lines = [":question: *Claude needs your input*\n"]
         multi = len(questions) > 1

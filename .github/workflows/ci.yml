@@ -1,6 +1,6 @@
 name: CI
 
-# Runs ruff (lint + format) and the test suite on every PR targeting main
+# Runs ruff (lint + format), pyright and the test suite on every PR targeting main
 # and on every push to main. This is the merge gate: release.yml assumes
 # anything landing on main is green. Tests run against all Python versions
 # the package claims to support (requires-python >= 3.12). Version-bump
@@ -43,6 +43,9 @@ jobs:
 
       - name: Ruff format
         run: uv run ruff format --check
+
+      - name: Pyright
+        run: uv run pyright
 
   test:
     runs-on: ubuntu-latest

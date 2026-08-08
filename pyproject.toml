@@ -36,6 +36,7 @@ dev = [
     "python-semantic-release>=10",
     "pre-commit>=3.7.0",
     "ruff>=0.14",
+    "pyright[nodejs]>=1.1",
 ]
 
 [build-system]
@@ -95,3 +96,18 @@ select = [
 # assert is the point of tests; S105/S106 false-positive on dummy tokens;
 # S603/S607/ASYNC221: tests deliberately spawn fixture subprocesses.
 "tests/*" = ["S101", "S105", "S106", "S603", "S607", "ASYNC221"]
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "strict"
+# slack-bolt/slack-sdk ship no type information, so their members surface as
+# Unknown. Contain that at the adapter package instead of sprinkling ignores;
+# everything else in src stays fully strict.
+[[tool.pyright.executionEnvironments]]
+root = "src/agent_bridge/platforms/slack"
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false

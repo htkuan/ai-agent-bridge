@@ -75,6 +75,7 @@ Defined in `src/agent_bridge/protocols.py`. New agents/platforms implement these
 | Async HTTP | **aiohttp** | Required by slack-bolt |
 | Env config | **python-dotenv** | `.env` file loading |
 | Testing | **pytest + pytest-asyncio** | `asyncio_mode = "auto"` |
+| Coverage | **pytest-cov** | `fail_under = 75` ratchet; `[tool.coverage.report]` in pyproject.toml |
 | Lint / format | **ruff** | one tool for both; `[tool.ruff]` in pyproject.toml |
 | Type checking | **pyright (strict)** | `src/` only; `[tool.pyright]` in pyproject.toml |
 | Claude CLI | `claude -p` with `--output-format stream-json` | Non-interactive, real-time streaming |
@@ -153,6 +154,10 @@ src/agent_bridge/
 - Test files: `tests/test_*.py`
 - Async tests run automatically (`asyncio_mode = "auto"`)
 - Test naming: `test_{feature}_{scenario}`
+- Coverage runs on every pytest invocation (`addopts` in pyproject.toml) and
+  gates at `fail_under = 75` — a ratchet floor at the measured baseline, raised
+  as coverage improves, never lowered. A partial run (single file, `-k`)
+  undercounts coverage and trips the gate; add `--no-cov` for those.
 
 ### Commits
 

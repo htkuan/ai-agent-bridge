@@ -57,7 +57,11 @@ commit_parser = "conventional"
 # Flip major_on_zero to true (or hand-bump to 1.0.0) when the API is stable.
 allow_zero_version = true
 major_on_zero = false
-build_command = "pip install uv && uv build"
+# uv lock re-stamps the project version in uv.lock after PSR bumps
+# pyproject.toml; assets commits the refreshed lockfile with the version
+# bump so `uv sync --locked` (CI) doesn't fail on drift after a release.
+build_command = "pip install uv && uv lock && uv build"
+assets = ["uv.lock"]
 
 [tool.semantic_release.branches.main]
 match = "main"

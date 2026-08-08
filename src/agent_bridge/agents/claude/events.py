@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from agent_bridge.events import (
     BridgeEvent,
@@ -41,7 +42,7 @@ class ThinkingEvent:
 class ToolUseEvent:
     session_id: str
     tool_name: str = ""
-    tool_input: dict = field(default_factory=dict)
+    tool_input: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

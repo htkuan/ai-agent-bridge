@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -27,7 +28,7 @@ class StatusUpdate:
 class UserQuestion:
     """Agent is asking the user a question (e.g. AskUserQuestion tool)."""
 
-    questions: list[dict]
+    questions: list[dict[str, Any]]
 
 
 @dataclass
@@ -102,7 +103,7 @@ class Completion:
     is_error: bool = False
     cost_usd: float = 0.0
     duration_ms: int = 0
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     # Assembled by the bridge from metadata. ``usage`` is this turn; the bridge
     # also sets ``session_usage`` to the running total when it has tracked the
     # session from its first turn (None when partial/untracked).

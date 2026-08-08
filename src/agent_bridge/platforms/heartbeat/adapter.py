@@ -24,7 +24,7 @@ class HeartbeatAdapter:
     def __init__(self, config: HeartbeatConfig, bridge: Bridge) -> None:
         self._config = config
         self._bridge = bridge
-        self._task: asyncio.Task | None = None
+        self._task: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
 
     async def start(self) -> None:

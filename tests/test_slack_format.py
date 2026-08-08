@@ -16,7 +16,11 @@ def test_format_question_with_options():
         {
             "question": "Which theme?",
             "options": [
-                {"value": "dark", "label": "Dark theme", "description": "Dark background"},
+                {
+                    "value": "dark",
+                    "label": "Dark theme",
+                    "description": "Dark background",
+                },
                 {"value": "light", "label": "Light theme"},
             ],
         }

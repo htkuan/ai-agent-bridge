@@ -18,7 +18,9 @@ class HeartbeatConfig:
     def from_env(cls) -> HeartbeatConfig:
         load_dotenv()
 
-        enabled = os.environ.get("AGENT_BRIDGE_HEARTBEAT_ENABLED", "false").lower() == "true"
+        enabled = (
+            os.environ.get("AGENT_BRIDGE_HEARTBEAT_ENABLED", "false").lower() == "true"
+        )
         if not enabled:
             return cls()
 

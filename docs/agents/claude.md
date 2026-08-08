@@ -154,7 +154,7 @@ Claude's `result` reports usage for **this invocation only** — the cross-turn 
 
 When Claude uses the `AskUserQuestion` tool, it's intercepted and converted to a `UserQuestion` event:
 
-```python
+```text
 # Claude tool_use event
 {"type": "assistant", "message": {"content": [
   {"type": "tool_use", "name": "AskUserQuestion", "input": {

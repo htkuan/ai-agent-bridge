@@ -228,7 +228,10 @@ def test_result_to_bridge_carries_usage_metadata():
 
 def test_usage_total_tokens_is_real_total():
     u = Usage(
-        input_tokens=10, output_tokens=20, cache_read_tokens=30, cache_creation_tokens=40
+        input_tokens=10,
+        output_tokens=20,
+        cache_read_tokens=30,
+        cache_creation_tokens=40,
     )
     assert u.total_tokens == 100
 
@@ -360,7 +363,9 @@ def test_bridge_event_from_text():
 
 
 def test_bridge_event_from_tool_use():
-    event = ToolUseEvent(session_id="s1", tool_name="Bash", tool_input={"command": "ls"})
+    event = ToolUseEvent(
+        session_id="s1", tool_name="Bash", tool_input={"command": "ls"}
+    )
     result = to_bridge_event(event)
     assert isinstance(result, StatusUpdate)
     assert result.status == "Using Bash..."

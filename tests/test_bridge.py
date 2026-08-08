@@ -121,7 +121,9 @@ async def test_resumable_false_passes_uuid_session_id_to_controller(session_mgr)
 
     captured: list[str] = []
 
-    async def capturing_run(session_id, prompt, is_new, context=None, system_prompt=None):
+    async def capturing_run(
+        session_id, prompt, is_new, context=None, system_prompt=None
+    ):
         captured.append(session_id)
         async for e in FakeController().run(
             session_id, prompt, is_new, context=context, system_prompt=system_prompt
@@ -144,7 +146,9 @@ async def test_resumable_false_repeated_calls_yield_distinct_session_ids(session
     seen: list[str] = []
 
     class CapturingController:
-        async def run(self, session_id, prompt, is_new, context=None, system_prompt=None):
+        async def run(
+            self, session_id, prompt, is_new, context=None, system_prompt=None
+        ):
             seen.append(session_id)
             yield Completion(text="ok")
 
@@ -161,7 +165,8 @@ async def test_resumable_false_repeated_calls_yield_distinct_session_ids(session
 
 @pytest.mark.asyncio
 async def test_capacity_full_rejects_immediately(session_mgr):
-    """When all slots are taken, handle_message yields an error Completion immediately."""
+    """When all slots are taken, handle_message yields an error Completion
+    immediately."""
     controller = FakeController(delay=0.3)
     bridge = Bridge(session_mgr, controller, max_concurrent=1)
 
@@ -203,9 +208,11 @@ async def test_semaphore_released_after_error(session_mgr):
     """Semaphore is released even when the controller raises."""
 
     class FailingController:
-        async def run(self, session_id, prompt, is_new, context=None, system_prompt=None):
+        async def run(
+            self, session_id, prompt, is_new, context=None, system_prompt=None
+        ):
             raise RuntimeError("boom")
-            yield  # noqa: RET503 — make this an async generator
+            yield
 
     bridge = Bridge(session_mgr, FailingController(), max_concurrent=1)
 
@@ -285,9 +292,7 @@ async def test_dedupe_in_flight_skips_controller(session_mgr):
     cache = PromptDedupeCache(ttl_seconds=60.0)
     bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
 
-    task1 = asyncio.create_task(
-        _collect(bridge.handle_message("slack:C1:t1", "alert"))
-    )
+    task1 = asyncio.create_task(_collect(bridge.handle_message("slack:C1:t1", "alert")))
     await asyncio.sleep(0.05)
 
     events2 = [e async for e in bridge.handle_message("slack:C1:t2", "alert")]
@@ -407,7 +412,9 @@ async def test_dedupe_controller_is_error_releases_cache_slot(session_mgr):
         def __init__(self) -> None:
             self.calls = 0
 
-        async def run(self, session_id, prompt, is_new, context=None, system_prompt=None):
+        async def run(
+            self, session_id, prompt, is_new, context=None, system_prompt=None
+        ):
             self.calls += 1
             if self.calls == 1:
                 yield Completion(text="timeout", is_error=True)
@@ -423,7 +430,9 @@ async def test_dedupe_controller_is_error_releases_cache_slot(session_mgr):
 
     # Retry must reach the controller — the failed first run is not held in cache.
     events2 = [e async for e in bridge.handle_message("slack:C1:t2", "alert")]
-    assert any(isinstance(e, Completion) and not e.is_error and e.text == "ok" for e in events2)
+    assert any(
+        isinstance(e, Completion) and not e.is_error and e.text == "ok" for e in events2
+    )
     assert controller.calls == 2
 
 
@@ -441,7 +450,7 @@ async def test_dedupe_controller_exception_releases_cache_slot(session_mgr):
             self.calls += 1
             if self.calls == 1:
                 raise RuntimeError("boom")
-                yield  # noqa: RET503 — async generator marker
+                yield
             yield Completion(text="recovered")
 
     controller = FlakyController()
@@ -539,16 +548,19 @@ class UsageController:
             text="ok",
             cost_usd=self.cost_usd,
             duration_ms=100,
-            metadata={"usage": _usage_meta(input_tokens=10, output_tokens=5, num_turns=1)},
+            metadata={
+                "usage": _usage_meta(input_tokens=10, output_tokens=5, num_turns=1)
+            },
         )
 
 
 async def _completion(bridge, key, text="hi", **kw):
-    return [
+    completions = [
         e
         async for e in bridge.handle_message(key, text, **kw)
         if isinstance(e, Completion)
-    ][0]
+    ]
+    return completions[0]
 
 
 @pytest.mark.asyncio

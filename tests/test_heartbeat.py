@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -18,7 +18,6 @@ from agent_bridge.events import (
 )
 from agent_bridge.platforms.heartbeat.adapter import HeartbeatAdapter
 from agent_bridge.platforms.heartbeat.config import HeartbeatConfig
-
 
 # --- Stubs ---
 
@@ -52,11 +51,9 @@ class _StubBridge:
 
 
 class _BoomBridge:
-    async def handle_message(
-        self, *args, **kwargs
-    ) -> AsyncIterator[BridgeEvent]:
+    async def handle_message(self, *args, **kwargs) -> AsyncIterator[BridgeEvent]:
         raise RuntimeError("boom")
-        yield  # noqa: unreachable, makes this an async generator
+        yield  # unreachable; makes this an async generator
 
 
 # --- Fixtures ---
@@ -129,7 +126,7 @@ def test_read_last_run_returns_none_when_missing(make_adapter):
 
 def test_state_file_round_trip(make_adapter):
     adapter, _, config = make_adapter()
-    when = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    when = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
     adapter._write_last_run(when)
     assert config.state_path.exists()
     assert adapter._read_last_run() == when
@@ -216,7 +213,7 @@ async def test_loop_fires_immediately_when_state_missing(make_adapter):
 async def test_loop_skips_initial_fire_when_state_recent(make_adapter):
     adapter, bridge, config = make_adapter(interval_minutes=60)
     config.state_path.write_text(
-        json.dumps({"last_run": datetime.now(timezone.utc).isoformat()})
+        json.dumps({"last_run": datetime.now(UTC).isoformat()})
     )
     await adapter.start()
     await asyncio.sleep(0.05)
@@ -226,7 +223,7 @@ async def test_loop_skips_initial_fire_when_state_recent(make_adapter):
 
 async def test_loop_fires_immediately_when_state_stale(make_adapter):
     adapter, bridge, config = make_adapter(interval_minutes=1)
-    stale = datetime.now(timezone.utc) - timedelta(minutes=10)
+    stale = datetime.now(UTC) - timedelta(minutes=10)
     config.state_path.write_text(json.dumps({"last_run": stale.isoformat()}))
     await adapter.start()
     await asyncio.sleep(0.05)
@@ -238,7 +235,7 @@ async def test_stop_during_sleep_returns_promptly(make_adapter):
     adapter, _, config = make_adapter(interval_minutes=60)
     # Recent state → loop will sleep ~60min before next fire
     config.state_path.write_text(
-        json.dumps({"last_run": datetime.now(timezone.utc).isoformat()})
+        json.dumps({"last_run": datetime.now(UTC).isoformat()})
     )
     await adapter.start()
 
@@ -274,9 +271,7 @@ def test_log_event_text_delta_is_debug_only(make_adapter, caplog):
 def test_log_event_user_question_is_warning(make_adapter, caplog):
     adapter, _, _ = make_adapter()
     caplog.set_level("WARNING", logger="agent_bridge.platforms.heartbeat.adapter")
-    adapter._log_event(
-        "k", UserQuestion(questions=[{"question": "ok?"}])
-    )
+    adapter._log_event("k", UserQuestion(questions=[{"question": "ok?"}]))
     assert any(r.levelname == "WARNING" for r in caplog.records)
     assert any("no human can answer" in r.message for r in caplog.records)
 

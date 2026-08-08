@@ -45,15 +45,17 @@ class SlackConfig:
             )
         raw_channels = os.environ.get("AGENT_BRIDGE_SLACK_ALLOW_CHANNELS", "")
         allow_channels = frozenset(
-            _normalize_channel(name)
-            for name in raw_channels.split(",")
-            if name.strip()
+            _normalize_channel(name) for name in raw_channels.split(",") if name.strip()
         )
         return cls(
             bot_token=bot_token,
             app_token=app_token,
-            startup_notify_channel=os.environ.get("AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_CHANNEL"),
-            startup_notify_message=os.environ.get("AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_MESSAGE"),
+            startup_notify_channel=os.environ.get(
+                "AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_CHANNEL"
+            ),
+            startup_notify_message=os.environ.get(
+                "AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_MESSAGE"
+            ),
             allow_channels=allow_channels,
             channel_not_allowed_message=os.environ.get(
                 "AGENT_BRIDGE_SLACK_CHANNEL_NOT_ALLOWED_MESSAGE",

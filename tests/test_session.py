@@ -1,7 +1,6 @@
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
 
 from agent_bridge.session import SessionManager
 
@@ -112,7 +111,7 @@ def test_expired_session_treated_as_new(tmp_path: Path):
     sid1, _ = mgr.get_or_create("slack:C123:ts1")
 
     # Simulate time passing beyond TTL
-    past = datetime.now(timezone.utc) - timedelta(hours=2)
+    past = datetime.now(UTC) - timedelta(hours=2)
     mgr._sessions["slack:C123:ts1"]["last_used"] = past.isoformat()
     mgr._save()
 
@@ -127,7 +126,7 @@ def test_get_returns_none_for_expired(tmp_path: Path):
 
     mgr.get_or_create("slack:C123:ts1")
 
-    past = datetime.now(timezone.utc) - timedelta(hours=2)
+    past = datetime.now(UTC) - timedelta(hours=2)
     mgr._sessions["slack:C123:ts1"]["last_used"] = past.isoformat()
 
     assert mgr.get("slack:C123:ts1") is None
@@ -141,7 +140,7 @@ def test_list_sessions_excludes_expired(tmp_path: Path):
     mgr.get_or_create("slack:C2:ts2")
 
     # Expire only one session
-    past = datetime.now(timezone.utc) - timedelta(hours=2)
+    past = datetime.now(UTC) - timedelta(hours=2)
     mgr._sessions["slack:C1:ts1"]["last_used"] = past.isoformat()
 
     sessions = mgr.list_sessions()
@@ -156,7 +155,7 @@ def test_purge_expired(tmp_path: Path):
     sid1, _ = mgr.get_or_create("slack:C1:ts1")
     mgr.get_or_create("slack:C2:ts2")
 
-    past = datetime.now(timezone.utc) - timedelta(hours=2)
+    past = datetime.now(UTC) - timedelta(hours=2)
     mgr._sessions["slack:C1:ts1"]["last_used"] = past.isoformat()
     mgr._save()
 
@@ -171,14 +170,18 @@ def test_purge_expired(tmp_path: Path):
 
 def test_purge_on_load(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    past = datetime.now(timezone.utc) - timedelta(hours=100)
-    store.write_text(json.dumps({
-        "slack:old:ts1": {
-            "session_id": "old-uuid",
-            "created_at": past.isoformat(),
-            "last_used": past.isoformat(),
-        }
-    }))
+    past = datetime.now(UTC) - timedelta(hours=100)
+    store.write_text(
+        json.dumps(
+            {
+                "slack:old:ts1": {
+                    "session_id": "old-uuid",
+                    "created_at": past.isoformat(),
+                    "last_used": past.isoformat(),
+                }
+            }
+        )
+    )
 
     mgr = SessionManager(store, ttl_hours=72.0)
     # Expired session should have been purged on load
@@ -203,11 +206,11 @@ def test_ttl_resets_on_use(tmp_path: Path):
     mgr.get_or_create("slack:C123:ts1")
 
     # Set last_used to 1.5 hours ago (within TTL)
-    almost_expired = datetime.now(timezone.utc) - timedelta(hours=1, minutes=30)
+    almost_expired = datetime.now(UTC) - timedelta(hours=1, minutes=30)
     mgr._sessions["slack:C123:ts1"]["last_used"] = almost_expired.isoformat()
 
     # Accessing it should refresh last_used
-    sid, is_new = mgr.get_or_create("slack:C123:ts1")
+    _sid, is_new = mgr.get_or_create("slack:C123:ts1")
     assert is_new is False
 
     # Now it should be fresh again

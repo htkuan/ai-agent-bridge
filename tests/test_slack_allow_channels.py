@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from unittest.mock import AsyncMock, MagicMock
 
 from agent_bridge.platforms.slack.adapter import SlackAdapter, SlackInfoCache

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import signal
@@ -57,7 +58,7 @@ class ClaudeController:
                 if isinstance(event, Completion):
                     result_seen = True
                 yield event
-        except asyncio.TimeoutError:
+        except TimeoutError:
             timed_out = True
             logger.error("Claude process timed out after %ss", timeout)
             yield Completion(
@@ -72,13 +73,13 @@ class ClaudeController:
             self._kill_process_tree(process, graceful=True)
             try:
                 await asyncio.wait_for(process.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._kill_process_tree(process, graceful=False)
                 await process.wait()
 
             try:
                 stderr_text = await asyncio.wait_for(stderr_task, timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 stderr_task.cancel()
                 stderr_text = ""
             return_code = process.returncode
@@ -134,20 +135,25 @@ class ClaudeController:
         return cmd
 
     async def _read_stream_with_timeout(
-        self, process: asyncio.subprocess.Process, timeout: float
+        self,
+        process: asyncio.subprocess.Process,
+        # Manual deadline bookkeeping (not asyncio.timeout): one overall budget
+        # is re-split across many readline waits below.
+        timeout: float,  # noqa: ASYNC109
     ) -> AsyncIterator[BridgeEvent]:
         """Read stdout stream with an overall timeout, yielding BridgeEvents."""
         deadline = asyncio.get_event_loop().time() + timeout
-        assert process.stdout is not None
+        # Narrowing only: stdout=PIPE is always set by run().
+        assert process.stdout is not None  # noqa: S101
         while True:
             remaining = deadline - asyncio.get_event_loop().time()
             if remaining <= 0:
-                raise asyncio.TimeoutError()
+                raise TimeoutError()
             try:
                 line_bytes = await asyncio.wait_for(
                     process.stdout.readline(), timeout=remaining
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 raise
             if not line_bytes:
                 break
@@ -160,7 +166,9 @@ class ClaudeController:
                     logger.debug("Converted to BridgeEvent: %s", bridge_event)
                     yield bridge_event
                 else:
-                    logger.debug("Filtered out (internal): %s", type(claude_event).__name__)
+                    logger.debug(
+                        "Filtered out (internal): %s", type(claude_event).__name__
+                    )
                 if isinstance(claude_event, ResultEvent):
                     # `result` is the terminal line; stop reading instead of
                     # blocking on EOF, which may never arrive if a backgrounded
@@ -190,15 +198,14 @@ class ClaudeController:
         except OSError:
             # Fallback: kill just the main process
             logger.warning("killpg failed for pid=%d, falling back to direct kill", pid)
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 process.terminate() if graceful else process.kill()
-            except ProcessLookupError:
-                pass
 
     @staticmethod
     async def _drain_stderr(process: asyncio.subprocess.Process) -> str:
         """Read all stderr in background to prevent pipe buffer deadlock."""
-        assert process.stderr is not None
+        # Narrowing only: stderr=PIPE is always set by run().
+        assert process.stderr is not None  # noqa: S101
         stderr_bytes = await process.stderr.read()
         return stderr_bytes.decode(errors="replace").strip()
 
@@ -232,7 +239,8 @@ class ClaudeController:
                 )
                 if rc != 0:
                     logger.warning(
-                        "Worktree force-remove failed for session %s (leaving on disk): %s",
+                        "Worktree force-remove failed for session %s "
+                        "(leaving on disk): %s",
                         session_id,
                         err,
                     )
@@ -256,7 +264,7 @@ class ClaudeController:
         )
         try:
             _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             await proc.wait()
             return -1, "timeout"

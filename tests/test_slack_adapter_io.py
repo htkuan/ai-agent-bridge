@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from slack_sdk.errors import SlackApiError
 
 from agent_bridge.events import Completion, Processing, Usage
@@ -49,7 +48,7 @@ def _usage_adapter(events: list, *, enabled: bool = True) -> SlackAdapter:
 async def test_update_message_cjk_trimmed_before_send():
     """CJK text over the byte ceiling is trimmed client-side on the first try."""
     adapter = _make_adapter()
-    # 2000 × '測' = 6000 bytes — old char check (len > 3900) missed this.
+    # 2000 x '測' = 6000 bytes — old char check (len > 3900) missed this.
     text = "測" * 2000
     await adapter._update_message("C1", "1.0", text)
 
@@ -134,7 +133,7 @@ async def test_upload_snippet_returns_false_on_error():
     assert ok is False
 
 
-# --- Usage footer × long-reply upload interaction ---
+# --- Usage footer x long-reply upload interaction ---
 
 
 async def test_long_reply_footer_inline_not_in_uploaded_file():
@@ -166,9 +165,7 @@ async def test_footer_does_not_push_inline_reply_to_upload():
     """A body that fits inline must not be forced to a file just by the footer."""
     usage = Usage(input_tokens=10, output_tokens=5, cost_usd=0.0123, duration_ms=12300)
     body = "A" * (SLACK_MSG_MAX_BYTES - 50)  # fits alone; body+footer would not
-    adapter = _usage_adapter(
-        [Completion(text=body, usage=usage, session_usage=usage)]
-    )
+    adapter = _usage_adapter([Completion(text=body, usage=usage, session_usage=usage)])
 
     await adapter._stream_response(
         "C1", "1.0", "slack:C1:1.0", "hi", {}, say=None, existing_message_ts="1.0"

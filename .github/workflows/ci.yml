@@ -1,11 +1,11 @@
 name: CI
 
-# Runs the test suite on every PR targeting main and on every push to main.
-# This is the merge gate: release.yml assumes anything landing on main is
-# green. Tests run against all Python versions the package claims to support
-# (requires-python >= 3.12). Version-bump commits pushed by
-# python-semantic-release use GITHUB_TOKEN and therefore do not re-trigger
-# this workflow.
+# Runs ruff (lint + format) and the test suite on every PR targeting main
+# and on every push to main. This is the merge gate: release.yml assumes
+# anything landing on main is green. Tests run against all Python versions
+# the package claims to support (requires-python >= 3.12). Version-bump
+# commits pushed by python-semantic-release use GITHUB_TOKEN and therefore
+# do not re-trigger this workflow.
 
 on:
   pull_request:
@@ -23,6 +23,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Ruff lint
+        # --output-format github annotates offending lines in the PR diff.
+        run: uv run ruff check --output-format github
+
+      - name: Ruff format
+        run: uv run ruff format --check
+
   test:
     runs-on: ubuntu-latest
     strategy:

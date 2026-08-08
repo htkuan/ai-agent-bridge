@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import signal
@@ -31,7 +32,8 @@ logger = logging.getLogger(__name__)
 CLEANUP_INTERVAL_SECONDS = 3600
 
 
-async def main() -> None:
+# Complexity hotspot (17 > 10, sequential wiring); refactor tracked separately.
+async def main() -> None:  # noqa: C901
     bridge_config = BridgeConfig.from_env()
     claude_config = ClaudeConfig.from_env()
 
@@ -74,7 +76,9 @@ async def main() -> None:
     except ValueError as e:
         logger.info("Slack adapter disabled: %s", e)
     else:
-        slack_adapter = SlackAdapter(slack_config, bridge, session_manager=session_manager)
+        slack_adapter = SlackAdapter(
+            slack_config, bridge, session_manager=session_manager
+        )
 
     heartbeat_config = HeartbeatConfig.from_env()
     heartbeat_adapter = (
@@ -109,12 +113,10 @@ async def main() -> None:
     # Periodic cleanup task
     async def _periodic_cleanup() -> None:
         while not shutdown_event.is_set():
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(
                     shutdown_event.wait(), timeout=CLEANUP_INTERVAL_SECONDS
                 )
-            except asyncio.TimeoutError:
-                pass
             if not shutdown_event.is_set():
                 purged_ids = session_manager.purge_expired()
                 stale = (
@@ -127,9 +129,7 @@ async def main() -> None:
                     try:
                         await controller.cleanup_session(sid)
                     except Exception:
-                        logger.exception(
-                            "Worktree cleanup failed for session %s", sid
-                        )
+                        logger.exception("Worktree cleanup failed for session %s", sid)
                 if purged_ids or stale:
                     logger.info(
                         "Cleanup: purged %d expired sessions, %d stale pending",

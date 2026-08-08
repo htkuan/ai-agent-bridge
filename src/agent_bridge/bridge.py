@@ -52,7 +52,8 @@ class Bridge:
         self._session_usage[session_id] = running
         completion.session_usage = running
 
-    async def handle_message(
+    # Complexity hotspot (14 > 10); refactor tracked separately.
+    async def handle_message(  # noqa: C901
         self,
         session_key: str,
         text: str,
@@ -86,7 +87,8 @@ class Bridge:
         dedupe_scope: str | None = None
         dedupe_canonical: str | None = None
         if dedupe_on:
-            assert self._dedupe is not None  # for type-checker; guarded above
+            # Narrowing only for the type-checker; guarded above.
+            assert self._dedupe is not None  # noqa: S101
             # session_key format is `{platform}:{scope}:{identifier}` — drop
             # the identifier so cross-thread duplicates collapse.
             dedupe_scope = session_key.rpartition(":")[0]
@@ -94,9 +96,7 @@ class Bridge:
                 dedupe_scope, text, first_session_key=session_key
             )
             if result.hit is not None:
-                state = (
-                    "in_flight" if result.hit.completed_at is None else "recent_hit"
-                )
+                state = "in_flight" if result.hit.completed_at is None else "recent_hit"
                 logger.info(
                     "dedupe_hit scope=%s state=%s match=%s hamming=%d "
                     "first_session=%s canonical=%r",
@@ -143,7 +143,10 @@ class Bridge:
             # Free the dedupe slot so the next attempt isn't blocked by a
             # run that never actually started.
             if dedupe_on and dedupe_canonical is not None:
-                assert self._dedupe is not None and dedupe_scope is not None
+                # Narrowing only; dedupe_on guarantees both.
+                assert (  # noqa: S101
+                    self._dedupe is not None and dedupe_scope is not None
+                )
                 self._dedupe.mark_failed(dedupe_scope, dedupe_canonical)
             yield Completion(
                 text="Too many requests being processed, please try again later.",
@@ -175,12 +178,18 @@ class Bridge:
             # Controller raised — release the dedupe entry so retries aren't
             # blocked. Re-raise after cleanup.
             if dedupe_on and dedupe_canonical is not None:
-                assert self._dedupe is not None and dedupe_scope is not None
+                # Narrowing only; dedupe_on guarantees both.
+                assert (  # noqa: S101
+                    self._dedupe is not None and dedupe_scope is not None
+                )
                 self._dedupe.mark_failed(dedupe_scope, dedupe_canonical)
             raise
         else:
             if dedupe_on and dedupe_canonical is not None:
-                assert self._dedupe is not None and dedupe_scope is not None
+                # Narrowing only; dedupe_on guarantees both.
+                assert (  # noqa: S101
+                    self._dedupe is not None and dedupe_scope is not None
+                )
                 if last_completion_error:
                     # Controller reported failure (timeout, non-zero exit,
                     # API error, …). Drop the cache entry so the same alert

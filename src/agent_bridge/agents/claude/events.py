@@ -76,7 +76,8 @@ type ClaudeEvent = (
 )
 
 
-def parse_stream_line(line: str) -> list[ClaudeEvent]:
+# Complexity hotspot (13 > 10); refactor tracked separately.
+def parse_stream_line(line: str) -> list[ClaudeEvent]:  # noqa: C901
     """Parse a single line of Claude CLI stream-json output into typed events.
 
     Returns a list because one JSON line may contain multiple content blocks

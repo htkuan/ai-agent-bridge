@@ -11,7 +11,6 @@ from agent_bridge.dedupe import (
     simhash,
 )
 
-
 # --- canonicalize ---
 
 
@@ -43,9 +42,7 @@ def test_canonicalize_strips_email():
 
 def test_canonicalize_strips_long_hex():
     # 16 lowercase hex chars
-    assert (
-        canonicalize("sha 1a2b3c4d5e6f7890 done") == "sha <HEX> done"
-    )
+    assert canonicalize("sha 1a2b3c4d5e6f7890 done") == "sha <HEX> done"
 
 
 def test_canonicalize_strips_ipv4():

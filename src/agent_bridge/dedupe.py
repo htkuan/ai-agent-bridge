@@ -55,8 +55,9 @@ def canonicalize(text: str) -> str:
 
 
 def _hash64(s: str) -> int:
-    # Cross-process-stable hash; PYTHONHASHSEED-independent.
-    return int.from_bytes(hashlib.md5(s.encode("utf-8")).digest()[:8], "big")
+    # Cross-process-stable hash; PYTHONHASHSEED-independent, not security.
+    digest = hashlib.md5(s.encode("utf-8"), usedforsecurity=False).digest()
+    return int.from_bytes(digest[:8], "big")
 
 
 def simhash(text: str, ngram: int = 4) -> int:
@@ -112,9 +113,7 @@ class PromptDedupeCache:
         if max_entries <= 0:
             raise ValueError(f"max_entries must be positive, got {max_entries}")
         if simhash_threshold < 0:
-            raise ValueError(
-                f"simhash_threshold must be >= 0, got {simhash_threshold}"
-            )
+            raise ValueError(f"simhash_threshold must be >= 0, got {simhash_threshold}")
         self._ttl = ttl_seconds
         self._max = max_entries
         self._threshold = simhash_threshold

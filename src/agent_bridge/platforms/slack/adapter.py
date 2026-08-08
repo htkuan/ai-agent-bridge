@@ -26,7 +26,7 @@ from agent_bridge.events import (
     Usage,
     UserQuestion,
 )
-from agent_bridge.platforms.slack.config import SlackConfig, _normalize_channel
+from agent_bridge.platforms.slack.config import SlackConfig, normalize_channel
 from agent_bridge.session import SessionManager
 
 logger = logging.getLogger(__name__)
@@ -261,11 +261,17 @@ class SlackAdapter:
 
     def _register_handlers(self) -> None:
         @self._app.event("app_mention")
-        async def handle_mention(event: dict[str, Any], say: Any, client: Any) -> None:
+        # Never called by name: the decorator registers it with bolt.
+        async def handle_mention(  # pyright: ignore[reportUnusedFunction]
+            event: dict[str, Any], say: Any, client: Any
+        ) -> None:
             await self._process_message(event, say, client)
 
         @self._app.event("message")
-        async def handle_dm(event: dict[str, Any], say: Any, client: Any) -> None:
+        # Never called by name: the decorator registers it with bolt.
+        async def handle_dm(  # pyright: ignore[reportUnusedFunction]
+            event: dict[str, Any], say: Any, client: Any
+        ) -> None:
             # Only handle DMs (channel type "im"), skip bot messages
             if event.get("channel_type") != "im":
                 return
@@ -282,7 +288,7 @@ class SlackAdapter:
         if not self._config.allow_channels:
             return True
         channel_name = await self._name_cache.resolve_channel(channel, client)
-        return _normalize_channel(channel_name) in self._config.allow_channels
+        return normalize_channel(channel_name) in self._config.allow_channels
 
     async def _resolve_context(
         self, channel: str, user_id: str, thread_ts: str, client: Any
@@ -774,8 +780,7 @@ class SlackAdapter:
     async def start(self) -> None:
         self._handler = AsyncSocketModeHandler(self._app, self._config.app_token)
         logger.info("Starting Slack adapter (Socket Mode)")
-        # slack_bolt ships untyped; boundary call stays as-is.
-        await self._handler.connect_async()  # type: ignore[no-untyped-call]
+        await self._handler.connect_async()
 
         try:
             auth = await self._app.client.auth_test()
@@ -806,5 +811,4 @@ class SlackAdapter:
 
     async def stop(self) -> None:
         if self._handler:
-            # slack_bolt ships untyped; boundary call stays as-is.
-            await self._handler.close_async()  # type: ignore[no-untyped-call]
+            await self._handler.close_async()

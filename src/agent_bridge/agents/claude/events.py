@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class InitEvent:
     session_id: str
     model: str = ""
-    tools: list[str] = field(default_factory=list)
+    tools: list[str] = field(default_factory=list[str])
 
 
 @dataclass
@@ -42,7 +42,7 @@ class ThinkingEvent:
 class ToolUseEvent:
     session_id: str
     tool_name: str = ""
-    tool_input: dict[str, Any] = field(default_factory=dict)
+    tool_input: dict[str, Any] = field(default_factory=dict[str, Any])
 
 
 @dataclass
@@ -154,7 +154,7 @@ def parse_stream_line(line: str) -> list[ClaudeEvent]:  # noqa: C901
     if event_type == "result":
         # `usage` carries Anthropic-style token counts (input/output exclude
         # cache, which is reported separately). Map to canonical bridge keys.
-        usage = data.get("usage") or {}
+        usage: dict[str, Any] = data.get("usage") or {}
         return [
             ResultEvent(
                 session_id=session_id,

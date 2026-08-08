@@ -184,8 +184,6 @@ class ClaudeController:
         so it has its own process group.
         """
         pid = process.pid
-        if pid is None:
-            return
         sig = signal.SIGTERM if graceful else signal.SIGKILL
         try:
             # start_new_session=True guarantees PGID == PID, so use pid

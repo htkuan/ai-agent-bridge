@@ -103,7 +103,7 @@ class Completion:
     is_error: bool = False
     cost_usd: float = 0.0
     duration_ms: int = 0
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict[str, Any])
     # Assembled by the bridge from metadata. ``usage`` is this turn; the bridge
     # also sets ``session_usage`` to the running total when it has tracked the
     # session from its first turn (None when partial/untracked).

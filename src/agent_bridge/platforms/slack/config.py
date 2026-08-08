@@ -45,7 +45,7 @@ class SlackConfig:
             )
         raw_channels = os.environ.get("AGENT_BRIDGE_SLACK_ALLOW_CHANNELS", "")
         allow_channels = frozenset(
-            _normalize_channel(name) for name in raw_channels.split(",") if name.strip()
+            normalize_channel(name) for name in raw_channels.split(",") if name.strip()
         )
         return cls(
             bot_token=bot_token,
@@ -72,5 +72,6 @@ class SlackConfig:
         )
 
 
-def _normalize_channel(name: str) -> str:
+def normalize_channel(name: str) -> str:
+    """Shared by config parsing and the adapter's allow-list gate."""
     return name.strip().lstrip("#").lower()

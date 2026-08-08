@@ -6,7 +6,7 @@ from agent_bridge.platforms.slack.adapter import SlackAdapter, SlackInfoCache
 from agent_bridge.platforms.slack.config import (
     DEFAULT_CHANNEL_NOT_ALLOWED_MESSAGE,
     SlackConfig,
-    _normalize_channel,
+    normalize_channel,
 )
 
 
@@ -34,12 +34,12 @@ def _client_with_channel(name: str | None) -> MagicMock:
     return client
 
 
-# --- _normalize_channel ---
+# --- normalize_channel ---
 
 
 def test_normalize_strips_hash_whitespace_case():
-    assert _normalize_channel("  #Ops-Alerts  ") == "ops-alerts"
-    assert _normalize_channel("team-eng") == "team-eng"
+    assert normalize_channel("  #Ops-Alerts  ") == "ops-alerts"
+    assert normalize_channel("team-eng") == "team-eng"
 
 
 # --- config parsing ---

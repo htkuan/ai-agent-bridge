@@ -19,9 +19,15 @@ Scenario schema (JSON)::
       ]
     }
 
-Steps run in order; the default exit code is 0. Use ``install()`` (or the
-``fake_claude`` fixture in ``tests/conftest.py``) to materialise a scenario
-plus an executable wrapper and get a ready-to-use ``ClaudeConfig``.
+Steps run in order; the default exit code is 0. Two extra steps shape the
+process itself: ``{"ignore_sigterm": true}`` makes the CLI survive the
+controller's graceful kill (SIGKILL-fallback tests) and
+``{"hold_stderr_grandchild": 8.0}`` spawns a TERM-immune child that inherits
+and holds the stderr pipe open (stderr-drain-timeout tests).
+
+Use ``install()`` (or the ``fake_claude`` fixture in ``tests/conftest.py``)
+to materialise a scenario plus an executable wrapper and get a ready-to-use
+``ClaudeConfig``.
 """
 
 from __future__ import annotations
@@ -104,6 +110,40 @@ def result(
     return {"emit": line}
 
 
+def thinking(text: str, *, session_id: str = "fake-session") -> Step:
+    return {
+        "emit": {
+            "type": "assistant",
+            "message": {"content": [{"type": "thinking", "thinking": text}]},
+            "session_id": session_id,
+        }
+    }
+
+
+def raw_line(text: str) -> Step:
+    return {"raw": text}
+
+
+def stderr_line(text: str) -> Step:
+    return {"stderr": text}
+
+
+def hang(seconds: float = 30.0) -> Step:
+    return {"sleep": seconds}
+
+
+def exit_code(code: int) -> Step:
+    return {"exit": code}
+
+
+def ignore_sigterm() -> Step:
+    return {"ignore_sigterm": True}
+
+
+def hold_stderr_grandchild(seconds: float = 8.0) -> Step:
+    return {"hold_stderr_grandchild": seconds}
+
+
 def reply_steps(text: str, **result_kwargs: Any) -> list[Step]:
     """The minimal happy path: one text block, then the terminal result."""
     return [assistant_text(text), result(text, **result_kwargs)]
@@ -164,6 +204,56 @@ def install(
 # -- Subprocess runtime ------------------------------------------------------
 
 
+def _spawn_stderr_holding_grandchild(seconds: float, scenario_dir: Path) -> None:
+    """Spawn a TERM-immune child that inherits and holds our stderr pipe.
+
+    The ready-file handshake guarantees the TERM handler is installed before
+    we move on — otherwise the controller's group-kill could win the race and
+    reap the grandchild with the default handler.
+    """
+    import subprocess
+
+    ready = scenario_dir / "grandchild-ready"
+    subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import pathlib, signal, time; "
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+            f"pathlib.Path({str(ready)!r}).touch(); "
+            f"time.sleep({seconds})",
+        ]
+    )
+    while not ready.exists():
+        time.sleep(0.01)
+
+
+def _execute_step(step: Step, scenario_dir: Path) -> int | None:
+    """Run one step; return an exit code to stop with, or None to continue."""
+    if "emit" in step:
+        sys.stdout.write(json.dumps(step["emit"]) + "\n")
+        sys.stdout.flush()
+    elif "raw" in step:
+        sys.stdout.write(str(step["raw"]) + "\n")
+        sys.stdout.flush()
+    elif "stderr" in step:
+        sys.stderr.write(str(step["stderr"]) + "\n")
+        sys.stderr.flush()
+    elif "sleep" in step:
+        time.sleep(float(step["sleep"]))
+    elif "exit" in step:
+        return int(step["exit"])
+    elif "ignore_sigterm" in step:
+        import signal
+
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    elif "hold_stderr_grandchild" in step:
+        _spawn_stderr_holding_grandchild(
+            float(step["hold_stderr_grandchild"]), scenario_dir
+        )
+    return None
+
+
 def _run(scenario_path: str, argv: list[str]) -> int:
     scenario: dict[str, Any] = json.loads(Path(scenario_path).read_text())
     record_args = scenario.get("record_args")
@@ -171,19 +261,9 @@ def _run(scenario_path: str, argv: list[str]) -> int:
         with Path(record_args).open("a") as fh:
             fh.write(json.dumps(argv) + "\n")
     for step in scenario.get("steps", []):
-        if "emit" in step:
-            sys.stdout.write(json.dumps(step["emit"]) + "\n")
-            sys.stdout.flush()
-        elif "raw" in step:
-            sys.stdout.write(str(step["raw"]) + "\n")
-            sys.stdout.flush()
-        elif "stderr" in step:
-            sys.stderr.write(str(step["stderr"]) + "\n")
-            sys.stderr.flush()
-        elif "sleep" in step:
-            time.sleep(float(step["sleep"]))
-        elif "exit" in step:
-            return int(step["exit"])
+        code = _execute_step(step, Path(scenario_path).parent)
+        if code is not None:
+            return code
     return 0
 
 

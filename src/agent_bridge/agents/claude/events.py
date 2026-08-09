@@ -77,8 +77,7 @@ type ClaudeEvent = (
 )
 
 
-# Complexity hotspot (13 > 10); refactor tracked separately.
-def parse_stream_line(line: str) -> list[ClaudeEvent]:  # noqa: C901
+def parse_stream_line(line: str) -> list[ClaudeEvent]:
     """Parse a single line of Claude CLI stream-json output into typed events.
 
     Returns a list because one JSON line may contain multiple content blocks
@@ -105,73 +104,75 @@ def parse_stream_line(line: str) -> list[ClaudeEvent]:  # noqa: C901
                 tools=data.get("tools", []),
             )
         ]
-
     if event_type == "assistant":
-        events: list[ClaudeEvent] = []
-        message = data.get("message", {})
-        contents = message.get("content", [])
-        for content in contents:
-            content_type = content.get("type")
-            if content_type == "text":
-                events.append(
-                    AssistantTextEvent(
-                        session_id=session_id,
-                        text=content.get("text", ""),
-                    )
-                )
-            elif content_type == "thinking":
-                events.append(
-                    ThinkingEvent(
-                        session_id=session_id,
-                        thinking=content.get("thinking", ""),
-                    )
-                )
-            elif content_type == "tool_use":
-                events.append(
-                    ToolUseEvent(
-                        session_id=session_id,
-                        tool_name=content.get("name", ""),
-                        tool_input=content.get("input", {}),
-                    )
-                )
-        return events
-
+        return _parse_assistant_blocks(data, session_id)
     if event_type == "user":
-        events = []
-        message = data.get("message", {})
-        contents = message.get("content", [])
-        for content in contents:
-            if content.get("type") == "tool_result":
-                events.append(
-                    ToolResultEvent(
-                        session_id=session_id,
-                        output=content.get("content", ""),
-                        is_error=content.get("is_error", False),
-                    )
-                )
-        return events
-
+        return _parse_tool_results(data, session_id)
     if event_type == "result":
-        # `usage` carries Anthropic-style token counts (input/output exclude
-        # cache, which is reported separately). Map to canonical bridge keys.
-        usage: dict[str, Any] = data.get("usage") or {}
-        return [
-            ResultEvent(
-                session_id=session_id,
-                result_text=data.get("result", ""),
-                cost_usd=data.get("total_cost_usd", 0.0),
-                duration_ms=data.get("duration_ms", 0),
-                is_error=data.get("is_error", False),
-                input_tokens=usage.get("input_tokens", 0),
-                output_tokens=usage.get("output_tokens", 0),
-                cache_read_tokens=usage.get("cache_read_input_tokens", 0),
-                cache_creation_tokens=usage.get("cache_creation_input_tokens", 0),
-                num_turns=data.get("num_turns", 0),
-                duration_api_ms=data.get("duration_api_ms", 0),
-            )
-        ]
-
+        return [_parse_result(data, session_id)]
     return []
+
+
+def _parse_assistant_blocks(data: dict[str, Any], session_id: str) -> list[ClaudeEvent]:
+    events: list[ClaudeEvent] = []
+    for content in data.get("message", {}).get("content", []):
+        content_type = content.get("type")
+        if content_type == "text":
+            events.append(
+                AssistantTextEvent(
+                    session_id=session_id,
+                    text=content.get("text", ""),
+                )
+            )
+        elif content_type == "thinking":
+            events.append(
+                ThinkingEvent(
+                    session_id=session_id,
+                    thinking=content.get("thinking", ""),
+                )
+            )
+        elif content_type == "tool_use":
+            events.append(
+                ToolUseEvent(
+                    session_id=session_id,
+                    tool_name=content.get("name", ""),
+                    tool_input=content.get("input", {}),
+                )
+            )
+    return events
+
+
+def _parse_tool_results(data: dict[str, Any], session_id: str) -> list[ClaudeEvent]:
+    events: list[ClaudeEvent] = []
+    for content in data.get("message", {}).get("content", []):
+        if content.get("type") == "tool_result":
+            events.append(
+                ToolResultEvent(
+                    session_id=session_id,
+                    output=content.get("content", ""),
+                    is_error=content.get("is_error", False),
+                )
+            )
+    return events
+
+
+def _parse_result(data: dict[str, Any], session_id: str) -> ResultEvent:
+    # `usage` carries Anthropic-style token counts (input/output exclude
+    # cache, which is reported separately). Map to canonical bridge keys.
+    usage: dict[str, Any] = data.get("usage") or {}
+    return ResultEvent(
+        session_id=session_id,
+        result_text=data.get("result", ""),
+        cost_usd=data.get("total_cost_usd", 0.0),
+        duration_ms=data.get("duration_ms", 0),
+        is_error=data.get("is_error", False),
+        input_tokens=usage.get("input_tokens", 0),
+        output_tokens=usage.get("output_tokens", 0),
+        cache_read_tokens=usage.get("cache_read_input_tokens", 0),
+        cache_creation_tokens=usage.get("cache_creation_input_tokens", 0),
+        num_turns=data.get("num_turns", 0),
+        duration_api_ms=data.get("duration_api_ms", 0),
+    )
 
 
 def to_bridge_event(event: ClaudeEvent) -> BridgeEvent | None:

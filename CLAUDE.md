@@ -76,6 +76,7 @@ Defined in `src/agent_bridge/protocols.py`. New agents/platforms implement these
 | Env config | **python-dotenv** | `.env` file loading |
 | Testing | **pytest + pytest-asyncio** | `asyncio_mode = "auto"` |
 | Coverage | **pytest-cov** | `fail_under = 75` ratchet; `[tool.coverage.report]` in pyproject.toml |
+| Dependency audit | **pip-audit** | PR gate + weekly schedule; `.github/workflows/audit.yml` |
 | Lint / format | **ruff** | one tool for both; `[tool.ruff]` in pyproject.toml |
 | Type checking | **pyright (strict)** | `src/` only; `[tool.pyright]` in pyproject.toml |
 | Claude CLI | `claude -p` with `--output-format stream-json` | Non-interactive, real-time streaming |
@@ -217,6 +218,10 @@ uv run ruff format
 
 # Type check (strict, src/ only)
 uv run pyright
+
+# Audit locked dependencies for known vulnerabilities (same scan as CI)
+uv export --format requirements-txt --no-emit-project -o requirements-audit.txt
+uvx pip-audit -r requirements-audit.txt --disable-pip
 ```
 
 ## Releasing

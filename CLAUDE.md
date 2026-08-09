@@ -154,7 +154,11 @@ src/agent_bridge/
 ### Testing
 
 - Run tests: `uv run pytest tests/ -v`
-- Test files: `tests/test_*.py`
+- The test tree mirrors `src/` (`tests/bridge/`, `tests/agents/claude/`,
+  `tests/platforms/slack/`, …). Cross-layer seams are tested through the
+  protocols using the typed fakes in `tests/fakes/`; `tests/contracts/`
+  runs each real implementation and its fake against the same suite.
+  Full design: `docs/testing.md`.
 - Async tests run automatically (`asyncio_mode = "auto"`)
 - Test naming: `test_{feature}_{scenario}`
 - Coverage runs on every pytest invocation (`addopts` in pyproject.toml) and

@@ -85,11 +85,17 @@ class ClaudeController:
 
             # Once a result was streamed, the task succeeded — a non-zero exit
             # code is just our own group teardown (signal), not a failure.
-            if not timed_out and not result_seen and return_code and return_code != 0:
+            # Without a result the run failed no matter the exit code: a clean
+            # exit 0 that never emitted `result` must still complete the
+            # stream, or consumers hang on a contract violation.
+            if not timed_out and not result_seen:
                 if stderr_text:
                     logger.error("Claude stderr: %s", stderr_text[:500])
                 yield Completion(
-                    text=f"Claude process exited with code {return_code}",
+                    text=(
+                        f"Claude process exited with code {return_code} "
+                        "before emitting a result"
+                    ),
                     is_error=True,
                 )
 

@@ -217,7 +217,7 @@ The stdout line buffer is set to **10 MB** (default is 64 KB). Claude Code can p
 | Scenario | Result |
 |----------|--------|
 | Process timeout (no output) | Error `Completion` with timeout message, process killed |
-| Non-zero exit code *before* a `result` was seen | Error `Completion` with exit code, stderr logged |
+| Process exited *before* a `result` was seen (any exit code, including 0) | Error `Completion` with the exit code, stderr logged |
 | Non-zero exit code *after* a `result` was seen | Suppressed — the task succeeded; the signal exit is just our own group teardown |
 | `result` with `is_error=true` | Single error `Completion` (the post-result exit code is suppressed, so no duplicate) |
 | Invalid JSON line | Warning logged, line skipped |

@@ -109,7 +109,7 @@ select = [
 "tests/*" = ["S101", "S105", "S106", "S603", "S607", "ASYNC221"]
 
 [tool.pyright]
-include = ["src"]
+include = ["src", "tests/fakes", "tests/contracts"]
 pythonVersion = "3.12"
 venvPath = "."
 venv = ".venv"

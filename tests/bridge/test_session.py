@@ -2,6 +2,8 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from agent_bridge.session import SessionManager
 
 
@@ -215,3 +217,80 @@ def test_ttl_resets_on_use(tmp_path: Path):
 
     # Now it should be fresh again
     assert mgr.purge_expired() == []
+
+
+# --- Failure paths: corrupt store, unwritable disk, unparsable timestamps ---
+
+
+def test_corrupt_store_file_starts_empty(tmp_path: Path):
+    store = tmp_path / "sessions.json"
+    store.write_text("{not valid json!!")
+    mgr = SessionManager(store)
+    assert mgr.list_sessions() == {}
+    assert mgr.get("slack:C123:ts1") is None
+
+
+def test_unparsable_last_used_treated_as_expired(tmp_path: Path):
+    store = tmp_path / "sessions.json"
+    store.write_text(
+        json.dumps(
+            {
+                "slack:C1:t1": {
+                    "session_id": "sid-garbage",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "last_used": "not-a-timestamp",
+                },
+                "slack:C1:t2": {
+                    "session_id": "sid-missing",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                },
+            }
+        )
+    )
+    mgr = SessionManager(store)
+    # Both entries are unparsable -> expired -> purged on load.
+    assert mgr.get("slack:C1:t1") is None
+    assert mgr.get("slack:C1:t2") is None
+    assert mgr.list_sessions() == {}
+
+
+def test_new_session_persist_failure_raises_and_rolls_back(tmp_path: Path):
+    store_dir = tmp_path / "store"
+    store_dir.mkdir()
+    store = store_dir / "sessions.json"
+    mgr = SessionManager(store)
+    store_dir.chmod(0o555)  # store file can no longer be created
+    try:
+        with pytest.raises(OSError, match="Failed to persist"):
+            mgr.get_or_create("slack:C123:ts1")
+        assert mgr.get("slack:C123:ts1") is None
+        assert mgr.list_sessions() == {}
+    finally:
+        store_dir.chmod(0o755)
+
+
+def test_touch_failure_rolls_back_last_used(tmp_path: Path):
+    store = tmp_path / "sessions.json"
+    mgr = SessionManager(store)
+    sid, _ = mgr.get_or_create("slack:C123:ts1")
+    before = mgr.list_sessions()["slack:C123:ts1"]["last_used"]
+    store.chmod(0o444)  # subsequent saves fail
+    try:
+        sid_again, is_new = mgr.get_or_create("slack:C123:ts1")
+        assert sid_again == sid
+        assert is_new is False
+        assert mgr.list_sessions()["slack:C123:ts1"]["last_used"] == before
+    finally:
+        store.chmod(0o644)
+
+
+def test_delete_failure_restores_entry(tmp_path: Path):
+    store = tmp_path / "sessions.json"
+    mgr = SessionManager(store)
+    sid, _ = mgr.get_or_create("slack:C123:ts1")
+    store.chmod(0o444)
+    try:
+        assert mgr.delete("slack:C123:ts1") is False
+        assert mgr.get("slack:C123:ts1") == sid
+    finally:
+        store.chmod(0o644)

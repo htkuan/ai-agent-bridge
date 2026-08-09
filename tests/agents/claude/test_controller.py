@@ -3,13 +3,16 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from agent_bridge.agents.claude.config import ClaudeConfig
 from agent_bridge.agents.claude.controller import ClaudeController
-from agent_bridge.events import Completion
+from agent_bridge.events import Completion, StatusUpdate, TextDelta
+from tests.conftest import FakeClaudeFactory
+from tests.fakes import claude_cli
 
 
 def _config(
@@ -18,11 +21,12 @@ def _config(
     effort: str = "xhigh",
     timeout_seconds: float = 600.0,
     cli_path: str = "claude",
+    permission_mode: str = "acceptEdits",
 ) -> ClaudeConfig:
     # Bypass _validate so tests don't need a real git repo unless they want one.
     cfg = ClaudeConfig.__new__(ClaudeConfig)
     object.__setattr__(cfg, "work_dir", work_dir)
-    object.__setattr__(cfg, "permission_mode", "acceptEdits")
+    object.__setattr__(cfg, "permission_mode", permission_mode)
     object.__setattr__(cfg, "timeout_seconds", timeout_seconds)
     object.__setattr__(cfg, "worktree_enabled", worktree_enabled)
     object.__setattr__(cfg, "effort", effort)
@@ -347,3 +351,239 @@ async def test_run_breaks_on_result_despite_orphan_holding_stdout(
     await asyncio.sleep(0.2)
     with pytest.raises(ProcessLookupError):
         os.kill(orphan_pid, 0)
+
+
+# --- Permission-mode flag variants ---
+
+
+def test_build_command_dangerously_skip_permissions(tmp_path: Path):
+    controller = ClaudeController(
+        _config(tmp_path, permission_mode="dangerously-skip-permissions")
+    )
+    cmd = controller._build_command("s1", "hi", is_new=True)
+    assert "--dangerously-skip-permissions" in cmd
+    assert "--permission-mode" not in cmd
+
+
+# --- run(): failure and timeout paths, driven by the scripted fake CLI ---
+
+
+async def test_run_yields_error_completion_on_nonzero_exit_before_result(
+    fake_claude: FakeClaudeFactory,
+):
+    cli = fake_claude([claude_cli.stderr_line("kaboom"), claude_cli.exit_code(3)])
+    controller = ClaudeController(cli.config)
+    events = [e async for e in controller.run("s1", "hi", is_new=True)]
+    assert len(events) == 1
+    completion = events[0]
+    assert isinstance(completion, Completion)
+    assert completion.is_error is True
+    assert "exited with code 3" in completion.text
+
+
+async def test_run_skips_malformed_json_lines(fake_claude: FakeClaudeFactory):
+    cli = fake_claude(
+        [claude_cli.raw_line("not json at all"), *claude_cli.reply_steps("fine")]
+    )
+    controller = ClaudeController(cli.config)
+    events = [e async for e in controller.run("s1", "hi", is_new=True)]
+    deltas = "".join(e.text for e in events if isinstance(e, TextDelta))
+    assert deltas == "fine"
+    last = events[-1]
+    assert isinstance(last, Completion)
+    assert last.is_error is False
+
+
+async def test_run_filters_agent_internal_events(fake_claude: FakeClaudeFactory):
+    cli = fake_claude([claude_cli.thinking("pondering"), claude_cli.result("done")])
+    controller = ClaudeController(cli.config)
+    events = [e async for e in controller.run("s1", "hi", is_new=True)]
+    assert not any(isinstance(e, TextDelta | StatusUpdate) for e in events)
+    assert isinstance(events[-1], Completion)
+
+
+async def test_run_times_out_and_reports_error(fake_claude: FakeClaudeFactory):
+    cli = fake_claude([claude_cli.hang(30.0)], timeout_seconds=0.5)
+    controller = ClaudeController(cli.config)
+    events = [e async for e in controller.run("s1", "hi", is_new=True)]
+    assert len(events) == 1
+    completion = events[0]
+    assert isinstance(completion, Completion)
+    assert completion.is_error is True
+    assert "timed out" in completion.text
+
+
+async def test_run_zero_timeout_expires_before_first_read(
+    fake_claude: FakeClaudeFactory,
+):
+    cli = fake_claude(claude_cli.reply_steps("never"), timeout_seconds=0.0)
+    controller = ClaudeController(cli.config)
+    events = [e async for e in controller.run("s1", "hi", is_new=True)]
+    completion = events[-1]
+    assert isinstance(completion, Completion)
+    assert completion.is_error is True
+    assert "timed out" in completion.text
+
+
+async def test_run_sigkills_process_that_ignores_sigterm(
+    fake_claude: FakeClaudeFactory,
+):
+    # SIGTERM is ignored by the scenario, so the graceful kill stalls and the
+    # controller must escalate to SIGKILL (~5s wait_for budget) to finish.
+    # The marker text is only emitted after the handler is installed, so a
+    # 2s read budget guarantees SIGTERM immunity is armed before the kill.
+    cli = fake_claude(
+        [
+            claude_cli.ignore_sigterm(),
+            claude_cli.assistant_text("armed"),
+            claude_cli.hang(30.0),
+        ],
+        timeout_seconds=2.0,
+    )
+    controller = ClaudeController(cli.config)
+    events = [e async for e in controller.run("s1", "hi", is_new=True)]
+    completion = events[-1]
+    assert isinstance(completion, Completion)
+    assert completion.is_error is True
+    assert "timed out" in completion.text
+
+
+async def test_run_survives_grandchild_holding_stderr_open(
+    fake_claude: FakeClaudeFactory,
+):
+    # The TERM-immune grandchild inherits stderr and keeps it open after the
+    # main process exits; the stderr drain must give up (~5s) instead of
+    # wedging, and the successful result must not gain a spurious error.
+    cli = fake_claude(
+        [claude_cli.hold_stderr_grandchild(8.0), *claude_cli.reply_steps("done")]
+    )
+    controller = ClaudeController(cli.config)
+    events = [e async for e in controller.run("s1", "hi", is_new=True)]
+    completions = [e for e in events if isinstance(e, Completion)]
+    assert len(completions) == 1
+    assert completions[0].is_error is False
+
+
+# --- _kill_process_tree fallbacks ---
+
+
+async def test_kill_process_tree_ignores_already_exited_group(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    proc = await asyncio.create_subprocess_exec(sys.executable, "-c", "pass")
+    await proc.wait()
+
+    def raise_lookup(pid: int, sig: int) -> None:
+        raise ProcessLookupError
+
+    monkeypatch.setattr(os, "killpg", raise_lookup)
+    ClaudeController._kill_process_tree(proc, graceful=True)  # must not raise
+
+
+@pytest.mark.parametrize("graceful", [True, False])
+async def test_kill_process_tree_falls_back_to_direct_kill(
+    monkeypatch: pytest.MonkeyPatch, graceful: bool
+):
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        "import time; time.sleep(30)",
+        start_new_session=True,
+    )
+
+    def deny(pid: int, sig: int) -> None:
+        raise PermissionError("killpg denied")
+
+    monkeypatch.setattr(os, "killpg", deny)
+    ClaudeController._kill_process_tree(proc, graceful=graceful)
+    await asyncio.wait_for(proc.wait(), timeout=5.0)
+
+
+# --- cleanup_session: git failure paths ---
+
+
+async def test_cleanup_session_leaves_worktree_when_force_remove_also_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    controller = ClaudeController(_config(tmp_path, worktree_enabled=True))
+    worktree = tmp_path / ".claude" / "worktrees" / "s1"
+    worktree.mkdir(parents=True)
+    calls: list[tuple[str, ...]] = []
+
+    async def failing_git(cwd: Path, *args: str) -> tuple[int, str]:
+        calls.append(args)
+        return 1, "worktree locked"
+
+    monkeypatch.setattr(ClaudeController, "_run_git", staticmethod(failing_git))
+    await controller.cleanup_session("s1")  # never raises
+
+    assert worktree.exists()
+    assert calls == [
+        ("worktree", "remove", str(worktree)),
+        ("worktree", "remove", "--force", str(worktree)),
+    ]  # gives up after the force retry: no branch -D
+
+
+async def test_cleanup_session_prunes_when_worktree_dir_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    controller = ClaudeController(_config(tmp_path, worktree_enabled=True))
+    calls: list[tuple[str, ...]] = []
+
+    async def recording_git(cwd: Path, *args: str) -> tuple[int, str]:
+        calls.append(args)
+        return 0, ""
+
+    monkeypatch.setattr(ClaudeController, "_run_git", staticmethod(recording_git))
+    await controller.cleanup_session("s1")
+
+    assert calls == [("worktree", "prune"), ("branch", "-D", "worktree-s1")]
+
+
+async def test_run_git_timeout_kills_and_reports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # Same manual-deadline pattern as the code under test.
+    async def instant_timeout(awaitable: object, timeout: float) -> None:  # noqa: ASYNC109
+        del timeout
+        if hasattr(awaitable, "close"):
+            awaitable.close()  # type: ignore[attr-defined]
+        raise TimeoutError
+
+    monkeypatch.setattr(
+        "agent_bridge.agents.claude.controller.asyncio.wait_for", instant_timeout
+    )
+    rc, err = await ClaudeController._run_git(tmp_path, "status")
+    assert (rc, err) == (-1, "timeout")
+
+
+def test_work_dir_validation_rejects_missing_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_WORK_DIR", str(tmp_path / "nope"))
+    with pytest.raises(ValueError, match="does not exist"):
+        ClaudeConfig.from_env()
+
+
+def test_permission_mode_validation_rejects_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_WORK_DIR", str(tmp_path))
+    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_PERMISSION_MODE", "yolo")
+    with pytest.raises(ValueError, match="AGENT_BRIDGE_CLAUDE_PERMISSION_MODE"):
+        ClaudeConfig.from_env()
+
+
+def test_timeout_validation_rejects_non_positive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_WORK_DIR", str(tmp_path))
+    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS", "0")
+    with pytest.raises(ValueError, match="must be positive"):
+        ClaudeConfig.from_env()
+
+
+def test_cli_path_validation_rejects_empty(tmp_path: Path):
+    config = ClaudeConfig(work_dir=tmp_path, cli_path="")
+    with pytest.raises(ValueError, match="AGENT_BRIDGE_CLAUDE_CLI_PATH"):
+        config._validate()

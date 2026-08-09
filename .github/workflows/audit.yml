@@ -1,0 +1,51 @@
+name: Audit
+
+# Scans the locked dependency set for known vulnerabilities with pip-audit.
+# Runs as a PR/merge gate (a PR that locks a vulnerable pin fails here) and
+# on a weekly schedule, so advisories published after the last lockfile
+# change still surface without waiting for the next PR. The dev group pulls
+# in ai-agent-bridge[all], so the export covers runtime extras (slack) too.
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    # Mondays 03:17 UTC; offset from the top of the hour, when GitHub
+    # delays or drops scheduled runs due to load.
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        # Pinned to the full tag: setup-uv publishes no floating major tag
+        # (v9 alone does not resolve). Bump to the latest v9.x as needed.
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Export locked dependencies
+        # --no-emit-project keeps the local package itself out of the audit;
+        # everything else stays pinned exactly as uv.lock resolves it.
+        run: uv export --format requirements-txt --no-emit-project -o requirements-audit.txt
+
+      - name: pip-audit
+        # --disable-pip audits the pinned requirements as written instead of
+        # letting pip re-resolve them against the running interpreter.
+        run: uvx pip-audit -r requirements-audit.txt --disable-pip

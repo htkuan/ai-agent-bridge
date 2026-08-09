@@ -77,6 +77,7 @@ Defined in `src/agent_bridge/protocols.py`. New agents/platforms implement these
 | Testing | **pytest + pytest-asyncio** | `asyncio_mode = "auto"` |
 | Coverage | **pytest-cov** | `fail_under = 75` ratchet; `[tool.coverage.report]` in pyproject.toml |
 | Dependency audit | **pip-audit** | PR gate + weekly schedule; `.github/workflows/audit.yml` |
+| Secrets scanning | **gitleaks** | pre-commit hook (staged diff) + CI (commit history); same workflow |
 | Lint / format | **ruff** | one tool for both; `[tool.ruff]` in pyproject.toml |
 | Type checking | **pyright (strict)** | `src/` only; `[tool.pyright]` in pyproject.toml |
 | Claude CLI | `claude -p` with `--output-format stream-json` | Non-interactive, real-time streaming |
@@ -222,6 +223,10 @@ uv run pyright
 # Audit locked dependencies for known vulnerabilities (same scan as CI)
 uv export --format requirements-txt --no-emit-project -o requirements-audit.txt
 uvx pip-audit -r requirements-audit.txt --disable-pip
+
+# Scan git history for hardcoded secrets (the pre-commit hook covers the
+# staged diff automatically; CI re-scans commit history)
+gitleaks git --redact -v .
 ```
 
 ## Releasing

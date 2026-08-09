@@ -29,6 +29,7 @@ class ClaudeConfig:
     timeout_seconds: float = 600.0
     worktree_enabled: bool = False
     effort: str = "xhigh"
+    cli_path: str = "claude"
 
     @classmethod
     def from_env(cls) -> ClaudeConfig:
@@ -50,6 +51,8 @@ class ClaudeConfig:
             in _TRUTHY,
             effort=os.environ.get("AGENT_BRIDGE_CLAUDE_EFFORT", "xhigh").strip()
             or "xhigh",
+            cli_path=os.environ.get("AGENT_BRIDGE_CLAUDE_CLI_PATH", "claude").strip()
+            or "claude",
         )
         config._validate()
         return config
@@ -71,6 +74,8 @@ class ClaudeConfig:
                 f"AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS must be positive, "
                 f"got {self.timeout_seconds}"
             )
+        if not self.cli_path:
+            raise ValueError("AGENT_BRIDGE_CLAUDE_CLI_PATH must not be empty")
         if self.effort not in VALID_EFFORT_LEVELS:
             raise ValueError(
                 f"Invalid AGENT_BRIDGE_CLAUDE_EFFORT: {self.effort!r}. "

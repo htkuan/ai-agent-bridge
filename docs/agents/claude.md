@@ -37,6 +37,7 @@ The process runs, streams events via stdout, and exits. Session continuity is ha
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | `600` | Maximum time (seconds) for a single invocation. Process is terminated on timeout. |
 | `AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED` | `false` | Run each session in its own git worktree (see [Worktree Mode](#worktree-mode)). |
 | `AGENT_BRIDGE_CLAUDE_EFFORT` | `xhigh` | Effort level passed to `claude --effort`. One of `low`, `medium`, `high`, `xhigh`, `max`. |
+| `AGENT_BRIDGE_CLAUDE_CLI_PATH` | `claude` | Path to the Claude Code CLI executable. Override when `claude` is not on `PATH` or to pin a specific binary. |
 
 ### Permission Modes
 

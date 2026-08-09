@@ -37,6 +37,7 @@ dev = [
     "pre-commit>=3.7.0",
     "ruff>=0.14",
     "pyright[nodejs]>=1.1",
+    "pytest-cov>=6.0.0",
 ]
 
 [build-system]
@@ -49,6 +50,16 @@ packages = ["src/agent_bridge"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Coverage on by default so plain `uv run pytest` (local and every CI matrix
+# job) enforces the same gate. Partial runs (a single file / -k) undercount
+# coverage and trip fail_under — add --no-cov for those.
+addopts = "--cov=src/agent_bridge --cov-report=term-missing"
+
+[tool.coverage.report]
+# Ratchet floor, not a target: 75% is the measured baseline (2026-08-08).
+# Raise it as coverage improves; never lower it. Known gaps: slack/adapter.py,
+# __init__.py, config.py — core modules (bridge/dedupe/events) sit at 100%.
+fail_under = 75
 
 [tool.semantic_release]
 # Version lives in [project].version; PSR bumps it from Conventional Commits.

@@ -29,6 +29,24 @@ class AgentController(Protocol):
     ) -> AsyncIterator[BridgeEvent]: ...
 
 
+class MessageRouter(Protocol):
+    """Interface platform adapters send messages through.
+
+    ``Bridge`` is the production implementation.  Adapters depend on this
+    protocol — not the concrete class — so tests can substitute a fake
+    that replays a scripted event stream.
+    """
+
+    def handle_message(
+        self,
+        session_key: str,
+        text: str,
+        context: dict[str, str] | None = None,
+        system_prompt: str | None = None,
+        resumable: bool = True,
+    ) -> AsyncIterator[BridgeEvent]: ...
+
+
 class PlatformAdapter(Protocol):
     """Interface for chat platform frontends.
 

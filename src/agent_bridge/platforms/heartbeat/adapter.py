@@ -6,7 +6,6 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 
-from agent_bridge.bridge import Bridge
 from agent_bridge.events import (
     BridgeEvent,
     Completion,
@@ -16,12 +15,13 @@ from agent_bridge.events import (
     UserQuestion,
 )
 from agent_bridge.platforms.heartbeat.config import HeartbeatConfig
+from agent_bridge.protocols import MessageRouter
 
 logger = logging.getLogger(__name__)
 
 
 class HeartbeatAdapter:
-    def __init__(self, config: HeartbeatConfig, bridge: Bridge) -> None:
+    def __init__(self, config: HeartbeatConfig, bridge: MessageRouter) -> None:
         self._config = config
         self._bridge = bridge
         self._task: asyncio.Task[None] | None = None

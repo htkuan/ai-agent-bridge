@@ -39,6 +39,7 @@ Events are defined in `src/agent_bridge/events.py`. Agent-internal events (think
 
 - `AgentController` — `run(session_id, prompt, is_new, context, system_prompt) → AsyncIterator[BridgeEvent]`. The platform adapter builds `prompt` (already pre-tagged with sender identity if needed) and `system_prompt` (platform-flavored directives); the agent forwards them as-is. The agent must not interpret platform-specific keys out of `context`.
 - `PlatformAdapter` — `start()`, `stop()`
+- `MessageRouter` — `handle_message(session_key, text, context, system_prompt, resumable) → AsyncIterator[BridgeEvent]`. The interface adapters send messages through; `Bridge` is the production implementation. Adapters depend on this protocol, not the concrete class, so tests can substitute fakes.
 
 Defined in `src/agent_bridge/protocols.py`. New agents/platforms implement these.
 

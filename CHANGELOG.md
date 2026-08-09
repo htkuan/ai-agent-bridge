@@ -2,6 +2,61 @@
 
 <!-- version list -->
 
+## v0.3.0 (2026-08-09)
+
+### Build System
+
+- Add pytest-cov with a 75% coverage ratchet
+  ([`57c0154`](https://github.com/htkuan/ai-agent-bridge/commit/57c0154653cc14860d5ca1c6eb9f9820cef4251e))
+
+- Clear known vulnerabilities from the locked dependency set
+  ([`c1d23b0`](https://github.com/htkuan/ai-agent-bridge/commit/c1d23b0c441a0b4c3da27d05aa11625b77de5e8a))
+
+### Continuous Integration
+
+- Audit locked dependencies with pip-audit
+  ([`f973580`](https://github.com/htkuan/ai-agent-bridge/commit/f973580fce3c8446bb18b3e7b50177ed3bf4ee1f))
+
+- Scan for secrets with gitleaks
+  ([`a7dd7d8`](https://github.com/htkuan/ai-agent-bridge/commit/a7dd7d895c03b8e43ce2e6777e625931696a6113))
+
+### Documentation
+
+- Document secrets scanning in the developer guide
+  ([`d41ee2f`](https://github.com/htkuan/ai-agent-bridge/commit/d41ee2fc3cfa17c5bb91c9306e545a4b8789a281))
+
+- Document the coverage gate in the developer guide
+  ([`50b76fd`](https://github.com/htkuan/ai-agent-bridge/commit/50b76fdc0b3c4c8e1e8b9a8205a3f842dc264802))
+
+- Document the dependency audit in the developer guide
+  ([`905b567`](https://github.com/htkuan/ai-agent-bridge/commit/905b5674bef637ccf88e6f20d2c7aa176e2c3d5b))
+
+- Note that no complexity exemptions remain
+  ([`1eb462a`](https://github.com/htkuan/ai-agent-bridge/commit/1eb462aa543d1c56b4470a3b6acc393a3b147369))
+
+### Features
+
+- **claude**: Configurable cli executable path
+  ([`614dc11`](https://github.com/htkuan/ai-agent-bridge/commit/614dc11d14a49ad970c6e48a5fbdef34fd7b6312))
+
+### Refactoring
+
+- Decompose main startup wiring
+  ([`8cbf71b`](https://github.com/htkuan/ai-agent-bridge/commit/8cbf71b48e8765e68542505e2021154c37b49eb3))
+
+- Decompose slack message intake and stream rendering
+  ([`0b32ffa`](https://github.com/htkuan/ai-agent-bridge/commit/0b32ffaf691da007ae183a5ffebbb02c536ff29a))
+
+- Extract dedupe claim and release helpers in bridge
+  ([`d36439d`](https://github.com/htkuan/ai-agent-bridge/commit/d36439dcd3e7dc0a7393aa0353b2301292bac45c))
+
+- Route adapters through a MessageRouter protocol
+  ([`61a1831`](https://github.com/htkuan/ai-agent-bridge/commit/61a1831ff66f7ba79d2832960aadec4c22bbc85d))
+
+- Split parse_stream_line by event type
+  ([`8e5b234`](https://github.com/htkuan/ai-agent-bridge/commit/8e5b234c2192db6fe369e973be3b0a0dbf397429))
+
+
 ## v0.2.2 (2026-08-08)
 
 ### Bug Fixes

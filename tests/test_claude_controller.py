@@ -17,6 +17,7 @@ def _config(
     worktree_enabled: bool = False,
     effort: str = "xhigh",
     timeout_seconds: float = 600.0,
+    cli_path: str = "claude",
 ) -> ClaudeConfig:
     # Bypass _validate so tests don't need a real git repo unless they want one.
     cfg = ClaudeConfig.__new__(ClaudeConfig)
@@ -25,6 +26,7 @@ def _config(
     object.__setattr__(cfg, "timeout_seconds", timeout_seconds)
     object.__setattr__(cfg, "worktree_enabled", worktree_enabled)
     object.__setattr__(cfg, "effort", effort)
+    object.__setattr__(cfg, "cli_path", cli_path)
     return cfg
 
 
@@ -131,6 +133,42 @@ def test_effort_empty_string_falls_back_to_xhigh(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_EFFORT", "")
     cfg = ClaudeConfig.from_env()
     assert cfg.effort == "xhigh"
+
+
+# --- CLI path ---
+
+
+def test_build_command_uses_default_cli_path(tmp_path: Path):
+    controller = ClaudeController(_config(tmp_path))
+    cmd = controller._build_command("s1", "hi", is_new=True)
+    assert cmd[0] == "claude"
+
+
+def test_build_command_uses_custom_cli_path(tmp_path: Path):
+    controller = ClaudeController(_config(tmp_path, cli_path="/opt/bin/claude"))
+    cmd = controller._build_command("s1", "hi", is_new=True)
+    assert cmd[0] == "/opt/bin/claude"
+
+
+def test_cli_path_from_env(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_WORK_DIR", str(tmp_path))
+    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_CLI_PATH", "/opt/bin/claude")
+    cfg = ClaudeConfig.from_env()
+    assert cfg.cli_path == "/opt/bin/claude"
+
+
+def test_cli_path_defaults_to_claude_when_unset(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_WORK_DIR", str(tmp_path))
+    monkeypatch.delenv("AGENT_BRIDGE_CLAUDE_CLI_PATH", raising=False)
+    cfg = ClaudeConfig.from_env()
+    assert cfg.cli_path == "claude"
+
+
+def test_cli_path_blank_env_falls_back_to_claude(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_WORK_DIR", str(tmp_path))
+    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_CLI_PATH", "   ")
+    cfg = ClaudeConfig.from_env()
+    assert cfg.cli_path == "claude"
 
 
 # --- Config validation ---

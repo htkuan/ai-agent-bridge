@@ -101,7 +101,7 @@ class ClaudeController:
         system_prompt: str | None = None,
     ) -> list[str]:
         cmd = [
-            "claude",
+            self._config.cli_path,
             "-p",
             prompt,
             "--output-format",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 from slack_sdk.errors import SlackApiError
@@ -10,6 +11,8 @@ from agent_bridge.platforms.slack.adapter import (
     SlackAdapter,
 )
 from agent_bridge.platforms.slack.config import SlackConfig
+from tests.fakes import FakeSlackClient
+from tests.platforms.slack.harness import build_harness
 
 
 def _make_adapter() -> SlackAdapter:
@@ -172,3 +175,47 @@ async def test_footer_does_not_push_inline_reply_to_upload():
     )
 
     adapter._app.client.files_upload_v2.assert_not_awaited()
+
+
+# --- _delete_message ---
+
+
+async def test_delete_message_removes_placeholder():
+    harness = build_harness()
+    posted = await harness.client.chat_postMessage(channel="C1", text="tmp")
+
+    await harness.adapter._delete_message("C1", posted["ts"])
+
+    assert ("C1", posted["ts"]) not in harness.client.messages
+
+
+async def test_delete_message_error_is_swallowed():
+    harness = build_harness()
+    harness.client.fail_next["chat_delete"] = "message_not_found"
+    await harness.adapter._delete_message("C1", "9.9")  # must not raise
+
+
+# --- fallback retries stop on non-retryable errors ---
+
+
+class _SequencedErrorClient(FakeSlackClient):
+    """chat_update raises one scripted error code per call until exhausted."""
+
+    def __init__(self, codes: list[str]) -> None:
+        super().__init__()
+        self.codes = codes
+
+    async def chat_update(self, **kwargs: Any) -> dict[str, Any]:
+        if self.codes:
+            self.fail_next["chat_update"] = self.codes.pop(0)
+        return await super().chat_update(**kwargs)
+
+
+async def test_update_fallback_stops_on_non_retryable_error():
+    client = _SequencedErrorClient(["msg_too_long", "channel_not_found"])
+    harness = build_harness(client=client)
+
+    await harness.adapter._update_message("C1", "1.0", "hello")
+
+    # One initial attempt, one fallback, then give up — no further retries.
+    assert len(client.calls_to("chat_update")) == 2

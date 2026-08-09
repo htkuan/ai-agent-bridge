@@ -30,6 +30,11 @@ def test_truncate_ascii_exact_budget():
     assert _truncate_to_bytes("abcdef", 3) == "abc"
 
 
+def test_truncate_zero_or_negative_budget_returns_empty():
+    assert _truncate_to_bytes("hello", 0) == ""
+    assert _truncate_to_bytes("hello", -5) == ""
+
+
 def test_fit_with_suffix_short_enough_passes_through():
     assert _fit_with_suffix("hi", 100, " (…)") == "hi"
 

@@ -2,6 +2,44 @@
 
 <!-- version list -->
 
+## v0.3.1 (2026-08-09)
+
+### Bug Fixes
+
+- **claude**: Complete the stream when the process exits without a result
+  ([`20a3ec1`](https://github.com/htkuan/ai-agent-bridge/commit/20a3ec1d60e2c447af71f706106efb1034e9ca9a))
+
+### Build System
+
+- Type-check test fakes and contracts with pyright
+  ([`34e9b67`](https://github.com/htkuan/ai-agent-bridge/commit/34e9b67d537ffdf70689a09976e05fbf1c116371))
+
+### Documentation
+
+- Document the test framework design
+  ([`82b512a`](https://github.com/htkuan/ai-agent-bridge/commit/82b512a1c799fbddacd02e5722bb3776ecde49c0))
+
+### Testing
+
+- Add typed protocol fakes and a scripted claude cli
+  ([`4e24eb2`](https://github.com/htkuan/ai-agent-bridge/commit/4e24eb2b1bd904e959a8d62ecdecfb3ccd56f436))
+
+- Cover bridge config parsing and session-store failure paths
+  ([`1c34a7c`](https://github.com/htkuan/ai-agent-bridge/commit/1c34a7c17a32570b4aa966113cd6d2518ec0d401))
+
+- Cover controller timeout, kill, and worktree failure paths
+  ([`b24d0d8`](https://github.com/htkuan/ai-agent-bridge/commit/b24d0d8e0a83829a4f10f3a9e9b87a981ae7cbda))
+
+- Extend the fake cli with process-behaviour steps
+  ([`2d2ad05`](https://github.com/htkuan/ai-agent-bridge/commit/2d2ad05b8c0855a2ae34121254f6261dea1a007d))
+
+- Mirror the src layout in the test tree
+  ([`53fe56f`](https://github.com/htkuan/ai-agent-bridge/commit/53fe56fc20e12e5422630ee2ba425355ad13ddc0))
+
+- Pin fakes to real behaviour with contract suites
+  ([`ead4054`](https://github.com/htkuan/ai-agent-bridge/commit/ead4054c4067f984cd0adf680dcae280be340c16))
+
+
 ## v0.3.0 (2026-08-09)
 
 ### Build System

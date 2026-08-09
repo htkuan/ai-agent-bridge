@@ -587,3 +587,29 @@ def test_cli_path_validation_rejects_empty(tmp_path: Path):
     config = ClaudeConfig(work_dir=tmp_path, cli_path="")
     with pytest.raises(ValueError, match="AGENT_BRIDGE_CLAUDE_CLI_PATH"):
         config._validate()
+
+
+async def test_run_yields_error_completion_on_clean_exit_without_result(
+    fake_claude: FakeClaudeFactory,
+):
+    # exit 0 without a `result` line used to end the stream with no
+    # Completion at all — a contract violation that left consumers hanging.
+    cli = fake_claude([claude_cli.exit_code(0)])
+    controller = ClaudeController(cli.config)
+    events = [e async for e in controller.run("s1", "hi", is_new=True)]
+    assert len(events) == 1
+    completion = events[0]
+    assert isinstance(completion, Completion)
+    assert completion.is_error is True
+    assert "before emitting a result" in completion.text
+
+
+async def test_run_partial_output_then_clean_exit_still_completes(
+    fake_claude: FakeClaudeFactory,
+):
+    cli = fake_claude([claude_cli.assistant_text("half"), claude_cli.exit_code(0)])
+    controller = ClaudeController(cli.config)
+    events = [e async for e in controller.run("s1", "hi", is_new=True)]
+    completions = [e for e in events if isinstance(e, Completion)]
+    assert len(completions) == 1
+    assert completions[0].is_error is True

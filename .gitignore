@@ -40,6 +40,9 @@ MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
 
+# pip-audit input exported from uv.lock (see .github/workflows/audit.yml)
+requirements-audit.txt
+
 # Unit test / coverage reports
 htmlcov/
 .tox/

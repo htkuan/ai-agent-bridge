@@ -8,6 +8,8 @@
 #     rev below in sync with the ruff version pinned in the dev group.
 #     pyright runs as a local hook through `uv run` so it type-checks against
 #     the real dependency set (slack-bolt etc.), not an isolated hook venv.
+#     gitleaks scans the staged diff for hardcoded secrets before they ever
+#     land in a commit (CI re-scans history: .github/workflows/audit.yml).
 #
 # One-time setup per clone (writes the git hooks into .git/hooks/):
 #   uv sync                  # installs the pre-commit tool (dev group)
@@ -16,6 +18,11 @@
 default_install_hook_types: [pre-commit, commit-msg]
 
 repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.2
     hooks:

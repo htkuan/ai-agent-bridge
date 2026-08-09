@@ -1,10 +1,14 @@
 name: Audit
 
-# Scans the locked dependency set for known vulnerabilities with pip-audit.
-# Runs as a PR/merge gate (a PR that locks a vulnerable pin fails here) and
-# on a weekly schedule, so advisories published after the last lockfile
-# change still surface without waiting for the next PR. The dev group pulls
-# in ai-agent-bridge[all], so the export covers runtime extras (slack) too.
+# Security scans, as a PR/merge gate and on a weekly schedule:
+#   pip-audit — scans the locked dependency set for known vulnerabilities.
+#     The schedule matters because advisories published after the last
+#     lockfile change should surface without waiting for the next PR. The
+#     dev group pulls in ai-agent-bridge[all], so the export covers runtime
+#     extras (slack) too.
+#   gitleaks — scans commits for hardcoded secrets (PR commits on the gate,
+#     full history on the schedule, catching leaks that newer rules detect).
+#     Mirrors the pre-commit hook (.pre-commit-config.yaml).
 
 on:
   pull_request:
@@ -49,3 +53,24 @@ jobs:
         # --disable-pip audits the pinned requirements as written instead of
         # letting pip re-resolve them against the running interpreter.
         run: uvx pip-audit -r requirements-audit.txt --disable-pip
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Lets the action comment on the offending PR when it finds a leak.
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Full history: gitleaks scans commit ranges (PR commits on the
+          # gate, everything on the schedule), not just the checked-out tree.
+          fetch-depth: 0
+
+      - name: Gitleaks
+        # GITLEAKS_LICENSE is only required for organization-owned repos;
+        # this repo lives under a personal account.
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

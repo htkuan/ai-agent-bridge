@@ -152,6 +152,28 @@ class _SessionState:
     waiting_for_answer: bool = False
 
 
+@dataclass
+class _RenderState:
+    """Mutable state for rendering one agent event stream into a Slack
+    message. ``message_ts`` starts as ``existing_message_ts`` (drained
+    pending placeholder) and is otherwise set by the first Processing
+    event; ``existing_message_ts`` stays as-was to mark drained runs."""
+
+    channel: str
+    thread_ts: str
+    session_key: str
+    say: Any
+    existing_message_ts: str | None
+    message_ts: str | None
+    accumulated_text: str = ""
+    tool_status: str = ""
+    last_update_time: float = 0.0
+    pending_user_questions: list[dict[str, Any]] = field(
+        default_factory=list[dict[str, Any]]
+    )
+    completed: bool = False
+
+
 class SlackInfoCache:
     """Cache for Slack workspace, channel, and user display names."""
 
@@ -341,13 +363,100 @@ class SlackAdapter:
             "to identify the speaker.\n" + "\n".join(parts)
         )
 
-    # Complexity hotspot (14 > 10); refactor tracked separately.
-    async def _process_message(  # noqa: C901
+    def _prepare_text(self, text: str, event: dict[str, Any]) -> str:
+        """Strip the bot mention and append attachment info so the agent can
+        decide whether to fetch the files."""
+        # e.g., "<@U12345> do something" → "do something"
+        text = re.sub(r"<@[A-Z0-9]+>\s*", "", text).strip()
+
+        files = event.get("files") or []
+        if not files:
+            return text
+        parts = []
+        for f in files:
+            name = f.get("name", "unknown")
+            mimetype = f.get("mimetype", "unknown")
+            url = f.get("url_private_download") or f.get("url_private") or ""
+            parts.append(f"- {name} ({mimetype}): {url}")
+        token = self._config.bot_token
+        hint = (
+            "[Slack attachments — download with: "
+            f'curl -H "Authorization: Bearer {token}" '
+            '"<url>" -o /tmp/<filename>]'
+        )
+        text = f"{text}\n\n{hint}\n" + "\n".join(parts)
+        return text.strip()
+
+    async def _park_pending(
+        self,
+        state: _SessionState,
+        channel: str,
+        user_id: str,
+        thread_ts: str,
+        text: str,
+        say: Any,
+        client: Any,
+    ) -> None:
+        """Park the message in the single pending slot (keep only latest),
+        deleting the placeholder of any message it replaces. Caller holds
+        the session lock."""
+        context = await self._resolve_context(channel, user_id, thread_ts, client)
+        result = await say(
+            text=":hourglass: Waiting for previous task to finish...",
+            thread_ts=thread_ts,
+        )
+        if state.pending is not None:
+            await self._delete_message(state.pending.channel, state.pending.message_ts)
+        state.pending = _PendingMessage(
+            text=text,
+            context=context,
+            message_ts=result["ts"],
+            channel=channel,
+            thread_ts=thread_ts,
+        )
+
+    async def _run_and_drain(
+        self,
+        state: _SessionState,
+        session_key: str,
+        channel: str,
+        thread_ts: str,
+        text: str,
+        context: dict[str, str],
+        say: Any,
+    ) -> None:
+        """Stream the reply, then keep draining the pending slot (re-acquiring
+        the lock each iteration to read state safely) until it's empty or the
+        agent asks a question."""
+        status = await self._stream_response(
+            channel, thread_ts, session_key, text, context, say
+        )
+        while status != "waiting_for_answer":
+            async with state.lock:
+                if state.pending is None:
+                    state.processing = False
+                    return
+                pending = state.pending
+                state.pending = None
+
+            status = await self._stream_response(
+                pending.channel,
+                pending.thread_ts,
+                session_key,
+                pending.text,
+                pending.context,
+                say=None,
+                existing_message_ts=pending.message_ts,
+            )
+        async with state.lock:
+            state.waiting_for_answer = True
+            state.processing = False
+
+    async def _process_message(
         self, event: dict[str, Any], say: Any, client: Any
     ) -> None:
         channel = event.get("channel", "")
         user_id = event.get("user", "")
-        text = event.get("text", "")
         thread_ts = event.get("thread_ts") or event.get("ts", "")
 
         # Gate 0: channel allow-list. Reply with a fixed notice, then stop.
@@ -359,27 +468,7 @@ class SlackAdapter:
             )
             return
 
-        # Strip bot mention from text (e.g., "<@U12345> do something" → "do something")
-        text = re.sub(r"<@[A-Z0-9]+>\s*", "", text).strip()
-
-        # Append file/image info so the agent can decide whether to fetch them
-        files = event.get("files") or []
-        if files:
-            parts = []
-            for f in files:
-                name = f.get("name", "unknown")
-                mimetype = f.get("mimetype", "unknown")
-                url = f.get("url_private_download") or f.get("url_private") or ""
-                parts.append(f"- {name} ({mimetype}): {url}")
-            token = self._config.bot_token
-            hint = (
-                "[Slack attachments — download with: "
-                f'curl -H "Authorization: Bearer {token}" '
-                '"<url>" -o /tmp/<filename>]'
-            )
-            text = f"{text}\n\n{hint}\n" + "\n".join(parts)
-            text = text.strip()
-
+        text = self._prepare_text(event.get("text", ""), event)
         if not text:
             return
 
@@ -396,23 +485,8 @@ class SlackAdapter:
                 state.processing = True
             elif state.processing:
                 # Session busy — replace the pending slot (keep only latest)
-                context = await self._resolve_context(
-                    channel, user_id, thread_ts, client
-                )
-                result = await say(
-                    text=":hourglass: Waiting for previous task to finish...",
-                    thread_ts=thread_ts,
-                )
-                if state.pending is not None:
-                    await self._delete_message(
-                        state.pending.channel, state.pending.message_ts
-                    )
-                state.pending = _PendingMessage(
-                    text=text,
-                    context=context,
-                    message_ts=result["ts"],
-                    channel=channel,
-                    thread_ts=thread_ts,
+                await self._park_pending(
+                    state, channel, user_id, thread_ts, text, say, client
                 )
                 return
             else:
@@ -422,40 +496,9 @@ class SlackAdapter:
         # --- Processing happens outside the lock so new messages can queue ---
         try:
             context = await self._resolve_context(channel, user_id, thread_ts, client)
-            status = await self._stream_response(
-                channel, thread_ts, session_key, text, context, say
+            await self._run_and_drain(
+                state, session_key, channel, thread_ts, text, context, say
             )
-
-            if status == "waiting_for_answer":
-                async with state.lock:
-                    state.waiting_for_answer = True
-                    state.processing = False
-                return
-
-            # Drain pending (re-acquire lock each iteration to read state safely)
-            while True:
-                async with state.lock:
-                    if state.pending is None:
-                        state.processing = False
-                        return
-                    pending = state.pending
-                    state.pending = None
-
-                status = await self._stream_response(
-                    pending.channel,
-                    pending.thread_ts,
-                    session_key,
-                    pending.text,
-                    pending.context,
-                    say=None,
-                    existing_message_ts=pending.message_ts,
-                )
-
-                if status == "waiting_for_answer":
-                    async with state.lock:
-                        state.waiting_for_answer = True
-                        state.processing = False
-                    return
         except Exception:
             logger.exception("Error processing session %s", session_key)
             async with state.lock:
@@ -465,8 +508,7 @@ class SlackAdapter:
             if remaining is not None:
                 await self._delete_message(remaining.channel, remaining.message_ts)
 
-    # Complexity hotspot (26 > 10); refactor tracked separately.
-    async def _stream_response(  # noqa: C901
+    async def _stream_response(
         self,
         channel: str,
         thread_ts: str,
@@ -485,12 +527,14 @@ class SlackAdapter:
         Returns ``"waiting_for_answer"`` when the agent asked the user a
         question and the session should wait for a reply; ``None`` otherwise.
         """
-        message_ts = existing_message_ts
-        accumulated_text = ""
-        tool_status = ""
-        last_update_time = 0.0
-        pending_user_questions: list[dict[str, Any]] = []
-        completed = False
+        st = _RenderState(
+            channel=channel,
+            thread_ts=thread_ts,
+            session_key=session_key,
+            say=say,
+            existing_message_ts=existing_message_ts,
+            message_ts=existing_message_ts,
+        )
 
         async for event_obj in self._bridge.handle_message(
             session_key=session_key,
@@ -500,55 +544,11 @@ class SlackAdapter:
         ):
             match event_obj:
                 case Processing():
-                    logger.debug(
-                        "Session %s: Processing → posting initial message", session_key
-                    )
-                    if message_ts is None and say is not None:
-                        result = await say(
-                            text=":hourglass_flowing_sand: Processing...",
-                            thread_ts=thread_ts,
-                        )
-                        message_ts = result["ts"]
-                    elif message_ts is not None:
-                        await self._update_message(
-                            channel,
-                            message_ts,
-                            ":hourglass_flowing_sand: Processing...",
-                        )
-
+                    await self._render_processing(st)
                 case TextDelta(text=chunk):
-                    if accumulated_text:
-                        accumulated_text += "\n\n"
-                    accumulated_text += chunk
-                    now = time.monotonic()
-                    if now - last_update_time >= UPDATE_THROTTLE_SECONDS and message_ts:
-                        logger.debug(
-                            "Session %s: TextDelta → updating message (%d chars)",
-                            session_key,
-                            len(accumulated_text),
-                        )
-                        await self._update_message(
-                            channel,
-                            message_ts,
-                            accumulated_text + tool_status,
-                        )
-                        last_update_time = now
-
+                    await self._render_text_delta(st, chunk)
                 case StatusUpdate(status=status):
-                    tool_status = f"\n\n_{status}_"
-                    now = time.monotonic()
-                    if now - last_update_time >= UPDATE_THROTTLE_SECONDS and message_ts:
-                        logger.debug(
-                            "Session %s: StatusUpdate → %s", session_key, status
-                        )
-                        display = (
-                            accumulated_text + tool_status
-                            if accumulated_text
-                            else tool_status
-                        )
-                        await self._update_message(channel, message_ts, display)
-                        last_update_time = now
-
+                    await self._render_status(st, status)
                 case UserQuestion(questions=questions):
                     logger.info(
                         "Session %s: agent asked %d question(s), "
@@ -556,116 +556,156 @@ class SlackAdapter:
                         session_key,
                         len(questions),
                     )
-                    pending_user_questions = questions
-
+                    st.pending_user_questions = questions
                 case Completion(
                     text=final_text,
                     is_error=is_error,
                     usage=usage,
                     session_usage=session_usage,
                 ):
-                    completed = True
-                    if pending_user_questions:
-                        logger.debug(
-                            "Session %s: Completion with pending questions "
-                            "→ posting questions to Slack",
-                            session_key,
-                        )
-                        formatted = self._format_questions_for_slack(
-                            pending_user_questions
-                        )
-                        if message_ts:
-                            await self._update_message(
-                                channel,
-                                message_ts,
-                                formatted,
-                            )
-                        elif say is not None:
-                            await say(text=formatted, thread_ts=thread_ts)
-                        return "waiting_for_answer"
-
-                    logger.debug(
-                        "Session %s: Completion → final message (is_error=%s)",
-                        session_key,
-                        is_error,
+                    result = await self._render_completion(
+                        st, final_text, is_error, usage, session_usage
                     )
-                    # Ensure minimum gap since last Slack update to avoid rate limits
-                    elapsed = time.monotonic() - last_update_time
-                    if last_update_time and elapsed < UPDATE_THROTTLE_SECONDS:
-                        await asyncio.sleep(UPDATE_THROTTLE_SECONDS - elapsed)
+                    if result is not None:
+                        return result
 
-                    final = accumulated_text or final_text
-                    if is_error:
-                        if existing_message_ts is not None:
-                            # Pending message rejected by Bridge
-                            final = (
-                                ":x: Your queued message could not be "
-                                "processed — please try again shortly."
-                            )
-                        else:
-                            final = (
-                                ":no_entry: Too many requests being "
-                                "processed, please try again later."
-                            )
-                    if not final:
-                        final = "_No response from agent._"
-                    # The usage footer is metadata about the reply, not part of
-                    # it. Keep it out of both the upload-size decision and the
-                    # uploaded file, and always render it inline (it's tiny) so
-                    # it survives even when the body is truncated to a snippet.
-                    footer = (
-                        ""
-                        if is_error
-                        else self._build_usage_footer(usage, session_usage)
-                    )
-                    if _utf8_len(final) > SLACK_MSG_MAX_BYTES:
-                        uploaded = await self._upload_snippet(channel, thread_ts, final)
-                        notice = (
-                            "\n\n_… Full response uploaded as file below._"
-                            if uploaded
-                            else (
-                                "\n\n_… (response too long; upload failed — "
-                                "please retry)_"
-                            )
-                        )
-                        preview_budget = min(
-                            1000,
-                            SLACK_MSG_MAX_BYTES - _utf8_len(notice) - _utf8_len(footer),
-                        )
-                        short = (
-                            _truncate_to_bytes(final, preview_budget) + notice + footer
-                        )
-                        if message_ts:
-                            await self._update_message(channel, message_ts, short)
-                        elif say is not None:
-                            await say(text=short, thread_ts=thread_ts)
-                    elif message_ts:
-                        await self._update_message(channel, message_ts, final + footer)
-                    elif say is not None:
-                        await say(text=final + footer, thread_ts=thread_ts)
-
-        # Safety net: if stream ended without Completion, strip residual tool_status
-        if not completed and message_ts and accumulated_text:
-            logger.warning(
-                "Session %s: stream ended without Completion — cleaning up message",
-                session_key,
-            )
-            if _utf8_len(accumulated_text) > SLACK_MSG_MAX_BYTES:
-                uploaded = await self._upload_snippet(
-                    channel, thread_ts, accumulated_text
-                )
-                notice = (
-                    "\n\n_… Full response uploaded as file below._"
-                    if uploaded
-                    else "\n\n_… (response too long; upload failed — please retry)_"
-                )
-                preview_budget = min(1000, SLACK_MSG_MAX_BYTES - _utf8_len(notice))
-                short = _truncate_to_bytes(accumulated_text, preview_budget) + notice
-                await self._update_message(channel, message_ts, short)
-            else:
-                await self._update_message(channel, message_ts, accumulated_text)
-
+        await self._render_incomplete_tail(st)
         return None
+
+    async def _render_processing(self, st: _RenderState) -> None:
+        """Post (or reset) the placeholder message the stream renders into."""
+        logger.debug("Session %s: Processing → posting initial message", st.session_key)
+        if st.message_ts is None and st.say is not None:
+            result = await st.say(
+                text=":hourglass_flowing_sand: Processing...",
+                thread_ts=st.thread_ts,
+            )
+            st.message_ts = result["ts"]
+        elif st.message_ts is not None:
+            await self._update_message(
+                st.channel,
+                st.message_ts,
+                ":hourglass_flowing_sand: Processing...",
+            )
+
+    async def _render_text_delta(self, st: _RenderState, chunk: str) -> None:
+        if st.accumulated_text:
+            st.accumulated_text += "\n\n"
+        st.accumulated_text += chunk
+        await self._render_throttled(st, st.accumulated_text + st.tool_status)
+
+    async def _render_status(self, st: _RenderState, status: str) -> None:
+        st.tool_status = f"\n\n_{status}_"
+        display = (
+            st.accumulated_text + st.tool_status
+            if st.accumulated_text
+            else st.tool_status
+        )
+        await self._render_throttled(st, display)
+
+    async def _render_throttled(self, st: _RenderState, display: str) -> None:
+        """Update the placeholder at most once per throttle window."""
+        now = time.monotonic()
+        if now - st.last_update_time >= UPDATE_THROTTLE_SECONDS and st.message_ts:
+            logger.debug(
+                "Session %s: updating message (%d chars)",
+                st.session_key,
+                len(display),
+            )
+            await self._update_message(st.channel, st.message_ts, display)
+            st.last_update_time = now
+
+    async def _render_completion(
+        self,
+        st: _RenderState,
+        final_text: str,
+        is_error: bool,
+        usage: Usage | None,
+        session_usage: Usage | None,
+    ) -> str | None:
+        """Render the final reply (or the agent's questions). Returns
+        ``"waiting_for_answer"`` when the session should wait for a reply."""
+        st.completed = True
+        if st.pending_user_questions:
+            await self._post_questions(st)
+            return "waiting_for_answer"
+
+        logger.debug(
+            "Session %s: Completion → final message (is_error=%s)",
+            st.session_key,
+            is_error,
+        )
+        # Ensure minimum gap since last Slack update to avoid rate limits
+        elapsed = time.monotonic() - st.last_update_time
+        if st.last_update_time and elapsed < UPDATE_THROTTLE_SECONDS:
+            await asyncio.sleep(UPDATE_THROTTLE_SECONDS - elapsed)
+
+        final = st.accumulated_text or final_text
+        if is_error:
+            if st.existing_message_ts is not None:
+                # Pending message rejected by Bridge
+                final = (
+                    ":x: Your queued message could not be "
+                    "processed — please try again shortly."
+                )
+            else:
+                final = (
+                    ":no_entry: Too many requests being "
+                    "processed, please try again later."
+                )
+        if not final:
+            final = "_No response from agent._"
+        # The usage footer is metadata about the reply, not part of it. Keep
+        # it out of both the upload-size decision and the uploaded file, and
+        # always render it inline (it's tiny) so it survives even when the
+        # body is truncated to a snippet.
+        footer = "" if is_error else self._build_usage_footer(usage, session_usage)
+        await self._post_final(st, final, footer)
+        return None
+
+    async def _post_questions(self, st: _RenderState) -> None:
+        logger.debug(
+            "Session %s: Completion with pending questions "
+            "→ posting questions to Slack",
+            st.session_key,
+        )
+        formatted = self._format_questions_for_slack(st.pending_user_questions)
+        if st.message_ts:
+            await self._update_message(st.channel, st.message_ts, formatted)
+        elif st.say is not None:
+            await st.say(text=formatted, thread_ts=st.thread_ts)
+
+    async def _post_final(self, st: _RenderState, text: str, footer: str = "") -> None:
+        """Deliver the final body, uploading it as a snippet with a short
+        inline preview when it exceeds the Slack message ceiling."""
+        if _utf8_len(text) > SLACK_MSG_MAX_BYTES:
+            uploaded = await self._upload_snippet(st.channel, st.thread_ts, text)
+            notice = (
+                "\n\n_… Full response uploaded as file below._"
+                if uploaded
+                else "\n\n_… (response too long; upload failed — please retry)_"
+            )
+            preview_budget = min(
+                1000,
+                SLACK_MSG_MAX_BYTES - _utf8_len(notice) - _utf8_len(footer),
+            )
+            text = _truncate_to_bytes(text, preview_budget) + notice
+        text += footer
+        if st.message_ts:
+            await self._update_message(st.channel, st.message_ts, text)
+        elif st.say is not None:
+            await st.say(text=text, thread_ts=st.thread_ts)
+
+    async def _render_incomplete_tail(self, st: _RenderState) -> None:
+        """Safety net: if the stream ended without Completion, strip residual
+        tool status from the message."""
+        if st.completed or not st.message_ts or not st.accumulated_text:
+            return
+        logger.warning(
+            "Session %s: stream ended without Completion — cleaning up message",
+            st.session_key,
+        )
+        await self._post_final(st, st.accumulated_text)
 
     def _build_usage_footer(
         self, usage: Usage | None, session_usage: Usage | None

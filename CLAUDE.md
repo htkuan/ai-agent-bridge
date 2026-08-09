@@ -110,8 +110,8 @@ src/agent_bridge/
 - **Ruff** enforces lint + format (config: `pyproject.toml` `[tool.ruff]`; the CI
   lint job and pre-commit hooks run the same checks). Before committing:
   `uv run ruff check --fix && uv run ruff format`
-- Complexity is gated at C901 = 10 for new code. A few existing hotspots carry
-  `# noqa: C901` — don't add new ones; refactor instead.
+- Complexity is gated at C901 = 10 — no exemptions: the last `# noqa: C901`
+  hotspots were refactored away. Decompose instead of suppressing.
 - Suppress a rule only with a targeted `# noqa: <code>` plus a one-line reason
   (see the `assert`/S101 narrowing sites) — never blanket-disable in config.
 - **Pyright strict** on `src/` (`uv run pyright`). slack-bolt is untyped: its

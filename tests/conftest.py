@@ -12,6 +12,22 @@ from tests.fakes.claude_cli import FakeClaudeCLI, Step
 
 type FakeClaudeFactory = Callable[..., FakeClaudeCLI]
 
+_E2E_DIR = Path(__file__).parent / "e2e"
+_LAYER_MARKERS = ("unit", "integration", "e2e")
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Auto-apply layer markers: tests/e2e/ → ``e2e``; unmarked → ``unit``.
+
+    ``integration`` is declared per module (``pytestmark``) where tests cross
+    a process boundary, e.g. spawning the scripted claude CLI.
+    """
+    for item in items:
+        if _E2E_DIR in item.path.parents:
+            item.add_marker(pytest.mark.e2e)
+        elif not any(item.get_closest_marker(name) for name in _LAYER_MARKERS):
+            item.add_marker(pytest.mark.unit)
+
 
 @pytest.fixture
 def fake_claude(tmp_path: Path) -> FakeClaudeFactory:

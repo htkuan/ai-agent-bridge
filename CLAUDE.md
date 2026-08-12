@@ -161,9 +161,12 @@ src/agent_bridge/
   Full design: `docs/testing.md`.
 - Async tests run automatically (`asyncio_mode = "auto"`)
 - Test naming: `test_{feature}_{scenario}`
+- Every test carries a layer marker (`unit` / `integration` / `e2e`) — mostly
+  auto-applied; see `docs/testing.md`. CI runs `-m "not e2e"` across the
+  version matrix and the e2e scenarios in a separate 3.12-only job.
 - Coverage runs on every pytest invocation (`addopts` in pyproject.toml) and
-  gates at `fail_under = 75` — a ratchet floor at the measured baseline, raised
-  as coverage improves, never lowered. A partial run (single file, `-k`)
+  gates at `fail_under = 98` — a ratchet floor at the measured baseline, raised
+  as coverage improves, never lowered. A partial run (single file, `-k`, `-m`)
   undercounts coverage and trips the gate; add `--no-cov` for those.
 
 ### Commits

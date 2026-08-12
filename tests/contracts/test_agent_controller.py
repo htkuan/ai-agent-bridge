@@ -19,6 +19,9 @@ from tests.fakes import FakeAgentController, claude_cli
 
 type ControllerFactory = Callable[..., AgentController]
 
+# The "claude" parametrization drives a real CLI subprocess.
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture(params=["claude", "fake"])
 def make_controller(

@@ -14,6 +14,9 @@ from agent_bridge.events import Completion, StatusUpdate, TextDelta
 from tests.conftest import FakeClaudeFactory
 from tests.fakes import claude_cli
 
+# Every test here drives a real CLI subprocess through ClaudeController.
+pytestmark = pytest.mark.integration
+
 
 def _config(
     work_dir: Path,

@@ -95,5 +95,13 @@ sync with what `agents/claude/events.py` parses.
   `include`; new test code should be type-clean even where not gated.
 - **Legacy style**: older tests using `MagicMock` / `__new__` bypasses are
   migrated opportunistically when touched — new tests use the fakes.
+- **Markers**: every test carries a layer marker. `e2e` is auto-applied to
+  `tests/e2e/` and `unit` to anything unmarked (both in `tests/conftest.py`);
+  `integration` is declared per module (`pytestmark`) where tests cross a
+  process boundary, e.g. spawning the scripted CLI. Select layers with `-m`
+  (`uv run pytest -m "not e2e"`). Markers are registered in `pyproject.toml`
+  and `--strict-markers` rejects typos.
 - **Running**: `uv run pytest -q` (full suite, coverage gate applies);
-  single files need `--no-cov`.
+  single files or `-m` subsets need `--no-cov`. In CI the version matrix runs
+  `-m "not e2e"` with the coverage gate; a separate 3.12-only job runs the
+  e2e scenarios without coverage.

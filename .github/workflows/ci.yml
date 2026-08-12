@@ -71,4 +71,27 @@ jobs:
         run: uv sync --locked
 
       - name: Run tests
-        run: uv run pytest
+        # e2e scenarios run in their own 3.12-only job below. The coverage
+        # gate (fail_under) is enforced here, on the unit+integration subset.
+        run: uv run pytest -m "not e2e"
+
+  test-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Run e2e scenarios
+        # Full-stack scenarios spawn real subprocesses and are timing
+        # sensitive; one interpreter gives enough signal. Coverage is owned
+        # by the `test` job — the e2e subset alone would trip fail_under.
+        run: uv run pytest -m e2e --no-cov

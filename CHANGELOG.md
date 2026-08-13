@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.4.1 (2026-08-13)
+
+### Bug Fixes
+
+- **slack**: Name the missing OAuth scope in resolution warnings
+  ([`89e5279`](https://github.com/htkuan/ai-agent-bridge/commit/89e52798fa6bf5b19113aba86f4981b62a19eb79))
+
+### Documentation
+
+- **slack**: Document the scopes conversations.info needs
+  ([`53b911b`](https://github.com/htkuan/ai-agent-bridge/commit/53b911bdce4091775e4a18189e94321806a2b677))
+
+
 ## v0.4.0 (2026-08-13)
 
 ### Build System

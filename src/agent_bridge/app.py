@@ -107,6 +107,11 @@ async def _periodic_cleanup(
 
 async def run(config: AppConfig) -> None:
     """Build the whole system from ``config`` and supervise it until shutdown."""
+    # Value checks already ran on construction; this is the startup-only probe
+    # of the world the config points at. Here rather than in ``from_env`` so a
+    # programmatically built config gets the same fail-fast guarantee.
+    config.claude.check_prerequisites()
+
     logger.info("Claude work dir: %s", config.claude.work_dir)
     logger.info("Permission mode: %s", config.claude.permission_mode)
     logger.info("Session TTL: %s hours", config.bridge.session.ttl_hours)

@@ -10,6 +10,7 @@ the process environment (and stay immune to a developer's local ``.env``).
 
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Mapping
 from pathlib import Path
@@ -71,9 +72,15 @@ def env_float(env: Env, name: str, default: float) -> float:
     if not raw:
         return default
     try:
-        return float(raw)
+        value = float(raw)
     except ValueError:
         raise ValueError(f"{name} must be a number, got {raw!r}") from None
+    # nan/inf parse fine but slip through every `<= 0` range check downstream
+    # (nan compares False against everything), surfacing much later as an
+    # opaque failure deep inside a component. Reject them at the boundary.
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be a finite number, got {raw!r}")
+    return value
 
 
 def env_path(env: Env, name: str, default: str) -> Path:

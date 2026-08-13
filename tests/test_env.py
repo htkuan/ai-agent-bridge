@@ -96,6 +96,14 @@ def test_float_rejects_non_number():
         env_float({"X": "abc"}, "X", 1.0)
 
 
+@pytest.mark.parametrize("raw", ["nan", "inf", "-inf", "1e400"])
+def test_float_rejects_non_finite(raw: str):
+    # nan/inf parse fine but slip through every `<= 0` range check downstream
+    # (nan compares False against everything), so they must die at the boundary.
+    with pytest.raises(ValueError, match="must be a finite number"):
+        env_float({"X": raw}, "X", 1.0)
+
+
 # --- env_path / env_csv ---
 
 

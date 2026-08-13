@@ -108,6 +108,12 @@ def test_effort_rejects_invalid(tmp_path: Path):
         ClaudeConfig(work_dir=tmp_path, effort="ultra")
 
 
+def test_work_dir_is_required(tmp_path: Path):
+    # No default: forgetting it must not silently fall back to the cwd.
+    with pytest.raises(TypeError, match="work_dir"):
+        ClaudeConfig()  # pyright: ignore[reportCallIssue]
+
+
 def test_validation_also_fires_through_from_env(tmp_path: Path):
     with pytest.raises(ValueError, match="AGENT_BRIDGE_CLAUDE_EFFORT"):
         ClaudeConfig.from_env(
@@ -118,7 +124,7 @@ def test_validation_also_fires_through_from_env(tmp_path: Path):
         )
 
 
-# --- check_prerequisites: probes the world, only from_env runs it ---
+# --- check_prerequisites: probes the world, run once by app.run() ---
 
 
 def test_construction_does_not_probe_the_filesystem(tmp_path: Path):
@@ -127,9 +133,17 @@ def test_construction_does_not_probe_the_filesystem(tmp_path: Path):
     assert config.worktree_enabled is True
 
 
-def test_missing_work_dir_rejected_at_startup(tmp_path: Path):
+def test_parsing_does_not_probe_the_filesystem(tmp_path: Path):
+    # from_env parses; app.run() probes. A missing dir survives the parse.
+    config = ClaudeConfig.from_env(
+        {"AGENT_BRIDGE_CLAUDE_WORK_DIR": str(tmp_path / "nope")}
+    )
+    assert config.work_dir == (tmp_path / "nope").resolve()
+
+
+def test_missing_work_dir_rejected_by_the_probe(tmp_path: Path):
     with pytest.raises(ValueError, match="does not exist"):
-        ClaudeConfig.from_env({"AGENT_BRIDGE_CLAUDE_WORK_DIR": str(tmp_path / "nope")})
+        ClaudeConfig(work_dir=tmp_path / "nope").check_prerequisites()
 
 
 @pytest.mark.integration
@@ -154,5 +168,6 @@ def test_worktree_prereqs_pass_with_origin_head(tmp_path: Path):
             "AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED": "true",
         }
     )
+    config.check_prerequisites()  # must not raise
     assert config.worktree_enabled is True
     assert config.work_dir == repo.resolve()

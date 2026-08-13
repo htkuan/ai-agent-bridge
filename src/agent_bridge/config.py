@@ -22,8 +22,10 @@ DEFAULT_CLEANUP_INTERVAL_SECONDS = 3600.0
 
 @dataclass(frozen=True)
 class AppConfig:
+    # No default: an app without an agent isn't runnable, and ClaudeConfig's
+    # work_dir has no safe default to fall back to.
+    claude: ClaudeConfig
     bridge: BridgeConfig = field(default_factory=BridgeConfig)
-    claude: ClaudeConfig = field(default_factory=ClaudeConfig)
     # None ⇒ that platform is not configured; app.py skips building it.
     slack: SlackConfig | None = None
     heartbeat: HeartbeatConfig | None = None
@@ -43,8 +45,8 @@ class AppConfig:
             load_env_file()
             env = PROCESS_ENV
         return cls(
-            bridge=BridgeConfig.from_env(env),
             claude=ClaudeConfig.from_env(env),
+            bridge=BridgeConfig.from_env(env),
             slack=SlackConfig.from_env_optional(env),
             heartbeat=HeartbeatConfig.from_env_optional(env),
             log_level=env_str(env, "AGENT_BRIDGE_LOG_LEVEL", "INFO").upper(),

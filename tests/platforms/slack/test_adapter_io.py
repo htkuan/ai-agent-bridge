@@ -134,6 +134,23 @@ async def test_upload_snippet_returns_false_on_error():
     assert ok is False
 
 
+async def test_inline_ceiling_follows_config_not_the_module_default():
+    """A body well under DEFAULT_MSG_MAX_BYTES must still upload when this
+    adapter's configured ceiling is lower — pins that the adapter reads the
+    config field rather than the constant it was extracted from."""
+    adapter = _make_adapter()
+    adapter._config = SlackConfig(bot_token="x", app_token="y", msg_max_bytes=200)
+    adapter._bridge = _FakeBridge([Completion(text="A" * 500)])
+
+    await adapter._stream_response(
+        "C1", "1.0", "slack:C1:1.0", "hi", {}, say=None, existing_message_ts="1.0"
+    )
+
+    adapter._app.client.files_upload_v2.assert_awaited_once()
+    inline = adapter._app.client.chat_update.await_args.kwargs["text"]
+    assert len(inline.encode("utf-8")) <= 200
+
+
 # --- Usage footer x long-reply upload interaction ---
 
 

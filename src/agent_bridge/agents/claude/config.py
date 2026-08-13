@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from agent_bridge.env import (
@@ -28,7 +28,9 @@ VALID_EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
 
 @dataclass(frozen=True)
 class ClaudeConfig:
-    work_dir: Path = field(default_factory=Path.cwd)
+    # Required on purpose: this is the directory the agent gets loose in, and
+    # every plausible default (cwd, home) is a directory it should not touch.
+    work_dir: Path
     permission_mode: str = "acceptEdits"
     timeout_seconds: float = 600.0
     worktree_enabled: bool = False
@@ -40,7 +42,7 @@ class ClaudeConfig:
 
     @classmethod
     def from_env(cls, env: Env = PROCESS_ENV) -> ClaudeConfig:
-        config = cls(
+        return cls(
             work_dir=env_path(env, "AGENT_BRIDGE_CLAUDE_WORK_DIR", ".").resolve(),
             permission_mode=env_str(
                 env, "AGENT_BRIDGE_CLAUDE_PERMISSION_MODE", "acceptEdits"
@@ -54,8 +56,6 @@ class ClaudeConfig:
             effort=env_str(env, "AGENT_BRIDGE_CLAUDE_EFFORT", "xhigh"),
             cli_path=env_str(env, "AGENT_BRIDGE_CLAUDE_CLI_PATH", "claude"),
         )
-        config.check_prerequisites()
-        return config
 
     def _validate(self) -> None:
         """Value checks only — runs on every construction, including tests."""
@@ -82,7 +82,7 @@ class ClaudeConfig:
         """Probe the world the config points at — the work dir must exist, and
         worktree mode needs a git repo with a resolvable origin/HEAD. Separate
         from ``_validate`` so constructing a config stays cheap and side-effect
-        free; ``from_env`` runs it so startup still fails fast.
+        free. ``app.run`` calls it once at startup, whatever built the config.
         """
         if not self.work_dir.is_dir():
             raise ValueError(

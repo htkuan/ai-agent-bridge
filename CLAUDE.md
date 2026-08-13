@@ -177,8 +177,12 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 - **Validation**: `_validate()` is called from `__post_init__`, so *every* construction
   path is checked — including configs built directly in tests. It does value checks only.
 - **Prerequisite probes**: checks that touch the filesystem, git or the network go in
-  `check_prerequisites()`, called only by `from_env()`. Startup still fails fast; holding
-  a config in memory stays cheap and side-effect free.
+  `check_prerequisites()`, which `app.run()` calls once at startup — so the fail-fast
+  guarantee holds however the config was built, while parsing and holding a config in
+  memory stay cheap and side-effect free.
+- **No default for a dangerous field**: `ClaudeConfig.work_dir` (and therefore
+  `AppConfig.claude`) is required. A config that must be set is better than one that
+  silently falls back to the process's cwd.
 - **Defaults live in the dataclass**, and `from_env` must pass the same default to its
   reader. A `Config.from_env({}) == Config()` test guards the drift.
 - Knobs that aren't user-facing (Slack's render throttle and message ceiling, the app's
@@ -244,7 +248,7 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 
 ### Adding a new agent
 
-1. Create `agents/{name}/config.py` — config with `from_env(env)` + `_validate()` (called from `__post_init__`), parsing through `agent_bridge/env.py`; put any filesystem/git probes in `check_prerequisites()`
+1. Create `agents/{name}/config.py` — config with `from_env(env)` + `_validate()` (called from `__post_init__`), parsing through `agent_bridge/env.py`; put any filesystem/git probes in `check_prerequisites()` and call it from `app.run()`
 2. Create `agents/{name}/controller.py` — implements `AgentController` protocol
 3. Create `agents/{name}/events.py` — parse agent output → `BridgeEvent`s
 4. `run()` yields only generic `BridgeEvent`s — agent-internal events stay internal

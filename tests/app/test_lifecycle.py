@@ -146,6 +146,27 @@ async def test_run_starts_adapters_and_stops_on_sigterm(
 # --- main(): the only place the environment is read ---
 
 
+async def test_run_probes_prerequisites_before_starting_anything(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The startup probe must run whatever built the config — from_env only
+    parses, so run() is what guarantees a bad work_dir never reaches an adapter.
+    """
+    fake = FakePlatformAdapter()
+    monkeypatch.setattr(
+        app, "_build_adapters", lambda config, bridge, sm: (None, [fake])
+    )
+    config = AppConfig(claude=ClaudeConfig(work_dir=tmp_path / "gone"))
+
+    # Bounded: without the probe, run() reaches `await shutdown_event.wait()`
+    # and this test would hang forever instead of failing.
+    with pytest.raises(ValueError, match="does not exist"):
+        async with asyncio.timeout(5):
+            await app.run(config)
+
+    assert fake.started == 0
+
+
 def test_configure_logging_sets_the_level(monkeypatch: pytest.MonkeyPatch):
     seen: list[object] = []
     monkeypatch.setattr(

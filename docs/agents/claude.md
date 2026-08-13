@@ -54,8 +54,12 @@ The process runs, streams events via stdout, and exits. Session continuity is ha
 Validation happens in two stages. `_validate()` runs on every construction and checks
 values only (permission mode, effort level, positive timeout, non-empty CLI path).
 `check_prerequisites()` probes the world — the work dir must exist, and worktree mode needs
-a git repo with a resolvable `origin/HEAD` — and only `from_env()` calls it, so startup
-still fails fast while a directly constructed config stays cheap and side-effect free.
+a git repo with a resolvable `origin/HEAD`. `app.run()` calls it once at startup, so the
+fail-fast guarantee holds whatever built the config, while parsing and construction stay
+cheap and side-effect free.
+
+`work_dir` is deliberately required (no default): it is the directory the agent gets loose
+in, and every plausible fallback — cwd, home — is a directory it should not touch.
 
 ### Worktree Mode
 

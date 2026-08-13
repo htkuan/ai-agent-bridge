@@ -174,6 +174,14 @@ class _RenderState:
     completed: bool = False
 
 
+def _api_error_detail(e: SlackApiError) -> str:
+    """Slack names the missing OAuth scope in ``needed`` — surface it so the
+    operator knows which scope to add instead of just seeing `missing_scope`."""
+    error = str(e.response["error"])
+    needed = e.response.get("needed")
+    return f"{error} (add bot token scope: {needed})" if needed else error
+
+
 class SlackInfoCache:
     """Cache for Slack workspace, channel, and user display names."""
 
@@ -195,7 +203,7 @@ class SlackInfoCache:
                 logger.warning(
                     "Failed to resolve channel name for %s: %s",
                     channel,
-                    e.response["error"],
+                    _api_error_detail(e),
                 )
                 self.channels[channel] = channel
         return self.channels[channel]
@@ -211,7 +219,7 @@ class SlackInfoCache:
                 self.workspace = team_info["team"].get("name", "")
             except SlackApiError as e:
                 logger.warning(
-                    "Failed to resolve workspace name: %s", e.response["error"]
+                    "Failed to resolve workspace name: %s", _api_error_detail(e)
                 )
 
         channel_name = await self.resolve_channel(channel, client)
@@ -227,7 +235,7 @@ class SlackInfoCache:
                 logger.warning(
                     "Failed to resolve user name for %s: %s",
                     user_id,
-                    e.response["error"],
+                    _api_error_detail(e),
                 )
                 self.users[user_id] = user_id
 

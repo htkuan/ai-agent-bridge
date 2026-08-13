@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from agent_bridge.platforms.slack.adapter import SlackInfoCache
 from tests.fakes import FakeSlackClient
 
@@ -39,6 +41,28 @@ async def test_resolve_channel_api_error_falls_back_to_id_and_caches():
     # The fallback is cached: no retry on the next lookup.
     assert await cache.resolve_channel("C1", client) == "C1"
     assert len(client.calls_to("conversations_info")) == 1
+
+
+async def test_resolve_channel_missing_scope_warning_names_the_needed_scope(caplog):
+    cache = SlackInfoCache()
+    client = _client()
+    client.fail_next["conversations_info"] = {
+        "error": "missing_scope",
+        "needed": "channels:read",
+    }
+    with caplog.at_level(logging.WARNING):
+        assert await cache.resolve_channel("C1", client) == "C1"
+    assert "missing_scope (add bot token scope: channels:read)" in caplog.text
+
+
+async def test_resolve_error_without_needed_scope_logs_the_bare_code(caplog):
+    cache = SlackInfoCache()
+    client = _client()
+    client.fail_next["users_info"] = "user_not_found"
+    with caplog.at_level(logging.WARNING):
+        await cache.resolve("C1", "U1", client)
+    assert "user_not_found" in caplog.text
+    assert "add bot token scope" not in caplog.text
 
 
 # --- resolve ---

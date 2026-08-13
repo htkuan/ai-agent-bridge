@@ -22,7 +22,8 @@ class FakeSlackClient:
 
     Queue an error with ``fail_next["chat_update"] = "ratelimited"`` — the
     next call of that method raises ``SlackApiError`` (once) with that error
-    code in its response.
+    code in its response. Pass a dict instead of a code to control the whole
+    error payload, e.g. ``{"error": "missing_scope", "needed": "channels:read"}``.
     """
 
     def __init__(
@@ -40,18 +41,18 @@ class FakeSlackClient:
         self.calls: list[SlackCall] = []
         self.messages: dict[tuple[str, str], str] = {}  # (channel, ts) -> text
         self.uploads: list[dict[str, Any]] = []
-        self.fail_next: dict[str, str] = {}  # method -> slack error code
+        # method -> slack error code, or a full error payload
+        self.fail_next: dict[str, str | dict[str, Any]] = {}
         self._seq = 0
 
     # -- helpers ---------------------------------------------------------
 
     def _record(self, method: str, kwargs: dict[str, Any]) -> None:
         self.calls.append(SlackCall(method, kwargs))
-        code = self.fail_next.pop(method, None)
-        if code is not None:
-            raise SlackApiError(
-                f"{method} failed", response={"ok": False, "error": code}
-            )
+        failure = self.fail_next.pop(method, None)
+        if failure is not None:
+            payload = {"error": failure} if isinstance(failure, str) else failure
+            raise SlackApiError(f"{method} failed", response={"ok": False, **payload})
 
     def _next_ts(self) -> str:
         self._seq += 1

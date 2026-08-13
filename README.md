@@ -55,6 +55,10 @@ See [Environment Variables](#environment-variables) for the full list.
 2. Enable **Socket Mode** → generate an App-Level Token (`xapp-...`)
 3. Add **Bot Token Scopes** (OAuth & Permissions):
    - `app_mentions:read`, `chat:write`, `files:write`, `im:history`, `im:read`
+   - `channels:read`, `users:read`, `team:read` — name lookups for the agent's
+     context and the channel allow-list (add `groups:read` / `mpim:read` for
+     private channels / group DMs). Missing these logs `missing_scope` warnings;
+     see [docs/platforms/slack.md](docs/platforms/slack.md#troubleshooting)
 4. Subscribe to **Events**:
    - `app_mention`, `message.im`
 5. Install to workspace → copy Bot User OAuth Token (`xoxb-...`)

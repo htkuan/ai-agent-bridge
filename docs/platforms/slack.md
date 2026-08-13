@@ -28,6 +28,17 @@ Under **OAuth & Permissions**, add these Bot Token Scopes:
 | `files:write` | Upload file snippets when response exceeds message length limit |
 | `im:history` | Read DM message history |
 | `im:read` | Access DM channels |
+| `channels:read` | Resolve public channel names (`conversations.info`) |
+| `groups:read` | Same, for private channels — only if the bot is invited to any |
+| `mpim:read` | Same, for group DMs |
+| `users:read` | Resolve sender display names (`users.info`) |
+| `team:read` | Resolve the workspace name (`team.info`) |
+
+The last five feed the context the agent receives (workspace / `#channel` / speaker
+name) and the channel allow-list. Without them the adapter logs a
+`missing_scope` warning per lookup and falls back to raw IDs — see
+[Troubleshooting](#troubleshooting). After adding scopes, **reinstall the app**;
+tokens issued earlier do not gain new scopes.
 
 ### 4. Event Subscriptions
 
@@ -76,7 +87,7 @@ AGENT_BRIDGE_SLACK_ALLOW_CHANNELS=ops-alerts,team-eng,incidents
 - `AGENT_BRIDGE_SLACK_CHANNEL_NOT_ALLOWED_MESSAGE` overrides that reply text; it defaults to a fixed English notice.
 - **DMs are also gated.** A DM has no channel name (it falls back to the channel ID), so it never matches a name in the list — meaning a non-empty allow-list blocks all DMs. Leave the list empty if you want DMs to keep working.
 
-The gate runs first in `_process_message`, resolving the channel name via the cached `conversations:info` lookup, so it costs at most one API call per distinct channel.
+The gate runs first in `_process_message`, resolving the channel name via the cached `conversations:info` lookup, so it costs at most one API call per distinct channel. That lookup needs `channels:read` (see [Bot Token Scopes](#3-bot-token-scopes)) — without it the name resolution fails and **every** channel is rejected, allow-listed or not. See [Troubleshooting](#troubleshooting).
 
 ### Optional: Usage / Cost Report
 
@@ -275,6 +286,21 @@ The adapter resolves display names for Slack entities and uses them to build the
 | `bot_user_id` | `auth.test()` API at startup | The bot's own Slack user ID — surfaced as `Your Slack mention: <@U…>` so the agent can detect when users @-mention it |
 
 All resolutions are cached by `SlackInfoCache` to avoid repeated API calls. The bot user ID is fetched once during `start()` and reused for every request. The bot's display name is intentionally not surfaced — the Slack app's name and the AI agent's persona are independent concerns.
+
+Every lookup degrades rather than fails: on `SlackApiError` the adapter logs a warning, substitutes the raw ID (or `""` for the workspace), and carries on. The fallback is cached too, so a failing lookup costs one API call per entity, not one per message — but it also means fixing the token requires a restart to re-resolve.
+
+## Troubleshooting
+
+### `Failed to resolve channel name for C…: missing_scope`
+
+The bot token lacks the scope `conversations.info` needs for that conversation type — `channels:read` for public channels, `groups:read` for private ones, `mpim:read` for group DMs. Add the missing scope under **OAuth & Permissions**, **reinstall the app** to issue a new token, then restart the bridge. The warning text names the scope Slack asked for (`add bot token scope: …`).
+
+Two consequences while the scope is missing:
+
+- The agent's system prompt carries `Channel: C0123ABC` instead of `Channel: #ops-alerts` — degraded context, everything else still works.
+- **If `AGENT_BRIDGE_SLACK_ALLOW_CHANNELS` is set, the gate rejects every channel.** The allow-list matches on names; with resolution failing, the name falls back to the channel ID, which never matches a listed name, so allowed channels get the "not available in this channel" reply. Look for `Rejecting message from non-allowed channel` alongside the warning.
+
+The sibling warnings behave the same way: `Failed to resolve workspace name` wants `team:read`, `Failed to resolve user name` wants `users:read`.
 
 ### Prompt prefix and system prompt
 

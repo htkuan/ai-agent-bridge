@@ -72,10 +72,14 @@ If you see the `Heartbeat adapter enabled` line but no `Heartbeat tick:` line wi
 
 | Variable | Required | Default | Notes |
 |----------|----------|---------|-------|
-| `AGENT_BRIDGE_HEARTBEAT_ENABLED` | No | `false` | Master switch — anything other than the literal string `true` (case-insensitive) keeps it off |
+| `AGENT_BRIDGE_HEARTBEAT_ENABLED` | No | `false` | Master switch — `true`/`1`/`yes`/`on` enable it, `false`/`0`/`no`/`off` keep it off, anything else is rejected at startup |
 | `AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES` | Yes (if enabled) | — | Must be `> 0`. The smallest sensible value is whatever ensures the agent can finish well under one interval |
 | `AGENT_BRIDGE_HEARTBEAT_PROMPT` | Yes (if enabled) | — | Fixed string sent each tick. No templating |
 | `AGENT_BRIDGE_HEARTBEAT_STATE_PATH` | No | `./heartbeat.json` | Path to the JSON file that stores `last_run` |
+
+`HeartbeatConfig` exists only when the platform is on: `AppConfig.heartbeat` is `None`
+when disabled, so a constructed config is always a runnable one (`interval_minutes` and
+`prompt` are required and always validated).
 
 ## Session Model
 

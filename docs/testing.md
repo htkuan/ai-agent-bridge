@@ -40,6 +40,8 @@ tests/
 ├── contracts/               # real implementation and its fake run the same suite
 │   ├── test_agent_controller.py
 │   └── test_message_router.py
+├── test_env.py              # the typed env readers
+├── test_config.py           # AppConfig — the aggregate app.py builds from
 ├── app/                     # app.py wiring + lifecycle
 ├── bridge/                  # router.py, session.py, dedupe.py, config.py (core layer)
 ├── agents/claude/           # controller + stream-json parser
@@ -61,6 +63,24 @@ tests/
 
 Real, cheap components are used directly instead of doubled: `SessionManager`
 (against `tmp_path`), `PromptDedupeCache`, and the event dataclasses.
+
+## Configuration in tests
+
+Tests never set environment variables to change behaviour — they construct the
+component's config object and pass it in. Validation runs on construction
+(`__post_init__`), so a config built in a test is checked exactly like one read
+from the environment.
+
+Env parsing is covered on its own, per config class, in the `test_config.py`
+modules. Those call `from_env({...})` with an explicit mapping, which keeps them
+hermetic — the process environment and any local `.env` are out of the picture:
+
+```python
+config = ClaudeConfig.from_env({"AGENT_BRIDGE_CLAUDE_WORK_DIR": str(tmp_path)})
+```
+
+Each config class also carries a `from_env({}) == Config()` test, so an env
+default can't drift away from its dataclass default.
 
 ## The fake claude CLI
 

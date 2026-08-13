@@ -47,7 +47,9 @@ AGENT_BRIDGE_SLACK_APP_TOKEN=xapp-your-app-level-token
 AGENT_BRIDGE_CLAUDE_WORK_DIR=/path/to/your/project
 ```
 
-See [Environment Variables](#environment-variables) for the full list.
+See [Environment Variables](#environment-variables) for the full list. Every variable is
+read in one place — `AppConfig.from_env()` walks each layer's `{Component}Config.from_env()`,
+and the whole app is then built from that single `AppConfig`.
 
 ### Slack App Setup
 

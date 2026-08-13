@@ -51,7 +51,11 @@ The process runs, streams events via stdout, and exits. Session continuity is ha
 | `bypassPermissions` | Bypass permission checks |
 | `dangerously-skip-permissions` | Skip all permission checks (uses `--dangerously-skip-permissions` flag instead of `--permission-mode`) |
 
-Validation happens at startup — invalid modes raise `ValueError`.
+Validation happens in two stages. `_validate()` runs on every construction and checks
+values only (permission mode, effort level, positive timeout, non-empty CLI path).
+`check_prerequisites()` probes the world — the work dir must exist, and worktree mode needs
+a git repo with a resolvable `origin/HEAD` — and only `from_env()` calls it, so startup
+still fails fast while a directly constructed config stays cheap and side-effect free.
 
 ### Worktree Mode
 
@@ -243,6 +247,6 @@ Use the Claude agent as a reference. An agent controller must:
    - Yield `UserQuestion` if you need user input
    - Always yield exactly one `Completion` at the end (success or error)
 
-5. **Create a config** — `{Name}Config` with `from_env()` classmethod and `_validate()` method
+5. **Create a config** — `{Name}Config` with a `from_env(env)` classmethod (parsing through `agent_bridge/env.py`) and a `_validate()` called from `__post_init__`
 
 The bridge and platform adapters require zero changes.

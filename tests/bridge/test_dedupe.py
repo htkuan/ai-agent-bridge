@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from agent_bridge.dedupe import (
+from agent_bridge.bridge.dedupe import (
     PromptDedupeCache,
     canonicalize,
     hamming,

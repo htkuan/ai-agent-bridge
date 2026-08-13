@@ -17,7 +17,7 @@ except ImportError:
         "Install them with: pip install ai-agent-bridge[slack]"
     ) from None
 
-from agent_bridge.events import (
+from agent_bridge.bridge.events import (
     Completion,
     Processing,
     StatusUpdate,
@@ -25,9 +25,9 @@ from agent_bridge.events import (
     Usage,
     UserQuestion,
 )
+from agent_bridge.bridge.protocols import MessageRouter
+from agent_bridge.bridge.session import SessionManager
 from agent_bridge.platforms.slack.config import SlackConfig, normalize_channel
-from agent_bridge.protocols import MessageRouter
-from agent_bridge.session import SessionManager
 
 logger = logging.getLogger(__name__)
 

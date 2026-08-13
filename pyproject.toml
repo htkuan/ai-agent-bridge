@@ -26,7 +26,7 @@ all = ["ai-agent-bridge[slack]"]
 Repository = "https://github.com/htkuan/ai-agent-bridge"
 
 [project.scripts]
-agent-bridge = "agent_bridge:main_sync"
+agent-bridge = "agent_bridge.app:main_sync"
 
 [dependency-groups]
 dev = [

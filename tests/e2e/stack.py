@@ -18,11 +18,11 @@ from pathlib import Path
 from typing import Any
 
 from agent_bridge.agents.claude.controller import ClaudeController
-from agent_bridge.bridge import Bridge
-from agent_bridge.dedupe import PromptDedupeCache
+from agent_bridge.bridge.dedupe import PromptDedupeCache
+from agent_bridge.bridge.router import Bridge
+from agent_bridge.bridge.session import SessionManager
 from agent_bridge.platforms.slack.adapter import SlackAdapter, SlackInfoCache
 from agent_bridge.platforms.slack.config import SlackConfig
-from agent_bridge.session import SessionManager
 from tests.fakes import FakeBoltApp, FakeClaudeCLI, FakeSlackClient, mention_event
 from tests.fakes.claude_cli import Step, install
 

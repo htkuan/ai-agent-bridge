@@ -10,10 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from agent_bridge.events import BridgeEvent
+from agent_bridge.bridge.events import BridgeEvent
+from agent_bridge.bridge.session import SessionManager
 from agent_bridge.platforms.slack.adapter import SlackAdapter, SlackInfoCache
 from agent_bridge.platforms.slack.config import SlackConfig
-from agent_bridge.session import SessionManager
 from tests.fakes import FakeBoltApp, FakeBridge, FakeSlackClient
 
 

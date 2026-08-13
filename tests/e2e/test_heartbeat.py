@@ -6,10 +6,10 @@ import json
 from pathlib import Path
 
 from agent_bridge.agents.claude.controller import ClaudeController
-from agent_bridge.bridge import Bridge
+from agent_bridge.bridge.router import Bridge
+from agent_bridge.bridge.session import SessionManager
 from agent_bridge.platforms.heartbeat.adapter import HeartbeatAdapter
 from agent_bridge.platforms.heartbeat.config import HeartbeatConfig
-from agent_bridge.session import SessionManager
 from tests.e2e.stack import wait_until
 from tests.fakes import claude_cli
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from agent_bridge.events import BridgeEvent, Completion, Processing, UserQuestion
+from agent_bridge.bridge.events import BridgeEvent, Completion, Processing, UserQuestion
 from agent_bridge.platforms.slack.adapter import _PendingMessage
 from tests.fakes import mention_event
 from tests.platforms.slack.harness import build_harness

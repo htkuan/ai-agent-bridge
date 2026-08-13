@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from slack_sdk.errors import SlackApiError
 
-from agent_bridge.events import Completion, Processing, Usage
+from agent_bridge.bridge.events import Completion, Processing, Usage
 from agent_bridge.platforms.slack.adapter import (
     SLACK_MSG_MAX_BYTES,
     SlackAdapter,

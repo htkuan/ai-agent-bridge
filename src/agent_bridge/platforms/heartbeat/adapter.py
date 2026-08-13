@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 
-from agent_bridge.events import (
+from agent_bridge.bridge.events import (
     BridgeEvent,
     Completion,
     Processing,
@@ -14,8 +14,8 @@ from agent_bridge.events import (
     TextDelta,
     UserQuestion,
 )
+from agent_bridge.bridge.protocols import MessageRouter
 from agent_bridge.platforms.heartbeat.config import HeartbeatConfig
-from agent_bridge.protocols import MessageRouter
 
 logger = logging.getLogger(__name__)
 

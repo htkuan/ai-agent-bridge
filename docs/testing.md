@@ -10,7 +10,7 @@ implemented across the `tests/` tree.
    the layer it exercises. Finding the tests for a module means swapping
    `src/agent_bridge/` for `tests/`.
 2. **Test against the defined interfaces.** Components are driven through
-   the protocols in `src/agent_bridge/protocols.py` (`AgentController`,
+   the protocols in `src/agent_bridge/bridge/protocols.py` (`AgentController`,
    `MessageRouter`, `PlatformAdapter`) and the platform's public entry
    points — not by poking internals. Unit tests of private helpers are fine
    *within* a layer; crossing a layer boundary always goes through the
@@ -40,7 +40,8 @@ tests/
 ├── contracts/               # real implementation and its fake run the same suite
 │   ├── test_agent_controller.py
 │   └── test_message_router.py
-├── bridge/                  # bridge.py, session.py, dedupe.py (core layer)
+├── app/                     # app.py wiring + lifecycle
+├── bridge/                  # router.py, session.py, dedupe.py, config.py (core layer)
 ├── agents/claude/           # controller + stream-json parser
 ├── platforms/slack/         # adapter behaviour, one concern per file
 ├── platforms/heartbeat/

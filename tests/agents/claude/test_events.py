@@ -12,7 +12,13 @@ from agent_bridge.agents.claude.events import (
     parse_stream_line,
     to_bridge_event,
 )
-from agent_bridge.events import Completion, StatusUpdate, TextDelta, Usage, UserQuestion
+from agent_bridge.bridge.events import (
+    Completion,
+    StatusUpdate,
+    TextDelta,
+    Usage,
+    UserQuestion,
+)
 
 
 def test_parse_init_event():

@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
-from agent_bridge.events import BridgeEvent, Completion
+from agent_bridge.bridge.events import BridgeEvent, Completion
 
 
 @dataclass(frozen=True)

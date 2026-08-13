@@ -12,8 +12,8 @@ from collections.abc import Callable
 import pytest
 
 from agent_bridge.agents.claude.controller import ClaudeController
-from agent_bridge.events import Completion, TextDelta
-from agent_bridge.protocols import AgentController
+from agent_bridge.bridge.events import Completion, TextDelta
+from agent_bridge.bridge.protocols import AgentController
 from tests.conftest import FakeClaudeFactory
 from tests.fakes import FakeAgentController, claude_cli
 

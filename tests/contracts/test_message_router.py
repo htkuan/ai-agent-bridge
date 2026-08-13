@@ -13,10 +13,10 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from agent_bridge.bridge import Bridge
-from agent_bridge.events import BridgeEvent, Completion, Processing, TextDelta
-from agent_bridge.protocols import MessageRouter
-from agent_bridge.session import SessionManager
+from agent_bridge.bridge.events import BridgeEvent, Completion, Processing, TextDelta
+from agent_bridge.bridge.protocols import MessageRouter
+from agent_bridge.bridge.router import Bridge
+from agent_bridge.bridge.session import SessionManager
 from tests.fakes import FakeAgentController, FakeBridge
 
 

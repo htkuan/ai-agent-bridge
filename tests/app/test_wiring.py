@@ -6,27 +6,27 @@ from pathlib import Path
 
 import pytest
 
-import agent_bridge
-from agent_bridge.bridge import Bridge
-from agent_bridge.config import BridgeConfig
-from agent_bridge.dedupe import PromptDedupeCache
+from agent_bridge import app
+from agent_bridge.bridge.config import BridgeConfig
+from agent_bridge.bridge.dedupe import PromptDedupeCache
+from agent_bridge.bridge.router import Bridge
+from agent_bridge.bridge.session import SessionManager
 from agent_bridge.platforms.heartbeat.adapter import HeartbeatAdapter
 from agent_bridge.platforms.slack.adapter import SlackAdapter
-from agent_bridge.session import SessionManager
 from tests.fakes import FakeAgentController
 
 # --- _build_dedupe ---
 
 
 def test_build_dedupe_disabled_by_default():
-    assert agent_bridge._build_dedupe(BridgeConfig()) is None
+    assert app._build_dedupe(BridgeConfig()) is None
 
 
 def test_build_dedupe_enabled_returns_cache():
     config = BridgeConfig(
         dedupe_ttl_seconds=60.0, dedupe_max_entries=32, dedupe_simhash_threshold=4
     )
-    assert isinstance(agent_bridge._build_dedupe(config), PromptDedupeCache)
+    assert isinstance(app._build_dedupe(config), PromptDedupeCache)
 
 
 # --- _build_adapters ---
@@ -62,7 +62,7 @@ def test_no_adapter_configured_raises(
     wiring: tuple[Bridge, SessionManager], platform_env: pytest.MonkeyPatch
 ):
     with pytest.raises(ValueError, match="No platform adapter configured"):
-        agent_bridge._build_adapters(*wiring)
+        app._build_adapters(*wiring)
 
 
 def test_slack_only(
@@ -71,7 +71,7 @@ def test_slack_only(
     platform_env.setenv("AGENT_BRIDGE_SLACK_BOT_TOKEN", "xoxb-x")
     platform_env.setenv("AGENT_BRIDGE_SLACK_APP_TOKEN", "xapp-x")
 
-    slack, adapters = agent_bridge._build_adapters(*wiring)
+    slack, adapters = app._build_adapters(*wiring)
 
     assert isinstance(slack, SlackAdapter)
     assert adapters == [slack]
@@ -82,7 +82,7 @@ def test_heartbeat_only(
 ):
     _enable_heartbeat(platform_env)
 
-    slack, adapters = agent_bridge._build_adapters(*wiring)
+    slack, adapters = app._build_adapters(*wiring)
 
     assert slack is None
     assert len(adapters) == 1
@@ -96,7 +96,7 @@ def test_slack_and_heartbeat(
     platform_env.setenv("AGENT_BRIDGE_SLACK_APP_TOKEN", "xapp-x")
     _enable_heartbeat(platform_env)
 
-    slack, adapters = agent_bridge._build_adapters(*wiring)
+    slack, adapters = app._build_adapters(*wiring)
 
     assert isinstance(slack, SlackAdapter)
     assert len(adapters) == 2

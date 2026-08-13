@@ -2,16 +2,16 @@
 
 The Bridge is the routing core of the service. It sits between platform adapters and agent controllers and has exactly three jobs: resolve a `session_key` into a stable `session_id`, gate global concurrency, and forward events from the agent back out. It knows nothing about Slack or Claude Code or any specific platform/agent — both sides plug in through narrow protocols.
 
-Source: `src/agent_bridge/bridge.py`, plus its collaborators:
+Source: `src/agent_bridge/bridge/`. The package is also the layer both sides plug into — it depends on neither `agents/` nor `platforms/`, while both of them import its `events` and `protocols`.
 
 | File | Role |
 |------|------|
-| `src/agent_bridge/bridge.py` | The `Bridge` class itself |
-| `src/agent_bridge/events.py` | The five `BridgeEvent` types (`Processing`, `TextDelta`, `StatusUpdate`, `UserQuestion`, `Completion`) plus the generic `Usage` report |
-| `src/agent_bridge/session.py` | `SessionManager` — persistent `session_key → session_id` map with TTL |
-| `src/agent_bridge/dedupe.py` | `PromptDedupeCache` — optional cross-session prompt dedupe |
-| `src/agent_bridge/protocols.py` | `AgentController` and `PlatformAdapter` protocols |
-| `src/agent_bridge/config.py` | `BridgeConfig` — env-loaded settings |
+| `src/agent_bridge/bridge/router.py` | The `Bridge` class itself |
+| `src/agent_bridge/bridge/events.py` | The five `BridgeEvent` types (`Processing`, `TextDelta`, `StatusUpdate`, `UserQuestion`, `Completion`) plus the generic `Usage` report |
+| `src/agent_bridge/bridge/session.py` | `SessionManager` — persistent `session_key → session_id` map with TTL |
+| `src/agent_bridge/bridge/dedupe.py` | `PromptDedupeCache` — optional cross-session prompt dedupe |
+| `src/agent_bridge/bridge/protocols.py` | `AgentController`, `PlatformAdapter`, and `MessageRouter` protocols |
+| `src/agent_bridge/bridge/config.py` | `BridgeConfig` — env-loaded settings |
 
 ## What the Bridge Does (and Doesn't)
 
@@ -131,7 +131,7 @@ Dedupe is automatically skipped for:
 
 ### Two-stage matching
 
-**Stage 1 — Canonicalize, then exact match.** Regex-mask volatile content into placeholders, then look up the canonical form in the cache. The substitutions (`src/agent_bridge/dedupe.py`):
+**Stage 1 — Canonicalize, then exact match.** Regex-mask volatile content into placeholders, then look up the canonical form in the cache. The substitutions (`src/agent_bridge/bridge/dedupe.py`):
 
 | Pattern | Replacement |
 |---------|-------------|

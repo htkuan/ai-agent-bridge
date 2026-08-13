@@ -11,10 +11,10 @@ from pathlib import Path
 
 import pytest
 
-import agent_bridge
-from agent_bridge.bridge import Bridge
-from agent_bridge.events import Usage
-from agent_bridge.session import SessionManager
+from agent_bridge import app
+from agent_bridge.bridge.events import Usage
+from agent_bridge.bridge.router import Bridge
+from agent_bridge.bridge.session import SessionManager
 from tests.fakes import FakeAgentController, FakePlatformAdapter
 from tests.platforms.slack.harness import build_harness
 
@@ -54,7 +54,7 @@ class _ExplodingController:
 async def test_cleanup_round_purges_sessions_usage_and_slack_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    monkeypatch.setattr(agent_bridge, "CLEANUP_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(app, "CLEANUP_INTERVAL_SECONDS", 0.01)
     # Sessions expire (effectively) immediately.
     session_manager = SessionManager(store_path=tmp_path / "s.json", ttl_hours=1e-9)
     controller = _RecordingController()
@@ -67,7 +67,7 @@ async def test_cleanup_round_purges_sessions_usage_and_slack_state(
 
     shutdown = asyncio.Event()
     task = asyncio.create_task(
-        agent_bridge._periodic_cleanup(
+        app._periodic_cleanup(
             shutdown, session_manager, harness.adapter, bridge, controller
         )
     )
@@ -85,7 +85,7 @@ async def test_cleanup_round_purges_sessions_usage_and_slack_state(
 async def test_cleanup_loop_survives_controller_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    monkeypatch.setattr(agent_bridge, "CLEANUP_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(app, "CLEANUP_INTERVAL_SECONDS", 0.01)
     session_manager = SessionManager(store_path=tmp_path / "s.json", ttl_hours=1e-9)
     session_manager.get_or_create("slack:C1:1.0")
     controller = _ExplodingController()
@@ -93,9 +93,7 @@ async def test_cleanup_loop_survives_controller_errors(
 
     shutdown = asyncio.Event()
     task = asyncio.create_task(
-        agent_bridge._periodic_cleanup(
-            shutdown, session_manager, None, bridge, controller
-        )
+        app._periodic_cleanup(shutdown, session_manager, None, bridge, controller)
     )
     try:
         await _wait_until(lambda: controller.calls >= 1)
@@ -113,15 +111,13 @@ async def test_main_starts_adapters_and_stops_on_sigterm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     fake = FakePlatformAdapter()
-    monkeypatch.setattr(
-        agent_bridge, "_build_adapters", lambda bridge, sm: (None, [fake])
-    )
+    monkeypatch.setattr(app, "_build_adapters", lambda bridge, sm: (None, [fake]))
     monkeypatch.setenv(
         "AGENT_BRIDGE_SESSION_STORE_PATH", str(tmp_path / "sessions.json")
     )
     monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_WORK_DIR", str(tmp_path))
 
-    task = asyncio.create_task(agent_bridge.main())
+    task = asyncio.create_task(app.main())
     loop = asyncio.get_running_loop()
     try:
         # started == 1 implies the signal handlers are already installed:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agent_bridge.bridge.session import SessionManager
 from agent_bridge.platforms.slack.adapter import _PendingMessage
-from agent_bridge.session import SessionManager
 from tests.platforms.slack.harness import build_harness
 
 

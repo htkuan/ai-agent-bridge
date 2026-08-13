@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_bridge.agents.claude.controller import ClaudeController
+from agent_bridge.bridge.config import RouterConfig, SessionConfig
 from agent_bridge.bridge.dedupe import PromptDedupeCache
 from agent_bridge.bridge.router import Bridge
 from agent_bridge.bridge.session import SessionManager
@@ -91,10 +92,13 @@ def build_stack(
     cli = install(tmp_path / "fake-claude", steps, timeout_seconds=timeout_seconds)
     controller = ClaudeController(cli.config)
     session_manager = SessionManager(
-        store_path=tmp_path / "sessions.json", ttl_hours=1.0
+        SessionConfig(store_path=tmp_path / "sessions.json", ttl_hours=1.0)
     )
     bridge = Bridge(
-        session_manager, controller, max_concurrent=max_concurrent, dedupe=dedupe
+        RouterConfig(max_concurrent_sessions=max_concurrent),
+        session_manager,
+        controller,
+        dedupe=dedupe,
     )
     client = FakeSlackClient(
         channel_names={"C123": "general"}, user_names={"U123": "alice"}
@@ -103,7 +107,10 @@ def build_stack(
     # Same manual wiring as tests/platforms/slack/harness.py: mirror
     # SlackAdapter.__init__ but swap the eager real AsyncApp for FakeBoltApp.
     adapter: Any = SlackAdapter.__new__(SlackAdapter)
-    adapter._config = SlackConfig(bot_token="xoxb-x", app_token="xapp-x")
+    # Shrink the update throttle so a turn doesn't idle out the default 1.5s.
+    adapter._config = SlackConfig(
+        bot_token="xoxb-x", app_token="xapp-x", update_throttle_seconds=0.05
+    )
     adapter._bridge = bridge
     adapter._session_manager = session_manager
     adapter._app = app

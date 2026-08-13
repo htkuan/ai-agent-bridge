@@ -6,11 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 from slack_sdk.errors import SlackApiError
 
 from agent_bridge.bridge.events import Completion, Processing, Usage
-from agent_bridge.platforms.slack.adapter import (
-    SLACK_MSG_MAX_BYTES,
-    SlackAdapter,
-)
-from agent_bridge.platforms.slack.config import SlackConfig
+from agent_bridge.platforms.slack.adapter import SlackAdapter
+from agent_bridge.platforms.slack.config import DEFAULT_MSG_MAX_BYTES, SlackConfig
 from tests.fakes import FakeSlackClient
 from tests.platforms.slack.harness import build_harness
 
@@ -18,6 +15,7 @@ from tests.platforms.slack.harness import build_harness
 def _make_adapter() -> SlackAdapter:
     """Build a SlackAdapter with mocked Slack client, skipping __init__."""
     adapter = SlackAdapter.__new__(SlackAdapter)
+    adapter._config = SlackConfig(bot_token="xoxb-x", app_token="xapp-x")
     adapter._app = MagicMock()
     adapter._app.client = MagicMock()
     adapter._app.client.chat_update = AsyncMock()
@@ -57,7 +55,7 @@ async def test_update_message_cjk_trimmed_before_send():
 
     adapter._app.client.chat_update.assert_awaited_once()
     sent = adapter._app.client.chat_update.await_args.kwargs["text"]
-    assert len(sent.encode("utf-8")) <= SLACK_MSG_MAX_BYTES
+    assert len(sent.encode("utf-8")) <= DEFAULT_MSG_MAX_BYTES
 
 
 async def test_update_message_ascii_under_limit_untouched():
@@ -87,7 +85,7 @@ async def test_update_message_progressive_fallback_on_msg_too_long():
 
     assert len(calls) == 3
     # First attempt near the full ceiling.
-    assert calls[0] <= SLACK_MSG_MAX_BYTES
+    assert calls[0] <= DEFAULT_MSG_MAX_BYTES
     # Each fallback strictly smaller than the prior.
     assert calls[1] < calls[0]
     assert calls[2] < calls[1]
@@ -142,7 +140,7 @@ async def test_upload_snippet_returns_false_on_error():
 async def test_long_reply_footer_inline_not_in_uploaded_file():
     """When the body overflows: upload the body alone, show the footer inline."""
     usage = Usage(input_tokens=10, output_tokens=5, cost_usd=0.0123, duration_ms=12300)
-    body = "A" * (SLACK_MSG_MAX_BYTES + 500)  # exceeds the inline ceiling
+    body = "A" * (DEFAULT_MSG_MAX_BYTES + 500)  # exceeds the inline ceiling
     adapter = _usage_adapter(
         [Processing(), Completion(text=body, usage=usage, session_usage=usage)]
     )
@@ -161,13 +159,13 @@ async def test_long_reply_footer_inline_not_in_uploaded_file():
     inline = adapter._app.client.chat_update.await_args.kwargs["text"]
     assert "💰" in inline
     assert "$0.0123" in inline
-    assert len(inline.encode("utf-8")) <= SLACK_MSG_MAX_BYTES
+    assert len(inline.encode("utf-8")) <= DEFAULT_MSG_MAX_BYTES
 
 
 async def test_footer_does_not_push_inline_reply_to_upload():
     """A body that fits inline must not be forced to a file just by the footer."""
     usage = Usage(input_tokens=10, output_tokens=5, cost_usd=0.0123, duration_ms=12300)
-    body = "A" * (SLACK_MSG_MAX_BYTES - 50)  # fits alone; body+footer would not
+    body = "A" * (DEFAULT_MSG_MAX_BYTES - 50)  # fits alone; body+footer would not
     adapter = _usage_adapter([Completion(text=body, usage=usage, session_usage=usage)])
 
     await adapter._stream_response(

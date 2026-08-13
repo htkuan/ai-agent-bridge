@@ -42,28 +42,6 @@ def test_normalize_strips_hash_whitespace_case():
     assert normalize_channel("team-eng") == "team-eng"
 
 
-# --- config parsing ---
-
-
-def test_from_env_parses_and_normalizes(monkeypatch):
-    monkeypatch.setenv("AGENT_BRIDGE_SLACK_BOT_TOKEN", "xoxb-x")
-    monkeypatch.setenv("AGENT_BRIDGE_SLACK_APP_TOKEN", "xapp-x")
-    monkeypatch.setenv(
-        "AGENT_BRIDGE_SLACK_ALLOW_CHANNELS", " #Ops-Alerts , team-eng ,, "
-    )
-    cfg = SlackConfig.from_env()
-    assert cfg.allow_channels == frozenset({"ops-alerts", "team-eng"})
-
-
-def test_from_env_empty_means_allow_all(monkeypatch):
-    monkeypatch.setenv("AGENT_BRIDGE_SLACK_BOT_TOKEN", "xoxb-x")
-    monkeypatch.setenv("AGENT_BRIDGE_SLACK_APP_TOKEN", "xapp-x")
-    # Empty string (not delenv) so a local .env can't repopulate it via load_dotenv.
-    monkeypatch.setenv("AGENT_BRIDGE_SLACK_ALLOW_CHANNELS", "")
-    cfg = SlackConfig.from_env()
-    assert cfg.allow_channels == frozenset()
-
-
 # --- gate behaviour ---
 
 

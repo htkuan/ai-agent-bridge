@@ -67,7 +67,6 @@ def make_adapter(tmp_path: Path):
         events: list[BridgeEvent] | None = None,
     ) -> tuple[HeartbeatAdapter, _StubBridge, HeartbeatConfig]:
         config = HeartbeatConfig(
-            enabled=True,
             interval_minutes=interval_minutes,
             prompt=prompt,
             state_path=tmp_path / "heartbeat.json",
@@ -77,43 +76,6 @@ def make_adapter(tmp_path: Path):
         return adapter, bridge, config
 
     return _make
-
-
-# --- Config validation ---
-
-
-def test_config_disabled_by_default(monkeypatch):
-    monkeypatch.delenv("AGENT_BRIDGE_HEARTBEAT_ENABLED", raising=False)
-    config = HeartbeatConfig.from_env()
-    assert not config.enabled
-
-
-def test_config_enabled_requires_prompt(monkeypatch):
-    monkeypatch.setenv("AGENT_BRIDGE_HEARTBEAT_ENABLED", "true")
-    monkeypatch.setenv("AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES", "60")
-    monkeypatch.delenv("AGENT_BRIDGE_HEARTBEAT_PROMPT", raising=False)
-    with pytest.raises(ValueError, match="PROMPT"):
-        HeartbeatConfig.from_env()
-
-
-def test_config_enabled_requires_positive_interval(monkeypatch):
-    monkeypatch.setenv("AGENT_BRIDGE_HEARTBEAT_ENABLED", "true")
-    monkeypatch.setenv("AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES", "0")
-    monkeypatch.setenv("AGENT_BRIDGE_HEARTBEAT_PROMPT", "go")
-    with pytest.raises(ValueError, match="INTERVAL_MINUTES"):
-        HeartbeatConfig.from_env()
-
-
-def test_config_valid(monkeypatch, tmp_path: Path):
-    monkeypatch.setenv("AGENT_BRIDGE_HEARTBEAT_ENABLED", "true")
-    monkeypatch.setenv("AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES", "15")
-    monkeypatch.setenv("AGENT_BRIDGE_HEARTBEAT_PROMPT", "go")
-    monkeypatch.setenv("AGENT_BRIDGE_HEARTBEAT_STATE_PATH", str(tmp_path / "h.json"))
-    config = HeartbeatConfig.from_env()
-    assert config.enabled
-    assert config.interval_minutes == 15
-    assert config.prompt == "go"
-    assert config.state_path == tmp_path / "h.json"
 
 
 # --- State file I/O ---
@@ -176,7 +138,6 @@ async def test_fire_once_passes_heartbeat_flavored_system_prompt(make_adapter):
 
 async def test_fire_once_writes_state_even_on_bridge_error(tmp_path: Path):
     config = HeartbeatConfig(
-        enabled=True,
         interval_minutes=60,
         prompt="x",
         state_path=tmp_path / "h.json",

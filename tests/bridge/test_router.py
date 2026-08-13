@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from agent_bridge.bridge.config import DedupeConfig, RouterConfig, SessionConfig
 from agent_bridge.bridge.dedupe import PromptDedupeCache
 from agent_bridge.bridge.events import (
     BridgeEvent,
@@ -46,7 +47,7 @@ class FakeController:
 
 @pytest.fixture()
 def session_mgr(tmp_path: Path) -> SessionManager:
-    return SessionManager(tmp_path / "sessions.json")
+    return SessionManager(SessionConfig(store_path=tmp_path / "sessions.json"))
 
 
 # --- Basic event flow ---
@@ -54,7 +55,9 @@ def session_mgr(tmp_path: Path) -> SessionManager:
 
 @pytest.mark.asyncio
 async def test_handle_message_emits_processing_and_completion(session_mgr):
-    bridge = Bridge(session_mgr, FakeController(), max_concurrent=5)
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, FakeController()
+    )
 
     events = [e async for e in bridge.handle_message("key1", "hello")]
 
@@ -65,7 +68,7 @@ async def test_handle_message_emits_processing_and_completion(session_mgr):
 @pytest.mark.asyncio
 async def test_handle_message_forwards_system_prompt_to_controller(session_mgr):
     controller = FakeController()
-    bridge = Bridge(session_mgr, controller, max_concurrent=5)
+    bridge = Bridge(RouterConfig(max_concurrent_sessions=5), session_mgr, controller)
 
     async for _ in bridge.handle_message(
         "key1", "hello", context={"a": "b"}, system_prompt="be helpful"
@@ -79,7 +82,7 @@ async def test_handle_message_forwards_system_prompt_to_controller(session_mgr):
 @pytest.mark.asyncio
 async def test_handle_message_forwards_none_system_prompt_when_omitted(session_mgr):
     controller = FakeController()
-    bridge = Bridge(session_mgr, controller, max_concurrent=5)
+    bridge = Bridge(RouterConfig(max_concurrent_sessions=5), session_mgr, controller)
 
     async for _ in bridge.handle_message("key1", "hello"):
         pass
@@ -90,7 +93,9 @@ async def test_handle_message_forwards_none_system_prompt_when_omitted(session_m
 @pytest.mark.asyncio
 async def test_resumable_default_writes_to_session_store(session_mgr):
     """Default resumable=True path: SessionManager records the key on disk."""
-    bridge = Bridge(session_mgr, FakeController(), max_concurrent=5)
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, FakeController()
+    )
 
     async for _ in bridge.handle_message("slack:C1:t1", "hi"):
         pass
@@ -101,7 +106,9 @@ async def test_resumable_default_writes_to_session_store(session_mgr):
 @pytest.mark.asyncio
 async def test_resumable_false_does_not_touch_session_store(session_mgr):
     """resumable=False: bridge mints an ephemeral UUID, store stays empty."""
-    bridge = Bridge(session_mgr, FakeController(), max_concurrent=5)
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, FakeController()
+    )
 
     async for _ in bridge.handle_message(
         "heartbeat:tick:2026-01-01", "hi", resumable=False
@@ -117,7 +124,7 @@ async def test_resumable_false_does_not_touch_session_store(session_mgr):
 async def test_resumable_false_passes_uuid_session_id_to_controller(session_mgr):
     """Even without a stored mapping, the agent still gets a valid session_id."""
     controller = FakeController()
-    bridge = Bridge(session_mgr, controller, max_concurrent=5)
+    bridge = Bridge(RouterConfig(max_concurrent_sessions=5), session_mgr, controller)
 
     captured: list[str] = []
 
@@ -152,7 +159,9 @@ async def test_resumable_false_repeated_calls_yield_distinct_session_ids(session
             seen.append(session_id)
             yield Completion(text="ok")
 
-    bridge = Bridge(session_mgr, CapturingController(), max_concurrent=5)
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, CapturingController()
+    )
 
     async for _ in bridge.handle_message("same-key", "first", resumable=False):
         pass
@@ -168,7 +177,7 @@ async def test_capacity_full_rejects_immediately(session_mgr):
     """When all slots are taken, handle_message yields an error Completion
     immediately."""
     controller = FakeController(delay=0.3)
-    bridge = Bridge(session_mgr, controller, max_concurrent=1)
+    bridge = Bridge(RouterConfig(max_concurrent_sessions=1), session_mgr, controller)
 
     # Occupy the single slot
     task1 = asyncio.create_task(_collect(bridge.handle_message("key1", "first")))
@@ -192,7 +201,7 @@ async def test_capacity_full_rejects_immediately(session_mgr):
 async def test_slot_available_after_release(session_mgr):
     """After a task finishes and releases its slot, the next message succeeds."""
     controller = FakeController(delay=0.1)
-    bridge = Bridge(session_mgr, controller, max_concurrent=1)
+    bridge = Bridge(RouterConfig(max_concurrent_sessions=1), session_mgr, controller)
 
     # First message occupies and releases the slot
     events1 = [e async for e in bridge.handle_message("key1", "first")]
@@ -214,7 +223,9 @@ async def test_semaphore_released_after_error(session_mgr):
             raise RuntimeError("boom")
             yield
 
-    bridge = Bridge(session_mgr, FailingController(), max_concurrent=1)
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=1), session_mgr, FailingController()
+    )
 
     with pytest.raises(RuntimeError, match="boom"):
         async for _ in bridge.handle_message("key1", "fail"):
@@ -228,7 +239,7 @@ async def test_semaphore_released_after_error(session_mgr):
 async def test_concurrent_up_to_max(session_mgr):
     """Multiple messages up to max_concurrent all get Processing immediately."""
     controller = FakeController(delay=0.1)
-    bridge = Bridge(session_mgr, controller, max_concurrent=3)
+    bridge = Bridge(RouterConfig(max_concurrent_sessions=3), session_mgr, controller)
 
     tasks = [
         asyncio.create_task(_collect(bridge.handle_message(f"key{i}", f"msg{i}")))
@@ -245,7 +256,7 @@ async def test_concurrent_up_to_max(session_mgr):
 async def test_exceeding_max_concurrent_rejects_extra(session_mgr):
     """Messages beyond max_concurrent are rejected while earlier ones succeed."""
     controller = FakeController(delay=0.3)
-    bridge = Bridge(session_mgr, controller, max_concurrent=2)
+    bridge = Bridge(RouterConfig(max_concurrent_sessions=2), session_mgr, controller)
 
     # Start 2 tasks that occupy both slots
     task1 = asyncio.create_task(_collect(bridge.handle_message("key1", "a")))
@@ -275,7 +286,9 @@ async def _collect(aiter) -> list:
 async def test_dedupe_disabled_when_cache_is_none(session_mgr):
     """No dedupe instance → identical prompts run twice (legacy behaviour)."""
     controller = FakeController()
-    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=None)
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, controller, dedupe=None
+    )
 
     async for _ in bridge.handle_message("slack:C1:t1", "alert"):
         pass
@@ -289,8 +302,10 @@ async def test_dedupe_disabled_when_cache_is_none(session_mgr):
 async def test_dedupe_in_flight_skips_controller(session_mgr):
     """Second identical prompt while the first is running short-circuits."""
     controller = FakeController(delay=0.2)
-    cache = PromptDedupeCache(ttl_seconds=60.0)
-    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, controller, dedupe=cache
+    )
 
     task1 = asyncio.create_task(_collect(bridge.handle_message("slack:C1:t1", "alert")))
     await asyncio.sleep(0.05)
@@ -309,8 +324,10 @@ async def test_dedupe_in_flight_skips_controller(session_mgr):
 async def test_dedupe_recent_hit_after_completion(session_mgr):
     """After the first run completes, a third identical prompt still hits cache."""
     controller = FakeController()
-    cache = PromptDedupeCache(ttl_seconds=60.0)
-    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, controller, dedupe=cache
+    )
 
     async for _ in bridge.handle_message("slack:C1:t1", "alert"):
         pass
@@ -325,8 +342,10 @@ async def test_dedupe_recent_hit_after_completion(session_mgr):
 async def test_dedupe_url_variants_collapse_via_canonicalize(session_mgr):
     """URL-only differences canonicalize to the same key → dedupe."""
     controller = FakeController()
-    cache = PromptDedupeCache(ttl_seconds=60.0)
-    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, controller, dedupe=cache
+    )
 
     async for _ in bridge.handle_message(
         "slack:C1:t1", "Error fetching https://x.com/orgs/123"
@@ -346,8 +365,10 @@ async def test_dedupe_url_variants_collapse_via_canonicalize(session_mgr):
 async def test_dedupe_simhash_threshold_catches_near_match(session_mgr):
     """With SimHash threshold, similar (not identical) alerts collapse."""
     controller = FakeController()
-    cache = PromptDedupeCache(ttl_seconds=60.0, simhash_threshold=20)
-    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0, simhash_threshold=20))
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, controller, dedupe=cache
+    )
 
     async for _ in bridge.handle_message(
         "slack:C1:t1",
@@ -369,8 +390,10 @@ async def test_dedupe_simhash_threshold_catches_near_match(session_mgr):
 async def test_dedupe_different_scope_does_not_collide(session_mgr):
     """Same prompt in different channels → both run (channel-scoped)."""
     controller = FakeController()
-    cache = PromptDedupeCache(ttl_seconds=60.0)
-    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, controller, dedupe=cache
+    )
 
     async for _ in bridge.handle_message("slack:C1:t1", "alert"):
         pass
@@ -384,8 +407,10 @@ async def test_dedupe_different_scope_does_not_collide(session_mgr):
 async def test_dedupe_skipped_for_non_resumable(session_mgr):
     """resumable=False (heartbeat) bypasses dedupe even with identical prompts."""
     controller = FakeController()
-    cache = PromptDedupeCache(ttl_seconds=60.0)
-    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, controller, dedupe=cache
+    )
 
     async for _ in bridge.handle_message(
         "heartbeat:tick:T1", "scheduled work", resumable=False
@@ -422,8 +447,10 @@ async def test_dedupe_controller_is_error_releases_cache_slot(session_mgr):
             yield Completion(text="ok")
 
     controller = ErroringController()
-    cache = PromptDedupeCache(ttl_seconds=60.0)
-    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, controller, dedupe=cache
+    )
 
     events1 = [e async for e in bridge.handle_message("slack:C1:t1", "alert")]
     assert any(isinstance(e, Completion) and e.is_error for e in events1)
@@ -454,8 +481,10 @@ async def test_dedupe_controller_exception_releases_cache_slot(session_mgr):
             yield Completion(text="recovered")
 
     controller = FlakyController()
-    cache = PromptDedupeCache(ttl_seconds=60.0)
-    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, controller, dedupe=cache
+    )
 
     with pytest.raises(RuntimeError, match="boom"):
         async for _ in bridge.handle_message("slack:C1:t1", "alert"):
@@ -470,8 +499,10 @@ async def test_dedupe_controller_exception_releases_cache_slot(session_mgr):
 async def test_dedupe_capacity_full_releases_cache_slot(session_mgr):
     """If the bridge rejects on capacity, the dedupe entry must be cleared too."""
     controller = FakeController(delay=0.3)
-    cache = PromptDedupeCache(ttl_seconds=60.0)
-    bridge = Bridge(session_mgr, controller, max_concurrent=1, dedupe=cache)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=1), session_mgr, controller, dedupe=cache
+    )
 
     occupier = asyncio.create_task(
         _collect(bridge.handle_message("slack:C1:t1", "first"))
@@ -495,8 +526,10 @@ async def test_dedupe_hit_logs_dedupe_hit_line(session_mgr, caplog):
     import logging
 
     controller = FakeController()
-    cache = PromptDedupeCache(ttl_seconds=60.0)
-    bridge = Bridge(session_mgr, controller, max_concurrent=5, dedupe=cache)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, controller, dedupe=cache
+    )
 
     async for _ in bridge.handle_message("slack:C1:t1", "alert"):
         pass
@@ -565,7 +598,11 @@ async def _completion(bridge, key, text="hi", **kw):
 
 @pytest.mark.asyncio
 async def test_completion_carries_turn_usage(session_mgr):
-    bridge = Bridge(session_mgr, UsageController(cost_usd=0.02), max_concurrent=5)
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5),
+        session_mgr,
+        UsageController(cost_usd=0.02),
+    )
     c = await _completion(bridge, "slack:c:t")
     assert c.usage is not None
     assert c.usage.input_tokens == 10
@@ -575,7 +612,11 @@ async def test_completion_carries_turn_usage(session_mgr):
 
 @pytest.mark.asyncio
 async def test_session_usage_accumulates_across_turns(session_mgr):
-    bridge = Bridge(session_mgr, UsageController(cost_usd=0.01), max_concurrent=5)
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5),
+        session_mgr,
+        UsageController(cost_usd=0.01),
+    )
 
     c1 = await _completion(bridge, "slack:c:t", "first")
     assert c1.session_usage is not None
@@ -594,7 +635,9 @@ async def test_session_usage_accumulates_across_turns(session_mgr):
 async def test_session_usage_none_when_started_mid_session(session_mgr):
     # Pre-create the session so the bridge resumes it without tracking its start.
     session_mgr.get_or_create("slack:c:t")
-    bridge = Bridge(session_mgr, UsageController(), max_concurrent=5)
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, UsageController()
+    )
 
     c = await _completion(bridge, "slack:c:t")
     assert c.usage is not None  # turn usage still present
@@ -603,7 +646,9 @@ async def test_session_usage_none_when_started_mid_session(session_mgr):
 
 @pytest.mark.asyncio
 async def test_session_usage_none_for_non_resumable(session_mgr):
-    bridge = Bridge(session_mgr, UsageController(), max_concurrent=5)
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, UsageController()
+    )
     c = await _completion(bridge, "heartbeat:tick:1", resumable=False)
     assert c.usage is not None
     assert c.session_usage is None
@@ -611,7 +656,9 @@ async def test_session_usage_none_for_non_resumable(session_mgr):
 
 @pytest.mark.asyncio
 async def test_forget_session_usage_drops_running_total(session_mgr):
-    bridge = Bridge(session_mgr, UsageController(), max_concurrent=5)
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, UsageController()
+    )
 
     c1 = await _completion(bridge, "slack:c:t")
     assert c1.session_usage is not None

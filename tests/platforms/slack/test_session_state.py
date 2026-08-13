@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agent_bridge.bridge.config import SessionConfig
 from agent_bridge.bridge.session import SessionManager
 from agent_bridge.platforms.slack.adapter import _PendingMessage
 from tests.platforms.slack.harness import build_harness
@@ -28,7 +29,9 @@ def test_cleanup_without_session_manager_is_noop():
 
 
 async def test_cleanup_removes_only_idle_expired_sessions(tmp_path: Path):
-    manager = SessionManager(store_path=tmp_path / "sessions.json", ttl_hours=1.0)
+    manager = SessionManager(
+        SessionConfig(store_path=tmp_path / "sessions.json", ttl_hours=1.0)
+    )
     adapter = build_harness(session_manager=manager).adapter
 
     manager.get_or_create("slack:live:1.0")

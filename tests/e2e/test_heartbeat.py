@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from agent_bridge.agents.claude.controller import ClaudeController
+from agent_bridge.bridge.config import RouterConfig, SessionConfig
 from agent_bridge.bridge.router import Bridge
 from agent_bridge.bridge.session import SessionManager
 from agent_bridge.platforms.heartbeat.adapter import HeartbeatAdapter
@@ -19,11 +20,14 @@ async def test_heartbeat_round_runs_prompt_and_leaves_no_session(tmp_path: Path)
         tmp_path / "fake-claude", claude_cli.reply_steps("rounds done")
     )
     session_manager = SessionManager(
-        store_path=tmp_path / "sessions.json", ttl_hours=1.0
+        SessionConfig(store_path=tmp_path / "sessions.json", ttl_hours=1.0)
     )
-    bridge = Bridge(session_manager, ClaudeController(cli.config), max_concurrent=2)
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=2),
+        session_manager,
+        ClaudeController(cli.config),
+    )
     config = HeartbeatConfig(
-        enabled=True,
         interval_minutes=60,
         prompt="do the rounds",
         state_path=tmp_path / "heartbeat.json",

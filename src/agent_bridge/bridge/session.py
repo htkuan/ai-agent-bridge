@@ -4,15 +4,16 @@ import json
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+
+from agent_bridge.bridge.config import SessionConfig
 
 logger = logging.getLogger(__name__)
 
 
 class SessionManager:
-    def __init__(self, store_path: Path, ttl_hours: float = 72.0) -> None:
-        self._store_path = store_path
-        self._ttl = timedelta(hours=ttl_hours)
+    def __init__(self, config: SessionConfig) -> None:
+        self._config = config
+        self._ttl = timedelta(hours=config.ttl_hours)
         self._sessions: dict[str, dict[str, str]] = {}
         self._load()
         self._purge_expired()
@@ -94,9 +95,9 @@ class SessionManager:
         return [sid for _, sid in expired]
 
     def _load(self) -> None:
-        if self._store_path.exists():
+        if self._config.store_path.exists():
             try:
-                self._sessions = json.loads(self._store_path.read_text())
+                self._sessions = json.loads(self._config.store_path.read_text())
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning("Failed to load session store: %s", e)
                 self._sessions = {}
@@ -106,8 +107,8 @@ class SessionManager:
     def _save(self) -> bool:
         """Write sessions to disk. Returns True on success, False on failure."""
         try:
-            self._store_path.parent.mkdir(parents=True, exist_ok=True)
-            self._store_path.write_text(json.dumps(self._sessions, indent=2))
+            self._config.store_path.parent.mkdir(parents=True, exist_ok=True)
+            self._config.store_path.write_text(json.dumps(self._sessions, indent=2))
             return True
         except OSError as e:
             logger.error("Failed to save session store: %s", e)

@@ -31,14 +31,6 @@ from agent_bridge.platforms.slack.config import SlackConfig, normalize_channel
 
 logger = logging.getLogger(__name__)
 
-# Minimum interval between Slack message updates (seconds)
-UPDATE_THROTTLE_SECONDS = 1.5
-
-# Slack chat_update/chat_postMessage effective ceiling. Empirically ~4000
-# UTF-8 bytes (not characters) — a CJK char is 3 bytes, so a char-based
-# check lets long CJK messages slip past and hit msg_too_long.
-SLACK_MSG_MAX_BYTES = 3_900
-
 
 def _utf8_len(text: str) -> int:
     return len(text.encode("utf-8"))
@@ -614,7 +606,10 @@ class SlackAdapter:
     async def _render_throttled(self, st: _RenderState, display: str) -> None:
         """Update the placeholder at most once per throttle window."""
         now = time.monotonic()
-        if now - st.last_update_time >= UPDATE_THROTTLE_SECONDS and st.message_ts:
+        if (
+            now - st.last_update_time >= self._config.update_throttle_seconds
+            and st.message_ts
+        ):
             logger.debug(
                 "Session %s: updating message (%d chars)",
                 st.session_key,
@@ -645,8 +640,8 @@ class SlackAdapter:
         )
         # Ensure minimum gap since last Slack update to avoid rate limits
         elapsed = time.monotonic() - st.last_update_time
-        if st.last_update_time and elapsed < UPDATE_THROTTLE_SECONDS:
-            await asyncio.sleep(UPDATE_THROTTLE_SECONDS - elapsed)
+        if st.last_update_time and elapsed < self._config.update_throttle_seconds:
+            await asyncio.sleep(self._config.update_throttle_seconds - elapsed)
 
         final = st.accumulated_text or final_text
         if is_error:
@@ -686,7 +681,7 @@ class SlackAdapter:
     async def _post_final(self, st: _RenderState, text: str, footer: str = "") -> None:
         """Deliver the final body, uploading it as a snippet with a short
         inline preview when it exceeds the Slack message ceiling."""
-        if _utf8_len(text) > SLACK_MSG_MAX_BYTES:
+        if _utf8_len(text) > self._config.msg_max_bytes:
             uploaded = await self._upload_snippet(st.channel, st.thread_ts, text)
             notice = (
                 "\n\n_… Full response uploaded as file below._"
@@ -695,7 +690,7 @@ class SlackAdapter:
             )
             preview_budget = min(
                 1000,
-                SLACK_MSG_MAX_BYTES - _utf8_len(notice) - _utf8_len(footer),
+                self._config.msg_max_bytes - _utf8_len(notice) - _utf8_len(footer),
             )
             text = _truncate_to_bytes(text, preview_budget) + notice
         text += footer
@@ -771,7 +766,7 @@ class SlackAdapter:
 
     async def _update_message(self, channel: str, ts: str, text: str) -> None:
         text = _fit_with_suffix(
-            text, SLACK_MSG_MAX_BYTES, "\n\n_… (generating response…)_"
+            text, self._config.msg_max_bytes, "\n\n_… (generating response…)_"
         )
         try:
             await self._app.client.chat_update(
@@ -793,9 +788,9 @@ class SlackAdapter:
         # rather than the old hard 500-char cut, which caused a 528-char stuck
         # message for CJK-heavy replies.
         for budget in (
-            SLACK_MSG_MAX_BYTES * 3 // 4,
-            SLACK_MSG_MAX_BYTES // 2,
-            SLACK_MSG_MAX_BYTES // 4,
+            self._config.msg_max_bytes * 3 // 4,
+            self._config.msg_max_bytes // 2,
+            self._config.msg_max_bytes // 4,
         ):
             short = _fit_with_suffix(text, budget, "\n\n_… (response truncated)_")
             try:

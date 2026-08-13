@@ -1,9 +1,9 @@
 from agent_bridge.platforms.slack.adapter import (
-    SLACK_MSG_MAX_BYTES,
     _fit_with_suffix,
     _truncate_to_bytes,
     _utf8_len,
 )
+from agent_bridge.platforms.slack.config import DEFAULT_MSG_MAX_BYTES
 
 
 def test_utf8_len_counts_bytes_not_chars():
@@ -54,8 +54,8 @@ def test_fit_with_suffix_cjk_regression():
     # Slack's msg_too_long. The byte-based fit must trim it.
     text = "測" * 1334
     suffix = "\n\n_… (generating response…)_"
-    result = _fit_with_suffix(text, SLACK_MSG_MAX_BYTES, suffix)
-    assert _utf8_len(result) <= SLACK_MSG_MAX_BYTES
+    result = _fit_with_suffix(text, DEFAULT_MSG_MAX_BYTES, suffix)
+    assert _utf8_len(result) <= DEFAULT_MSG_MAX_BYTES
     assert result.endswith(suffix)
 
 
@@ -64,4 +64,4 @@ def test_fit_with_suffix_cjk_just_under_limit_untouched():
     text = "測" * 1300
     assert _utf8_len(text) == 3900
     suffix = "\n\n_… (generating response…)_"
-    assert _fit_with_suffix(text, SLACK_MSG_MAX_BYTES, suffix) == text
+    assert _fit_with_suffix(text, DEFAULT_MSG_MAX_BYTES, suffix) == text

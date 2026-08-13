@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from agent_bridge.bridge.config import DedupeConfig
 from agent_bridge.bridge.dedupe import (
     PromptDedupeCache,
     canonicalize,
@@ -86,7 +87,7 @@ def test_hamming_basic():
 
 
 def test_lookup_or_claim_miss_then_hit():
-    cache = PromptDedupeCache(ttl_seconds=60.0)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
     r1 = cache.lookup_or_claim("slack:C1", "alert", "slack:C1:t1")
     assert r1.hit is None
     r2 = cache.lookup_or_claim("slack:C1", "alert", "slack:C1:t2")
@@ -96,7 +97,7 @@ def test_lookup_or_claim_miss_then_hit():
 
 
 def test_canonical_match_collapses_url_variants():
-    cache = PromptDedupeCache(ttl_seconds=60.0)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
     cache.lookup_or_claim("s", "Error at https://a.com/1", "s:t1")
     r = cache.lookup_or_claim("s", "Error at https://b.com/9999", "s:t2")
     assert r.hit is not None
@@ -104,14 +105,14 @@ def test_canonical_match_collapses_url_variants():
 
 
 def test_different_scope_does_not_collide():
-    cache = PromptDedupeCache(ttl_seconds=60.0)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
     cache.lookup_or_claim("slack:C1", "alert", "k1")
     r = cache.lookup_or_claim("slack:C2", "alert", "k2")
     assert r.hit is None
 
 
 def test_mark_completed_transitions_entry():
-    cache = PromptDedupeCache(ttl_seconds=60.0)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
     r = cache.lookup_or_claim("s", "alert", "k1")
     cache.mark_completed("s", r.canonical)
     r2 = cache.lookup_or_claim("s", "alert", "k2")
@@ -120,7 +121,7 @@ def test_mark_completed_transitions_entry():
 
 
 def test_mark_failed_removes_entry_so_retry_proceeds():
-    cache = PromptDedupeCache(ttl_seconds=60.0)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
     r = cache.lookup_or_claim("s", "alert", "k1")
     cache.mark_failed("s", r.canonical)
     r2 = cache.lookup_or_claim("s", "alert", "k2")
@@ -128,7 +129,7 @@ def test_mark_failed_removes_entry_so_retry_proceeds():
 
 
 def test_expired_entry_treated_as_miss(monkeypatch):
-    cache = PromptDedupeCache(ttl_seconds=1.0)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=1.0))
     fake_now = [1000.0]
     monkeypatch.setattr(time, "monotonic", lambda: fake_now[0])
 
@@ -140,7 +141,7 @@ def test_expired_entry_treated_as_miss(monkeypatch):
 
 
 def test_lru_eviction_at_capacity():
-    cache = PromptDedupeCache(ttl_seconds=60.0, max_entries=3)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0, max_entries=3))
     cache.lookup_or_claim("s", "a", "ka")
     cache.lookup_or_claim("s", "b", "kb")
     cache.lookup_or_claim("s", "c", "kc")
@@ -156,7 +157,7 @@ def test_lru_eviction_at_capacity():
 
 
 def test_simhash_threshold_zero_disables_fuzzy():
-    cache = PromptDedupeCache(ttl_seconds=60.0, simhash_threshold=0)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0, simhash_threshold=0))
     cache.lookup_or_claim("s", "Zodios endpoint members", "k1")
     r = cache.lookup_or_claim("s", "Zodios endpoint messages", "k2")
     # Canonical strings differ ("members" vs "messages"); without fuzzy, miss.
@@ -164,7 +165,7 @@ def test_simhash_threshold_zero_disables_fuzzy():
 
 
 def test_simhash_threshold_catches_similar_text():
-    cache = PromptDedupeCache(ttl_seconds=60.0, simhash_threshold=20)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0, simhash_threshold=20))
     cache.lookup_or_claim(
         "s",
         "Zodios: Invalid response from endpoint 'get api/v1/orgs/members'",
@@ -181,7 +182,7 @@ def test_simhash_threshold_catches_similar_text():
 
 
 def test_simhash_does_not_cross_scope():
-    cache = PromptDedupeCache(ttl_seconds=60.0, simhash_threshold=30)
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0, simhash_threshold=30))
     cache.lookup_or_claim("scope-A", "Zodios endpoint members", "kA")
     r = cache.lookup_or_claim("scope-B", "Zodios endpoint messages", "kB")
     # Same-shaped text but different scope → still a miss even with threshold.
@@ -191,10 +192,8 @@ def test_simhash_does_not_cross_scope():
 # --- construction ---
 
 
-def test_invalid_construction_raises():
-    with pytest.raises(ValueError):
-        PromptDedupeCache(ttl_seconds=0)
-    with pytest.raises(ValueError):
-        PromptDedupeCache(ttl_seconds=10.0, max_entries=0)
-    with pytest.raises(ValueError):
-        PromptDedupeCache(ttl_seconds=10.0, simhash_threshold=-1)
+def test_building_a_cache_from_a_disabled_config_raises():
+    # Range checks live in DedupeConfig (tests/bridge/test_config.py); the
+    # cache only guards against a caller skipping the `enabled` gate.
+    with pytest.raises(ValueError, match="must be positive"):
+        PromptDedupeCache(DedupeConfig(ttl_seconds=0))

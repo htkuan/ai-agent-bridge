@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_bridge.config import BridgeConfig
+from agent_bridge.bridge.config import BridgeConfig
 
 _ENV_VARS = [
     "AGENT_BRIDGE_SESSION_STORE_PATH",

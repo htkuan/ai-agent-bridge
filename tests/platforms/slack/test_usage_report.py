@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from agent_bridge.events import Usage
+from agent_bridge.bridge.events import Usage
 from agent_bridge.platforms.slack.adapter import (
     _USAGE_DIVIDER,
     SlackAdapter,

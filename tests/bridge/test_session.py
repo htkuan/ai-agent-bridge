@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_bridge.session import SessionManager
+from agent_bridge.bridge.session import SessionManager
 
 
 def test_get_or_create_new(tmp_path: Path):

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_bridge.events import (
+from agent_bridge.bridge.events import (
     BridgeEvent,
     Completion,
     Processing,

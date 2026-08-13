@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_bridge.session import SessionManager
+from agent_bridge.bridge.session import SessionManager
 from tests.fakes import claude_cli
 from tests.fakes.claude_cli import FakeClaudeCLI, Step
 

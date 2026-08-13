@@ -6,10 +6,10 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
-from agent_bridge.dedupe import PromptDedupeCache
-from agent_bridge.events import BridgeEvent, Completion, Processing, Usage
-from agent_bridge.protocols import AgentController
-from agent_bridge.session import SessionManager
+from agent_bridge.bridge.dedupe import PromptDedupeCache
+from agent_bridge.bridge.events import BridgeEvent, Completion, Processing, Usage
+from agent_bridge.bridge.protocols import AgentController
+from agent_bridge.bridge.session import SessionManager
 
 logger = logging.getLogger(__name__)
 

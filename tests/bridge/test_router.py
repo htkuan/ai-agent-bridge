@@ -4,15 +4,15 @@ from pathlib import Path
 
 import pytest
 
-from agent_bridge.bridge import Bridge
-from agent_bridge.dedupe import PromptDedupeCache
-from agent_bridge.events import (
+from agent_bridge.bridge.dedupe import PromptDedupeCache
+from agent_bridge.bridge.events import (
     BridgeEvent,
     Completion,
     Processing,
     TextDelta,
 )
-from agent_bridge.session import SessionManager
+from agent_bridge.bridge.router import Bridge
+from agent_bridge.bridge.session import SessionManager
 
 
 class FakeController:
@@ -501,7 +501,7 @@ async def test_dedupe_hit_logs_dedupe_hit_line(session_mgr, caplog):
     async for _ in bridge.handle_message("slack:C1:t1", "alert"):
         pass
 
-    with caplog.at_level(logging.INFO, logger="agent_bridge.bridge"):
+    with caplog.at_level(logging.INFO, logger="agent_bridge.bridge.router"):
         async for _ in bridge.handle_message("slack:C1:t2", "alert"):
             pass
 

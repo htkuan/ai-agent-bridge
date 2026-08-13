@@ -10,7 +10,7 @@ import pytest
 
 from agent_bridge.agents.claude.config import ClaudeConfig
 from agent_bridge.agents.claude.controller import ClaudeController
-from agent_bridge.events import Completion, StatusUpdate, TextDelta
+from agent_bridge.bridge.events import Completion, StatusUpdate, TextDelta
 from tests.conftest import FakeClaudeFactory
 from tests.fakes import claude_cli
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
-from agent_bridge.events import BridgeEvent, Completion, Processing
+from agent_bridge.bridge.events import BridgeEvent, Completion, Processing
 
 
 @dataclass(frozen=True)

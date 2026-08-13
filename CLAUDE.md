@@ -18,7 +18,7 @@ Each layer has one job and knows nothing about the others' internals.
 | Layer | Responsibility | Example |
 |-------|---------------|---------|
 | **Platform Adapter** (`platforms/`) | Defines session semantics, manages per-session locking, renders agent events into platform-native messages | `SlackAdapter` — thread = session |
-| **Bridge** (`bridge.py`, `session.py`) | Pure routing: resolves session keys → session IDs, enforces global concurrency, forwards events | No platform or agent knowledge |
+| **Bridge** (`bridge/`) | Pure routing: resolves session keys → session IDs, enforces global concurrency, forwards events. Also owns the shared contract (`events.py`, `protocols.py`) both other layers implement against | No platform or agent knowledge |
 | **Agent Controller** (`agents/`) | Receives `(session_id, prompt, is_new, context)`, executes, yields `BridgeEvent`s | `ClaudeController` — spawns `claude -p` subprocess |
 
 ### Event model
@@ -33,7 +33,7 @@ All agent output flows through a generic event system. Platforms only consume th
 | `UserQuestion` | Agent asking the user for input |
 | `Completion` | Agent finished (includes cost, duration, error) |
 
-Events are defined in `src/agent_bridge/events.py`. Agent-internal events (thinking, tool results) are translated within each agent module — never exposed to platforms.
+Events are defined in `src/agent_bridge/bridge/events.py`. Agent-internal events (thinking, tool results) are translated within each agent module — never exposed to platforms.
 
 ### Protocols
 
@@ -41,7 +41,7 @@ Events are defined in `src/agent_bridge/events.py`. Agent-internal events (think
 - `PlatformAdapter` — `start()`, `stop()`
 - `MessageRouter` — `handle_message(session_key, text, context, system_prompt, resumable) → AsyncIterator[BridgeEvent]`. The interface adapters send messages through; `Bridge` is the production implementation. Adapters depend on this protocol, not the concrete class, so tests can substitute fakes.
 
-Defined in `src/agent_bridge/protocols.py`. New agents/platforms implement these.
+Defined in `src/agent_bridge/bridge/protocols.py`. New agents/platforms implement these.
 
 ### Session management
 
@@ -85,23 +85,33 @@ Defined in `src/agent_bridge/protocols.py`. New agents/platforms implement these
 
 ## Project structure
 
+One package per layer. `agents/` and `platforms/` both depend on `bridge/`;
+`bridge/` depends on neither — it holds the shared contract they plug into.
+`app.py` is the only module that knows all three.
+
 ```
 src/agent_bridge/
-├── __init__.py          # Entry point: wires adapter + bridge + agent, signal handling, cleanup
-├── config.py            # BridgeConfig (store path, TTL, concurrency)
-├── bridge.py            # Pure routing + global concurrency (Semaphore)
-├── events.py            # BridgeEvent type union (Processing, TextDelta, StatusUpdate, UserQuestion, Completion)
-├── session.py           # SessionManager (key → UUID, TTL, JSON persistence)
-├── protocols.py         # AgentController + PlatformAdapter protocol interfaces
+├── __init__.py          # Empty — importing a submodule must not drag in the whole app
+├── app.py               # Entry point: wires adapter + bridge + agent, signal handling, cleanup
+├── bridge/
+│   ├── router.py        # Bridge — pure routing + global concurrency (Semaphore)
+│   ├── events.py        # BridgeEvent type union (Processing, TextDelta, StatusUpdate, UserQuestion, Completion)
+│   ├── protocols.py     # AgentController + PlatformAdapter + MessageRouter protocol interfaces
+│   ├── session.py       # SessionManager (key → UUID, TTL, JSON persistence)
+│   ├── dedupe.py        # PromptDedupeCache (optional cross-session prompt dedupe)
+│   └── config.py        # BridgeConfig (store path, TTL, concurrency, dedupe)
 ├── agents/
 │   └── claude/
 │       ├── config.py    # ClaudeConfig (work_dir, permission_mode, timeout)
 │       ├── controller.py # Subprocess spawner, stream reader, timeout handling
 │       └── events.py    # Claude stream-json parser → BridgeEvent converter
 └── platforms/
-    └── slack/
-        ├── config.py    # SlackConfig (bot_token, app_token)
-        └── adapter.py   # Event handlers, per-session state machine, message rendering
+    ├── slack/
+    │   ├── config.py    # SlackConfig (bot_token, app_token)
+    │   └── adapter.py   # Event handlers, per-session state machine, message rendering
+    └── heartbeat/
+        ├── config.py    # HeartbeatConfig (interval, prompt, state path)
+        └── adapter.py   # Periodic one-shot triggers (resumable=False)
 ```
 
 ## Conventions
@@ -188,7 +198,7 @@ src/agent_bridge/
 6. Build the `system_prompt` — platform-flavored directives (chat framing, scheduled-invocation framing, webhook-trigger framing, etc.). The agent forwards it as-is
 7. Decide `resumable`: pass `True` (default) if the same `session_key` should be able to resume the same session later (e.g. chat threads); pass `False` for one-shot triggers where every call must be a fresh, untracked session (e.g. heartbeat ticks)
 8. Consume `BridgeEvent`s from `bridge.handle_message(session_key, text, context, system_prompt, resumable)`
-9. Wire up in `__init__.py`
+9. Wire up in `app.py`
 10. Add documentation in `docs/platforms/{name}.md`
 
 ### Adding a new agent
@@ -198,7 +208,7 @@ src/agent_bridge/
 3. Create `agents/{name}/events.py` — parse agent output → `BridgeEvent`s
 4. `run()` yields only generic `BridgeEvent`s — agent-internal events stay internal
 5. Treat `system_prompt` and `prompt` as opaque strings built by the platform — do not parse `context` for platform-specific keys
-6. Wire up in `__init__.py`
+6. Wire up in `app.py`
 7. Add documentation in `docs/agents/{name}.md`
 
 ### Documentation maintenance

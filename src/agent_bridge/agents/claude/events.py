@@ -5,7 +5,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from agent_bridge.events import (
+from agent_bridge.bridge.events import (
     BridgeEvent,
     Completion,
     StatusUpdate,

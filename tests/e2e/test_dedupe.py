@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_bridge.dedupe import PromptDedupeCache
+from agent_bridge.bridge.dedupe import PromptDedupeCache
 from tests.e2e.stack import build_stack
 from tests.fakes import claude_cli
 

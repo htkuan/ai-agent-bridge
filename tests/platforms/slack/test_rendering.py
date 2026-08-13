@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 import agent_bridge.platforms.slack.adapter as slack_adapter
-from agent_bridge.events import (
+from agent_bridge.bridge.events import (
     Completion,
     Processing,
     StatusUpdate,

@@ -1,7 +1,7 @@
 """Shared, typed test doubles for the bridge's protocol seams.
 
 Every fake implements the corresponding interface from
-``agent_bridge.protocols`` (or, for external boundaries, the API subset the
+``agent_bridge.bridge.protocols`` (or, for external boundaries, the API subset the
 adapter actually uses) and records its calls so tests can assert on them.
 The contract suites in ``tests/contracts`` pin the fakes to the real
 implementations' behaviour.

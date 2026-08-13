@@ -2,6 +2,54 @@
 
 <!-- version list -->
 
+## v0.4.0 (2026-08-13)
+
+### Build System
+
+- Raise coverage ratchet to 98
+  ([`d7f69d8`](https://github.com/htkuan/ai-agent-bridge/commit/d7f69d888c9038b51dcf14b274b65e4cf8d4a1e9))
+
+### Continuous Integration
+
+- Run e2e scenarios in a dedicated 3.12-only job
+  ([`f2054f4`](https://github.com/htkuan/ai-agent-bridge/commit/f2054f47e2153aefd43c7c2c257e60adb3698f24))
+
+### Documentation
+
+- Document layer markers and the raised coverage gate
+  ([`a6c9b41`](https://github.com/htkuan/ai-agent-bridge/commit/a6c9b418daee5de10c831970cfe09748782fa780))
+
+### Refactoring
+
+- Split src into agents/, bridge/, platforms/ packages
+  ([`abcfe4c`](https://github.com/htkuan/ai-agent-bridge/commit/abcfe4ce87b0e8ea8ecc4ab71f88b2953596ecb1))
+
+### Testing
+
+- Add unit/integration/e2e layer markers
+  ([`77d1438`](https://github.com/htkuan/ai-agent-bridge/commit/77d1438eafa1e8c2e4795604977b6114c492a79c))
+
+- **app**: Cover wiring, periodic cleanup, and signal shutdown
+  ([`74b232c`](https://github.com/htkuan/ai-agent-bridge/commit/74b232cdc2586a7e5d715c4813f20974d0ad45a8))
+
+- **e2e**: Add full-stack rig and seven bridge scenarios
+  ([`e3c6e5f`](https://github.com/htkuan/ai-agent-bridge/commit/e3c6e5fb5230f91decd980a71e5080ce8c075b9e))
+
+- **slack**: Add adapter test harness wired to typed fakes
+  ([`61b71ff`](https://github.com/htkuan/ai-agent-bridge/commit/61b71ff2c178eaa61594b94e165571ada6d8bc46))
+
+- **slack**: Cover info cache, session state, handlers, and context
+  ([`c8b6c72`](https://github.com/htkuan/ai-agent-bridge/commit/c8b6c72763a7e7be16730f2f84cbffe402e7f188))
+
+- **slack**: Cover message flow, rendering, throttle, and lifecycle
+  ([`2a9be81`](https://github.com/htkuan/ai-agent-bridge/commit/2a9be81e330a9ca2d62f54d4c7ee2b5722772f65))
+
+### Breaking Changes
+
+- Bridge-layer modules moved from agent_bridge.<name> to agent_bridge.bridge.<name>, and the app
+  entry point from agent_bridge to agent_bridge.app. The agent-bridge console script is unchanged.
+
+
 ## v0.3.1 (2026-08-09)
 
 ### Bug Fixes

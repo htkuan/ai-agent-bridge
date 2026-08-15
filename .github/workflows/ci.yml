@@ -94,4 +94,8 @@ jobs:
         # Full-stack scenarios spawn real subprocesses and are timing
         # sensitive; one interpreter gives enough signal. Coverage is owned
         # by the `test` job — the e2e subset alone would trip fail_under.
-        run: uv run pytest -m e2e --no-cov
+        # `not live` excludes the scenarios that spawn the real claude CLI:
+        # they need credentials and spend tokens, so they stay opt-in and
+        # local (uv run pytest -m live --live --no-cov). Belt and braces —
+        # without the --live flag they would skip themselves anyway.
+        run: uv run pytest -m "e2e and not live" --no-cov

@@ -149,9 +149,14 @@ Neither change requires modifying the bridge, the other agent, or the other plat
 # Run tests
 uv run pytest tests/ -v
 
+# Run the live e2e against the real claude CLI (opt-in, spends tokens)
+uv run pytest -m live --live --no-cov -v
+
 # Run with debug logging
 AGENT_BRIDGE_LOG_LEVEL=DEBUG uv run agent-bridge
 ```
+
+Test layout, fakes and markers: [docs/testing.md](docs/testing.md).
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/) (lowercase
 types: `feat:`, `fix:`, ...) and are enforced on PRs. Merging to `main` cuts a release

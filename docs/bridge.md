@@ -273,7 +273,8 @@ The Bridge is intentionally not subclassable. To extend the system you implement
 class PlatformAdapter(Protocol):
     async def start(self) -> None: ...
     async def stop(self) -> None: ...
-    async def cleanup(self) -> int: ...  # periodic housekeeping; returns entries removed
+    # Periodic housekeeping; returns entries removed.
+    async def cleanup(self) -> int: ...
 ```
 
 The adapter is responsible for defining `session_key` format, owning per-session locking, building `text` and `system_prompt`, and choosing `resumable=True/False`. It calls `bridge.handle_message(...)` and renders the resulting `BridgeEvent`s.

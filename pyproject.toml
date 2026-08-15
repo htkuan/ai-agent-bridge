@@ -1,6 +1,6 @@
 [project]
 name = "ai-agent-bridge"
-version = "0.5.0"
+version = "0.6.0"
 description = "Modular bridge between chat platforms and AI agents"
 readme = "README.md"
 license = "MIT"

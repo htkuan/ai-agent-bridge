@@ -2,6 +2,41 @@
 
 <!-- version list -->
 
+## v0.6.0 (2026-08-15)
+
+### Documentation
+
+- Document the live e2e and its flags
+  ([`bbefff0`](https://github.com/htkuan/ai-agent-bridge/commit/bbefff0edad453ba705d621aacf42e005e89fd61))
+
+- Keep the bridge.md protocol snippet within ruff's line width
+  ([`d346e1a`](https://github.com/htkuan/ai-agent-bridge/commit/d346e1ad7f62d9193f6585057a1473e54312c116))
+
+- Rewrite the platform extension guide around BasePlatformAdapter
+  ([`d4371c9`](https://github.com/htkuan/ai-agent-bridge/commit/d4371c9049c71a6b6a0a578e64ae65a6ed54b26f))
+
+### Features
+
+- **platforms**: Add BasePlatformAdapter shared flow
+  ([`e473856`](https://github.com/htkuan/ai-agent-bridge/commit/e47385619b8256c5a244a523ed68d747e2b8311d))
+
+- **platforms**: Require cleanup() on the PlatformAdapter protocol
+  ([`f90cd5d`](https://github.com/htkuan/ai-agent-bridge/commit/f90cd5d2fade8c55fc4da914641979f66f7fd66d))
+
+### Refactoring
+
+- **heartbeat**: Adopt BasePlatformAdapter
+  ([`c15f2bc`](https://github.com/htkuan/ai-agent-bridge/commit/c15f2bcea1d8d435b7211e3b9fd6d5ff2ee58c64))
+
+- **slack**: Adopt BasePlatformAdapter
+  ([`3de88d4`](https://github.com/htkuan/ai-agent-bridge/commit/3de88d4e46ceaef6ac1a20bbdb5889f18cea3ca1))
+
+### Testing
+
+- **e2e**: Add live scenarios against the real claude CLI
+  ([`ee5f110`](https://github.com/htkuan/ai-agent-bridge/commit/ee5f1102ae908e3b676fe9cccfb31c4af24702fd))
+
+
 ## v0.5.0 (2026-08-15)
 
 ### Bug Fixes

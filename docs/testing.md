@@ -48,6 +48,9 @@ tests/
 ├── platforms/slack/         # adapter behaviour, one concern per file
 ├── platforms/heartbeat/
 └── e2e/                     # full-stack scenarios (real components + fake CLI)
+    ├── stack.py             # the rig: Slack adapter → Bridge → controller
+    ├── conftest.py          # live_* fixtures: same rig, real claude CLI
+    └── test_live_claude.py  # the live scenarios (opt-in, --live)
 ```
 
 ## The seams and their doubles
@@ -107,6 +110,56 @@ results, non-zero exits, malformed JSON lines, mid-stream cuts (`exit` before
 step schema is documented in the module docstring — keep the builders in
 sync with what `agents/claude/events.py` parses.
 
+## The live e2e (real claude CLI)
+
+The scripted CLI can only prove we handle the stream-json shape *we wrote
+down*. `tests/e2e/test_live_claude.py` spawns the real Claude Code CLI, so
+the argv we build, the stream we parse and the session ids we resume are
+checked against the thing itself. It costs money and is not deterministic,
+so it is opt-in and excluded from CI:
+
+```bash
+uv run pytest -m live --live --no-cov -v
+```
+
+`--live` switches the scenarios on, `-m live` narrows the run to just them
+(`pytest --live` alone runs them alongside everything else). Requirements:
+`claude` on PATH and authenticated (`claude login` or `ANTHROPIC_API_KEY`).
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--live` | off | run the `live` scenarios |
+| `--live-cli PATH` | `claude` | which binary to spawn |
+| `--live-timeout SECONDS` | `300` | per-turn budget |
+
+**A flag, not an env var.** The switch has to come from outside the test —
+but reading it from the environment would break the rule that no test reads
+`os.environ`, and would leave a stray variable able to silently start
+spending tokens. The flags are declared in `tests/conftest.py`
+(`pytest_addoption`) and the gate lives in one place: the same
+`pytest_collection_modifyitems` that applies layer markers skips anything
+marked `live` unless `--live` is set, with the reason spelled out (`-rs`
+prints it). A missing `--live-cli` binary skips too, rather than failing,
+because `pytest --live` runs the whole suite and the rest is still worth
+reporting on. CI's e2e job runs `-m "e2e and not live"`, so the gate is
+belt-and-braces.
+
+The flags feed the `live_claude_config` / `live_controller` / `live_stack`
+fixtures in `tests/e2e/conftest.py`. The config pins `effort=low` (cheap:
+these assert plumbing, not reasoning) and a throwaway `tmp_path` work dir,
+so an agent running with `acceptEdits` can never touch the repo.
+
+Three scenarios, one per thing the fake cannot prove:
+
+| Scenario | Pins |
+|---|---|
+| `..._controller_streams_a_real_completion` | the real stream-json shape parses, and `result` carries the usage/cost fields the Slack footer reads |
+| `..._thread_resumes_the_same_claude_session` | `--session-id` then `--resume` really reattaches — turn 2 recalls turn 1's code word |
+| `..._tool_use_reaches_slack` | a real tool call runs in the sandbox and renders as a status update mid-stream |
+
+Prompts force a token to assert on (`PONG`, `BANANA47`, `DONE`); never
+assert on the model's prose.
+
 ## Conventions
 
 - **Time**: throttle/sleep behaviour is tested by monkeypatching
@@ -120,9 +173,11 @@ sync with what `agents/claude/events.py` parses.
   `tests/e2e/` and `unit` to anything unmarked (both in `tests/conftest.py`);
   `integration` is declared per module (`pytestmark`) where tests cross a
   process boundary, e.g. spawning the scripted CLI. Select layers with `-m`
-  (`uv run pytest -m "not e2e"`). Markers are registered in `pyproject.toml`
-  and `--strict-markers` rejects typos.
+  (`uv run pytest -m "not e2e"`). `live` is an orthogonal opt-in on top of
+  `e2e`, not a layer, and needs `--live` as well as its marker. Markers are
+  registered in `pyproject.toml` and `--strict-markers` rejects typos.
 - **Running**: `uv run pytest -q` (full suite, coverage gate applies);
   single files or `-m` subsets need `--no-cov`. In CI the version matrix runs
-  `-m "not e2e"` with the coverage gate; a separate 3.12-only job runs the
-  e2e scenarios without coverage.
+  `-m "not e2e"` with the coverage gate; a separate 3.12-only job runs
+  `-m "e2e and not live"` without coverage. The `live` scenarios are never
+  run by CI.

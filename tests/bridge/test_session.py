@@ -4,12 +4,13 @@ from pathlib import Path
 
 import pytest
 
+from agent_bridge.bridge.config import SessionConfig
 from agent_bridge.bridge.session import SessionManager
 
 
 def test_get_or_create_new(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store)
+    mgr = SessionManager(SessionConfig(store_path=store))
 
     session_id, is_new = mgr.get_or_create("slack:C123:ts1")
     assert is_new is True
@@ -18,7 +19,7 @@ def test_get_or_create_new(tmp_path: Path):
 
 def test_get_or_create_existing(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store)
+    mgr = SessionManager(SessionConfig(store_path=store))
 
     sid1, new1 = mgr.get_or_create("slack:C123:ts1")
     sid2, new2 = mgr.get_or_create("slack:C123:ts1")
@@ -30,7 +31,7 @@ def test_get_or_create_existing(tmp_path: Path):
 
 def test_different_keys_different_sessions(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store)
+    mgr = SessionManager(SessionConfig(store_path=store))
 
     sid1, _ = mgr.get_or_create("slack:C123:ts1")
     sid2, _ = mgr.get_or_create("slack:C123:ts2")
@@ -41,11 +42,11 @@ def test_different_keys_different_sessions(tmp_path: Path):
 def test_persistence(tmp_path: Path):
     store = tmp_path / "sessions.json"
 
-    mgr1 = SessionManager(store)
+    mgr1 = SessionManager(SessionConfig(store_path=store))
     sid1, _ = mgr1.get_or_create("slack:C123:ts1")
 
     # New manager loads from file
-    mgr2 = SessionManager(store)
+    mgr2 = SessionManager(SessionConfig(store_path=store))
     sid2, is_new = mgr2.get_or_create("slack:C123:ts1")
 
     assert sid1 == sid2
@@ -54,14 +55,14 @@ def test_persistence(tmp_path: Path):
 
 def test_get_nonexistent(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store)
+    mgr = SessionManager(SessionConfig(store_path=store))
 
     assert mgr.get("nonexistent") is None
 
 
 def test_get_existing(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store)
+    mgr = SessionManager(SessionConfig(store_path=store))
 
     sid, _ = mgr.get_or_create("slack:C123:ts1")
     assert mgr.get("slack:C123:ts1") == sid
@@ -69,7 +70,7 @@ def test_get_existing(tmp_path: Path):
 
 def test_delete(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store)
+    mgr = SessionManager(SessionConfig(store_path=store))
 
     mgr.get_or_create("slack:C123:ts1")
     assert mgr.delete("slack:C123:ts1") is True
@@ -79,7 +80,7 @@ def test_delete(tmp_path: Path):
 
 def test_list_sessions(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store)
+    mgr = SessionManager(SessionConfig(store_path=store))
 
     mgr.get_or_create("slack:C1:ts1")
     mgr.get_or_create("slack:C2:ts2")
@@ -92,7 +93,7 @@ def test_list_sessions(tmp_path: Path):
 
 def test_store_file_format(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store)
+    mgr = SessionManager(SessionConfig(store_path=store))
 
     mgr.get_or_create("slack:C123:ts1")
 
@@ -108,7 +109,7 @@ def test_store_file_format(tmp_path: Path):
 
 def test_expired_session_treated_as_new(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store, ttl_hours=1.0)
+    mgr = SessionManager(SessionConfig(store_path=store, ttl_hours=1.0))
 
     sid1, _ = mgr.get_or_create("slack:C123:ts1")
 
@@ -124,7 +125,7 @@ def test_expired_session_treated_as_new(tmp_path: Path):
 
 def test_get_returns_none_for_expired(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store, ttl_hours=1.0)
+    mgr = SessionManager(SessionConfig(store_path=store, ttl_hours=1.0))
 
     mgr.get_or_create("slack:C123:ts1")
 
@@ -136,7 +137,7 @@ def test_get_returns_none_for_expired(tmp_path: Path):
 
 def test_list_sessions_excludes_expired(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store, ttl_hours=1.0)
+    mgr = SessionManager(SessionConfig(store_path=store, ttl_hours=1.0))
 
     mgr.get_or_create("slack:C1:ts1")
     mgr.get_or_create("slack:C2:ts2")
@@ -152,7 +153,7 @@ def test_list_sessions_excludes_expired(tmp_path: Path):
 
 def test_purge_expired(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store, ttl_hours=1.0)
+    mgr = SessionManager(SessionConfig(store_path=store, ttl_hours=1.0))
 
     sid1, _ = mgr.get_or_create("slack:C1:ts1")
     mgr.get_or_create("slack:C2:ts2")
@@ -185,14 +186,14 @@ def test_purge_on_load(tmp_path: Path):
         )
     )
 
-    mgr = SessionManager(store, ttl_hours=72.0)
+    mgr = SessionManager(SessionConfig(store_path=store, ttl_hours=72.0))
     # Expired session should have been purged on load
     assert mgr.get("slack:old:ts1") is None
 
 
 def test_active_session_not_expired(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store, ttl_hours=72.0)
+    mgr = SessionManager(SessionConfig(store_path=store, ttl_hours=72.0))
 
     sid, _ = mgr.get_or_create("slack:C123:ts1")
 
@@ -203,7 +204,7 @@ def test_active_session_not_expired(tmp_path: Path):
 
 def test_ttl_resets_on_use(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store, ttl_hours=2.0)
+    mgr = SessionManager(SessionConfig(store_path=store, ttl_hours=2.0))
 
     mgr.get_or_create("slack:C123:ts1")
 
@@ -225,7 +226,7 @@ def test_ttl_resets_on_use(tmp_path: Path):
 def test_corrupt_store_file_starts_empty(tmp_path: Path):
     store = tmp_path / "sessions.json"
     store.write_text("{not valid json!!")
-    mgr = SessionManager(store)
+    mgr = SessionManager(SessionConfig(store_path=store))
     assert mgr.list_sessions() == {}
     assert mgr.get("slack:C123:ts1") is None
 
@@ -247,7 +248,7 @@ def test_unparsable_last_used_treated_as_expired(tmp_path: Path):
             }
         )
     )
-    mgr = SessionManager(store)
+    mgr = SessionManager(SessionConfig(store_path=store))
     # Both entries are unparsable -> expired -> purged on load.
     assert mgr.get("slack:C1:t1") is None
     assert mgr.get("slack:C1:t2") is None
@@ -258,7 +259,7 @@ def test_new_session_persist_failure_raises_and_rolls_back(tmp_path: Path):
     store_dir = tmp_path / "store"
     store_dir.mkdir()
     store = store_dir / "sessions.json"
-    mgr = SessionManager(store)
+    mgr = SessionManager(SessionConfig(store_path=store))
     store_dir.chmod(0o555)  # store file can no longer be created
     try:
         with pytest.raises(OSError, match="Failed to persist"):
@@ -271,7 +272,7 @@ def test_new_session_persist_failure_raises_and_rolls_back(tmp_path: Path):
 
 def test_touch_failure_rolls_back_last_used(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store)
+    mgr = SessionManager(SessionConfig(store_path=store))
     sid, _ = mgr.get_or_create("slack:C123:ts1")
     before = mgr.list_sessions()["slack:C123:ts1"]["last_used"]
     store.chmod(0o444)  # subsequent saves fail
@@ -286,7 +287,7 @@ def test_touch_failure_rolls_back_last_used(tmp_path: Path):
 
 def test_delete_failure_restores_entry(tmp_path: Path):
     store = tmp_path / "sessions.json"
-    mgr = SessionManager(store)
+    mgr = SessionManager(SessionConfig(store_path=store))
     sid, _ = mgr.get_or_create("slack:C123:ts1")
     store.chmod(0o444)
     try:

@@ -6,6 +6,7 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
+from agent_bridge.bridge.config import RouterConfig
 from agent_bridge.bridge.dedupe import PromptDedupeCache
 from agent_bridge.bridge.events import BridgeEvent, Completion, Processing, Usage
 from agent_bridge.bridge.protocols import AgentController
@@ -26,14 +27,15 @@ class _DedupeClaim:
 class Bridge:
     def __init__(
         self,
+        config: RouterConfig,
         session_manager: SessionManager,
         controller: AgentController,
-        max_concurrent: int = 5,
         dedupe: PromptDedupeCache | None = None,
     ) -> None:
+        self._config = config
         self._session_manager = session_manager
         self._controller = controller
-        self._sem = asyncio.Semaphore(max_concurrent)
+        self._sem = asyncio.Semaphore(config.max_concurrent_sessions)
         # None ⇒ feature off. Preserves pre-dedupe behaviour for tests/dev.
         self._dedupe = dedupe
         # In-memory per-session usage accumulator. Not persisted — resets on

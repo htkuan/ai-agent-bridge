@@ -12,9 +12,12 @@ from pathlib import Path
 import pytest
 
 from agent_bridge import app
+from agent_bridge.agents.claude.config import ClaudeConfig
+from agent_bridge.bridge.config import BridgeConfig, RouterConfig, SessionConfig
 from agent_bridge.bridge.events import Usage
 from agent_bridge.bridge.router import Bridge
 from agent_bridge.bridge.session import SessionManager
+from agent_bridge.config import AppConfig
 from tests.fakes import FakeAgentController, FakePlatformAdapter
 from tests.platforms.slack.harness import build_harness
 
@@ -51,14 +54,13 @@ class _ExplodingController:
 # --- _periodic_cleanup ---
 
 
-async def test_cleanup_round_purges_sessions_usage_and_slack_state(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    monkeypatch.setattr(app, "CLEANUP_INTERVAL_SECONDS", 0.01)
+async def test_cleanup_round_purges_sessions_usage_and_slack_state(tmp_path: Path):
     # Sessions expire (effectively) immediately.
-    session_manager = SessionManager(store_path=tmp_path / "s.json", ttl_hours=1e-9)
+    session_manager = SessionManager(
+        SessionConfig(store_path=tmp_path / "s.json", ttl_hours=1e-9)
+    )
     controller = _RecordingController()
-    bridge = Bridge(session_manager, FakeAgentController())
+    bridge = Bridge(RouterConfig(), session_manager, FakeAgentController())
     sid, _ = session_manager.get_or_create("slack:C1:1.0")
     bridge._session_usage[sid] = Usage(cost_usd=1.0)
     bridge._usage_tracked.add(sid)
@@ -68,7 +70,7 @@ async def test_cleanup_round_purges_sessions_usage_and_slack_state(
     shutdown = asyncio.Event()
     task = asyncio.create_task(
         app._periodic_cleanup(
-            shutdown, session_manager, harness.adapter, bridge, controller
+            0.01, shutdown, session_manager, harness.adapter, bridge, controller
         )
     )
     try:
@@ -82,18 +84,17 @@ async def test_cleanup_round_purges_sessions_usage_and_slack_state(
     assert harness.adapter._sessions == {}
 
 
-async def test_cleanup_loop_survives_controller_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    monkeypatch.setattr(app, "CLEANUP_INTERVAL_SECONDS", 0.01)
-    session_manager = SessionManager(store_path=tmp_path / "s.json", ttl_hours=1e-9)
+async def test_cleanup_loop_survives_controller_errors(tmp_path: Path):
+    session_manager = SessionManager(
+        SessionConfig(store_path=tmp_path / "s.json", ttl_hours=1e-9)
+    )
     session_manager.get_or_create("slack:C1:1.0")
     controller = _ExplodingController()
-    bridge = Bridge(session_manager, FakeAgentController())
+    bridge = Bridge(RouterConfig(), session_manager, FakeAgentController())
 
     shutdown = asyncio.Event()
     task = asyncio.create_task(
-        app._periodic_cleanup(shutdown, session_manager, None, bridge, controller)
+        app._periodic_cleanup(0.01, shutdown, session_manager, None, bridge, controller)
     )
     try:
         await _wait_until(lambda: controller.calls >= 1)
@@ -104,24 +105,28 @@ async def test_cleanup_loop_survives_controller_errors(
         await task  # returns cleanly despite the failed cleanup
 
 
-# --- main(): startup, signal handling, shutdown ---
+# --- run(): startup, signal handling, shutdown ---
 
 
-async def test_main_starts_adapters_and_stops_on_sigterm(
+async def test_run_starts_adapters_and_stops_on_sigterm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     fake = FakePlatformAdapter()
-    monkeypatch.setattr(app, "_build_adapters", lambda bridge, sm: (None, [fake]))
-    monkeypatch.setenv(
-        "AGENT_BRIDGE_SESSION_STORE_PATH", str(tmp_path / "sessions.json")
+    monkeypatch.setattr(
+        app, "_build_adapters", lambda config, bridge, sm: (None, [fake])
     )
-    monkeypatch.setenv("AGENT_BRIDGE_CLAUDE_WORK_DIR", str(tmp_path))
+    config = AppConfig(
+        bridge=BridgeConfig(
+            session=SessionConfig(store_path=tmp_path / "sessions.json")
+        ),
+        claude=ClaudeConfig(work_dir=tmp_path),
+    )
 
-    task = asyncio.create_task(app.main())
+    task = asyncio.create_task(app.run(config))
     loop = asyncio.get_running_loop()
     try:
         # started == 1 implies the signal handlers are already installed:
-        # main() registers them before starting any adapter.
+        # run() registers them before starting any adapter.
         await _wait_until(lambda: fake.started == 1)
         os.kill(os.getpid(), signal.SIGTERM)
         await asyncio.wait_for(task, timeout=5.0)
@@ -136,3 +141,56 @@ async def test_main_starts_adapters_and_stops_on_sigterm(
 
     assert fake.started == 1
     assert fake.stopped == 1
+
+
+# --- main(): the only place the environment is read ---
+
+
+async def test_run_probes_prerequisites_before_starting_anything(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The startup probe must run whatever built the config — from_env only
+    parses, so run() is what guarantees a bad work_dir never reaches an adapter.
+    """
+    fake = FakePlatformAdapter()
+    monkeypatch.setattr(
+        app, "_build_adapters", lambda config, bridge, sm: (None, [fake])
+    )
+    config = AppConfig(claude=ClaudeConfig(work_dir=tmp_path / "gone"))
+
+    # Bounded: without the probe, run() reaches `await shutdown_event.wait()`
+    # and this test would hang forever instead of failing.
+    with pytest.raises(ValueError, match="does not exist"):
+        async with asyncio.timeout(5):
+            await app.run(config)
+
+    assert fake.started == 0
+
+
+def test_configure_logging_sets_the_level(monkeypatch: pytest.MonkeyPatch):
+    seen: list[object] = []
+    monkeypatch.setattr(
+        app.logging, "basicConfig", lambda **kwargs: seen.append(kwargs["level"])
+    )
+    app._configure_logging("WARNING")
+    assert seen == ["WARNING"]
+
+
+async def test_main_reads_env_configures_logging_then_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    config = AppConfig(claude=ClaudeConfig(work_dir=tmp_path), log_level="WARNING")
+    levels: list[str] = []
+    ran: list[AppConfig] = []
+
+    async def _run(cfg: AppConfig) -> None:
+        ran.append(cfg)
+
+    monkeypatch.setattr(AppConfig, "from_env", classmethod(lambda cls: config))
+    monkeypatch.setattr(app, "_configure_logging", levels.append)
+    monkeypatch.setattr(app, "run", _run)
+
+    await app.main()
+
+    assert levels == ["WARNING"]
+    assert ran == [config]

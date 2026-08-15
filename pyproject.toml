@@ -64,9 +64,10 @@ markers = [
 
 [tool.coverage.report]
 # Ratchet floor, not a target: raised as coverage improves, never lowered.
-# 98 is just under the measured 98.91% of the gated CI run (`-m "not e2e"`,
-# 2026-08-11). Remaining gaps: the slack import guard, heartbeat scheduling
-# branches, and main_sync/__main__ — everything else sits at 100%.
+# 98 is just under the measured 98.99% of the gated CI run (`-m "not e2e"`,
+# 2026-08-13). Remaining gaps: the slack import guard, heartbeat scheduling
+# branches, the stderr-drain timeout inside the controller's own timeout path,
+# and main_sync/__main__ — everything else sits at 100%.
 fail_under = 98
 
 [tool.semantic_release]

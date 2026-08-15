@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
+from agent_bridge.bridge.config import RouterConfig
 from agent_bridge.bridge.events import BridgeEvent, Completion, Processing, TextDelta
 from agent_bridge.bridge.protocols import MessageRouter
 from agent_bridge.bridge.router import Bridge
@@ -29,7 +30,7 @@ def router(
         Completion(text="hi", is_error=False),
     ]
     if request.param == "bridge":
-        return Bridge(session_manager, FakeAgentController([script]))
+        return Bridge(RouterConfig(), session_manager, FakeAgentController([script]))
     return FakeBridge([Processing(), *script])
 
 
@@ -42,7 +43,9 @@ async def saturated_router(
         return
     release = asyncio.Event()
     bridge = Bridge(
-        session_manager, FakeAgentController(release=release), max_concurrent=1
+        RouterConfig(max_concurrent_sessions=1),
+        session_manager,
+        FakeAgentController(release=release),
     )
     # Occupy the only slot: advance a stream past Processing; the controller
     # holds its terminal event until ``release`` is set, so the semaphore

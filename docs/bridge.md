@@ -11,7 +11,7 @@ Source: `src/agent_bridge/bridge/`. The package is also the layer both sides plu
 | `src/agent_bridge/bridge/session.py` | `SessionManager` — persistent `session_key → session_id` map with TTL |
 | `src/agent_bridge/bridge/dedupe.py` | `PromptDedupeCache` — optional cross-session prompt dedupe |
 | `src/agent_bridge/bridge/protocols.py` | `AgentController`, `PlatformAdapter`, and `MessageRouter` protocols |
-| `src/agent_bridge/bridge/config.py` | `BridgeConfig` — env-loaded settings |
+| `src/agent_bridge/bridge/config.py` | One config per component — `SessionConfig`, `RouterConfig`, `DedupeConfig` — plus `BridgeConfig` aggregating them |
 
 ## What the Bridge Does (and Doesn't)
 
@@ -36,7 +36,21 @@ This deliberately narrow surface is what lets the same Bridge instance serve eve
 | `AGENT_BRIDGE_DEDUPE_MAX_ENTRIES` | `512` | LRU cap for the dedupe cache. |
 | `AGENT_BRIDGE_DEDUPE_SIMHASH_THRESHOLD` | `0` | Hamming threshold for SimHash fuzzy fallback. `0` = exact canonical match only. |
 
-Validation happens at startup — invalid values raise `ValueError` from `BridgeConfig.from_env()`.
+Each component takes its own config object, and `BridgeConfig` is the aggregate:
+
+| Config | Component | Fields |
+|--------|-----------|--------|
+| `SessionConfig` | `SessionManager` | `store_path`, `ttl_hours` |
+| `RouterConfig` | `Bridge` | `max_concurrent_sessions` |
+| `DedupeConfig` | `PromptDedupeCache` | `ttl_seconds`, `max_entries`, `simhash_threshold`, plus the `enabled` property (`ttl_seconds > 0`) |
+
+```python
+bridge = Bridge(config.router, session_manager, controller, dedupe=dedupe)
+```
+
+Validation runs on **every** construction (`__post_init__`), not just `from_env()` — so a
+config built directly in a test is checked the same way one read from the environment is.
+Invalid values raise `ValueError`, which at startup means the process fails fast.
 
 ## Data Flow
 

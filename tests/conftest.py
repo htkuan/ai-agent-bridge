@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from agent_bridge.bridge.config import SessionConfig
 from agent_bridge.bridge.session import SessionManager
 from tests.fakes import claude_cli
 from tests.fakes.claude_cli import FakeClaudeCLI, Step
@@ -60,4 +61,6 @@ def fake_claude(tmp_path: Path) -> FakeClaudeFactory:
 @pytest.fixture
 def session_manager(tmp_path: Path) -> SessionManager:
     """A real SessionManager persisting into the test's tmp_path."""
-    return SessionManager(store_path=tmp_path / "sessions.json", ttl_hours=1.0)
+    return SessionManager(
+        SessionConfig(store_path=tmp_path / "sessions.json", ttl_hours=1.0)
+    )

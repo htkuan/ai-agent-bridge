@@ -18,6 +18,7 @@ from agent_bridge.bridge.events import (
     UserQuestion,
 )
 from agent_bridge.platforms.slack.adapter import _RenderState
+from agent_bridge.platforms.slack.config import SlackConfig
 from tests.platforms.slack.harness import build_harness
 
 QUEUED_REJECTION = (
@@ -154,6 +155,27 @@ async def test_completion_waits_out_throttle_window(monkeypatch: pytest.MonkeyPa
 
     assert sleeper.calls == [pytest.approx(1.0)]
     assert harness.client.messages[("C1", "5.0")] == "done"
+
+
+async def test_completion_waits_out_the_configured_window(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Same as above but with a non-default throttle — pins that the wait comes
+    from the config field, not the constant it was extracted from."""
+    sleeper = _SleepRecorder()
+    monkeypatch.setattr(slack_adapter, "time", _ScriptClock(100.5))
+    monkeypatch.setattr(slack_adapter, "asyncio", sleeper)
+    harness = build_harness(
+        config=SlackConfig(
+            bot_token="xoxb-x", app_token="xapp-x", update_throttle_seconds=3.0
+        )
+    )
+    st = _render_state()
+    st.last_update_time = 100.0
+
+    await harness.adapter._render_completion(st, "done", False, None, None)
+
+    assert sleeper.calls == [pytest.approx(2.5)]
 
 
 # --- completion variants ---

@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
+from agent_bridge.env import (
+    PROCESS_ENV,
+    Env,
+    env_bool,
+    env_float,
+    env_path,
+    env_str,
+)
 
 VALID_PERMISSION_MODES = {
     "acceptEdits",
@@ -19,11 +25,11 @@ VALID_PERMISSION_MODES = {
 
 VALID_EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
 
-_TRUTHY = {"true", "1", "yes", "on"}
-
 
 @dataclass(frozen=True)
 class ClaudeConfig:
+    # Required on purpose: this is the directory the agent gets loose in, and
+    # every plausible default (cwd, home) is a directory it should not touch.
     work_dir: Path
     permission_mode: str = "acceptEdits"
     timeout_seconds: float = 600.0
@@ -31,38 +37,28 @@ class ClaudeConfig:
     effort: str = "xhigh"
     cli_path: str = "claude"
 
-    @classmethod
-    def from_env(cls) -> ClaudeConfig:
-        load_dotenv()
+    def __post_init__(self) -> None:
+        self._validate()
 
-        config = cls(
-            work_dir=Path(
-                os.environ.get("AGENT_BRIDGE_CLAUDE_WORK_DIR", ".")
-            ).resolve(),
-            permission_mode=os.environ.get(
-                "AGENT_BRIDGE_CLAUDE_PERMISSION_MODE", "acceptEdits"
+    @classmethod
+    def from_env(cls, env: Env = PROCESS_ENV) -> ClaudeConfig:
+        return cls(
+            work_dir=env_path(env, "AGENT_BRIDGE_CLAUDE_WORK_DIR", ".").resolve(),
+            permission_mode=env_str(
+                env, "AGENT_BRIDGE_CLAUDE_PERMISSION_MODE", "acceptEdits"
             ),
-            timeout_seconds=float(
-                os.environ.get("AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS", "600")
+            timeout_seconds=env_float(
+                env, "AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS", 600.0
             ),
-            worktree_enabled=os.environ.get(
-                "AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED", "false"
-            ).lower()
-            in _TRUTHY,
-            effort=os.environ.get("AGENT_BRIDGE_CLAUDE_EFFORT", "xhigh").strip()
-            or "xhigh",
-            cli_path=os.environ.get("AGENT_BRIDGE_CLAUDE_CLI_PATH", "claude").strip()
-            or "claude",
+            worktree_enabled=env_bool(
+                env, "AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED", False
+            ),
+            effort=env_str(env, "AGENT_BRIDGE_CLAUDE_EFFORT", "xhigh"),
+            cli_path=env_str(env, "AGENT_BRIDGE_CLAUDE_CLI_PATH", "claude"),
         )
-        config._validate()
-        return config
 
     def _validate(self) -> None:
-        if not self.work_dir.is_dir():
-            raise ValueError(
-                f"AGENT_BRIDGE_CLAUDE_WORK_DIR does not exist or is not a directory: "
-                f"{self.work_dir}"
-            )
+        """Value checks only — runs on every construction, including tests."""
         if self.permission_mode not in VALID_PERMISSION_MODES:
             raise ValueError(
                 f"Invalid AGENT_BRIDGE_CLAUDE_PERMISSION_MODE: "
@@ -81,10 +77,22 @@ class ClaudeConfig:
                 f"Invalid AGENT_BRIDGE_CLAUDE_EFFORT: {self.effort!r}. "
                 f"Must be one of: {', '.join(sorted(VALID_EFFORT_LEVELS))}"
             )
-        if self.worktree_enabled:
-            self._validate_worktree_prereqs()
 
-    def _validate_worktree_prereqs(self) -> None:
+    def check_prerequisites(self) -> None:
+        """Probe the world the config points at — the work dir must exist, and
+        worktree mode needs a git repo with a resolvable origin/HEAD. Separate
+        from ``_validate`` so constructing a config stays cheap and side-effect
+        free. ``app.run`` calls it once at startup, whatever built the config.
+        """
+        if not self.work_dir.is_dir():
+            raise ValueError(
+                f"AGENT_BRIDGE_CLAUDE_WORK_DIR does not exist or is not a directory: "
+                f"{self.work_dir}"
+            )
+        if self.worktree_enabled:
+            self._check_worktree_prereqs()
+
+    def _check_worktree_prereqs(self) -> None:
         if not (self.work_dir / ".git").exists():
             raise ValueError(
                 f"AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED=true "

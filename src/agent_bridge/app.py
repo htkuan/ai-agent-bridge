@@ -5,77 +5,61 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import os
 import signal
 
-from dotenv import load_dotenv
+from agent_bridge.agents.claude.controller import ClaudeController
+from agent_bridge.bridge.config import DedupeConfig
+from agent_bridge.bridge.dedupe import PromptDedupeCache
+from agent_bridge.bridge.protocols import PlatformAdapter
+from agent_bridge.bridge.router import Bridge
+from agent_bridge.bridge.session import SessionManager
+from agent_bridge.config import AppConfig
+from agent_bridge.platforms.heartbeat.adapter import HeartbeatAdapter
+from agent_bridge.platforms.slack.adapter import SlackAdapter
 
-load_dotenv()
-
-from agent_bridge.agents.claude.config import ClaudeConfig  # noqa: E402
-from agent_bridge.agents.claude.controller import ClaudeController  # noqa: E402
-from agent_bridge.bridge.config import BridgeConfig  # noqa: E402
-from agent_bridge.bridge.dedupe import PromptDedupeCache  # noqa: E402
-from agent_bridge.bridge.protocols import PlatformAdapter  # noqa: E402
-from agent_bridge.bridge.router import Bridge  # noqa: E402
-from agent_bridge.bridge.session import SessionManager  # noqa: E402
-from agent_bridge.platforms.heartbeat.adapter import HeartbeatAdapter  # noqa: E402
-from agent_bridge.platforms.heartbeat.config import HeartbeatConfig  # noqa: E402
-from agent_bridge.platforms.slack.adapter import SlackAdapter  # noqa: E402
-from agent_bridge.platforms.slack.config import SlackConfig  # noqa: E402
-
-logging.basicConfig(
-    level=os.environ.get("AGENT_BRIDGE_LOG_LEVEL", "INFO").upper(),
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
 logger = logging.getLogger(__name__)
 
-# Interval for periodic maintenance (session purge, stale pending cleanup)
-CLEANUP_INTERVAL_SECONDS = 3600
 
-
-def _build_dedupe(bridge_config: BridgeConfig) -> PromptDedupeCache | None:
-    if bridge_config.dedupe_ttl_seconds <= 0:
-        return None
-    dedupe = PromptDedupeCache(
-        ttl_seconds=bridge_config.dedupe_ttl_seconds,
-        max_entries=bridge_config.dedupe_max_entries,
-        simhash_threshold=bridge_config.dedupe_simhash_threshold,
+def _configure_logging(level: str) -> None:
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+
+
+def _build_dedupe(config: DedupeConfig) -> PromptDedupeCache | None:
+    if not config.enabled:
+        return None
     logger.info(
         "Prompt dedupe enabled (ttl=%.0fs, max_entries=%d, simhash_threshold=%d)",
-        bridge_config.dedupe_ttl_seconds,
-        bridge_config.dedupe_max_entries,
-        bridge_config.dedupe_simhash_threshold,
+        config.ttl_seconds,
+        config.max_entries,
+        config.simhash_threshold,
     )
-    return dedupe
+    return PromptDedupeCache(config)
 
 
 def _build_adapters(
-    bridge: Bridge, session_manager: SessionManager
+    config: AppConfig, bridge: Bridge, session_manager: SessionManager
 ) -> tuple[SlackAdapter | None, list[PlatformAdapter]]:
     """Construct every configured adapter — each independently optional.
 
     Returns the slack adapter separately because periodic cleanup needs it.
     """
     slack_adapter: SlackAdapter | None = None
-    try:
-        slack_config = SlackConfig.from_env()
-    except ValueError as e:
-        logger.info("Slack adapter disabled: %s", e)
+    if config.slack is None:
+        logger.info("Slack adapter disabled: no Slack tokens configured")
     else:
         slack_adapter = SlackAdapter(
-            slack_config, bridge, session_manager=session_manager
+            config.slack, bridge, session_manager=session_manager
         )
 
-    heartbeat_config = HeartbeatConfig.from_env()
-    heartbeat_adapter = (
-        HeartbeatAdapter(heartbeat_config, bridge) if heartbeat_config.enabled else None
-    )
-    if heartbeat_adapter is not None:
+    heartbeat_adapter: HeartbeatAdapter | None = None
+    if config.heartbeat is not None:
+        heartbeat_adapter = HeartbeatAdapter(config.heartbeat, bridge)
         logger.info(
             "Heartbeat adapter enabled (interval=%dm)",
-            heartbeat_config.interval_minutes,
+            config.heartbeat.interval_minutes,
         )
 
     adapters: list[PlatformAdapter] = [
@@ -90,6 +74,7 @@ def _build_adapters(
 
 
 async def _periodic_cleanup(
+    interval_seconds: float,
     shutdown_event: asyncio.Event,
     session_manager: SessionManager,
     slack_adapter: SlackAdapter | None,
@@ -98,9 +83,7 @@ async def _periodic_cleanup(
 ) -> None:
     while not shutdown_event.is_set():
         with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(
-                shutdown_event.wait(), timeout=CLEANUP_INTERVAL_SECONDS
-            )
+            await asyncio.wait_for(shutdown_event.wait(), timeout=interval_seconds)
         if not shutdown_event.is_set():
             purged_ids = session_manager.purge_expired()
             stale = (
@@ -122,27 +105,30 @@ async def _periodic_cleanup(
                 )
 
 
-async def main() -> None:
-    bridge_config = BridgeConfig.from_env()
-    claude_config = ClaudeConfig.from_env()
+async def run(config: AppConfig) -> None:
+    """Build the whole system from ``config`` and supervise it until shutdown."""
+    # Value checks already ran on construction; this is the startup-only probe
+    # of the world the config points at. Here rather than in ``from_env`` so a
+    # programmatically built config gets the same fail-fast guarantee.
+    config.claude.check_prerequisites()
 
-    logger.info("Claude work dir: %s", claude_config.work_dir)
-    logger.info("Permission mode: %s", claude_config.permission_mode)
-    logger.info("Session TTL: %s hours", bridge_config.session_ttl_hours)
-    logger.info("Claude timeout: %s seconds", claude_config.timeout_seconds)
-    logger.info("Max concurrent sessions: %s", bridge_config.max_concurrent_sessions)
-
-    session_manager = SessionManager(
-        bridge_config.session_store_path, bridge_config.session_ttl_hours
+    logger.info("Claude work dir: %s", config.claude.work_dir)
+    logger.info("Permission mode: %s", config.claude.permission_mode)
+    logger.info("Session TTL: %s hours", config.bridge.session.ttl_hours)
+    logger.info("Claude timeout: %s seconds", config.claude.timeout_seconds)
+    logger.info(
+        "Max concurrent sessions: %s", config.bridge.router.max_concurrent_sessions
     )
-    controller = ClaudeController(claude_config)
+
+    session_manager = SessionManager(config.bridge.session)
+    controller = ClaudeController(config.claude)
     bridge = Bridge(
+        config.bridge.router,
         session_manager,
         controller,
-        max_concurrent=bridge_config.max_concurrent_sessions,
-        dedupe=_build_dedupe(bridge_config),
+        dedupe=_build_dedupe(config.bridge.dedupe),
     )
-    slack_adapter, adapters = _build_adapters(bridge, session_manager)
+    slack_adapter, adapters = _build_adapters(config, bridge, session_manager)
 
     # Graceful shutdown
     shutdown_event = asyncio.Event()
@@ -157,7 +143,12 @@ async def main() -> None:
 
     cleanup_task = asyncio.create_task(
         _periodic_cleanup(
-            shutdown_event, session_manager, slack_adapter, bridge, controller
+            config.cleanup_interval_seconds,
+            shutdown_event,
+            session_manager,
+            slack_adapter,
+            bridge,
+            controller,
         )
     )
 
@@ -173,6 +164,12 @@ async def main() -> None:
         for adapter in adapters:
             await adapter.stop()
         logger.info("Stopped.")
+
+
+async def main() -> None:
+    config = AppConfig.from_env()
+    _configure_logging(config.log_level)
+    await run(config)
 
 
 def main_sync() -> None:

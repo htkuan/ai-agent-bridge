@@ -92,22 +92,24 @@ One package per layer. `agents/` and `platforms/` both depend on `bridge/`;
 ```
 src/agent_bridge/
 ├── __init__.py          # Empty — importing a submodule must not drag in the whole app
-├── app.py               # Entry point: wires adapter + bridge + agent, signal handling, cleanup
+├── app.py               # Entry point: builds everything from an AppConfig, signal handling, cleanup
+├── config.py            # AppConfig — aggregates every layer's config; the only caller of load_dotenv
+├── env.py               # Typed env readers (env_str/int/float/bool/path/csv) — the only module reading os.environ
 ├── bridge/
 │   ├── router.py        # Bridge — pure routing + global concurrency (Semaphore)
 │   ├── events.py        # BridgeEvent type union (Processing, TextDelta, StatusUpdate, UserQuestion, Completion)
 │   ├── protocols.py     # AgentController + PlatformAdapter + MessageRouter protocol interfaces
 │   ├── session.py       # SessionManager (key → UUID, TTL, JSON persistence)
 │   ├── dedupe.py        # PromptDedupeCache (optional cross-session prompt dedupe)
-│   └── config.py        # BridgeConfig (store path, TTL, concurrency, dedupe)
+│   └── config.py        # SessionConfig + RouterConfig + DedupeConfig, aggregated by BridgeConfig
 ├── agents/
 │   └── claude/
-│       ├── config.py    # ClaudeConfig (work_dir, permission_mode, timeout)
+│       ├── config.py    # ClaudeConfig (work_dir, permission_mode, timeout, effort, cli_path)
 │       ├── controller.py # Subprocess spawner, stream reader, timeout handling
 │       └── events.py    # Claude stream-json parser → BridgeEvent converter
 └── platforms/
     ├── slack/
-    │   ├── config.py    # SlackConfig (bot_token, app_token)
+    │   ├── config.py    # SlackConfig (bot_token, app_token, allow-list, usage report, render knobs)
     │   └── adapter.py   # Event handlers, per-session state machine, message rendering
     └── heartbeat/
         ├── config.py    # HeartbeatConfig (interval, prompt, state path)
@@ -144,8 +146,48 @@ src/agent_bridge/
 
 - Environment variables: `AGENT_BRIDGE_` prefix for all config
 - Session keys: `{platform}:{scope}:{identifier}` (e.g. `slack:{channel}:{thread_ts}`)
-- Config classes: `{Component}Config` with `from_env()` classmethod + `_validate()`
+- Config classes: `{Component}Config` with `from_env(env)` classmethod + `_validate()`
 - Modules: lowercase, no underscores in package names
+
+### Configuration
+
+One component, one config class. Every component takes its config as the first
+constructor argument — `Component(config, *collaborators)` — and reads nothing
+from the environment itself.
+
+```
+AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system from this alone
+├── BridgeConfig     .session / .router / .dedupe  → SessionManager / Bridge / PromptDedupeCache
+├── ClaudeConfig                                   → ClaudeController
+├── SlackConfig     | None                         → SlackAdapter    (None ⇒ not configured)
+├── HeartbeatConfig | None                         → HeartbeatAdapter (None ⇒ disabled)
+├── log_level
+└── cleanup_interval_seconds
+```
+
+- **Reading env**: only `src/agent_bridge/env.py` touches `os.environ`, through typed
+  readers (`env_str`, `env_bool`, `env_int`, `env_float`, `env_path`, `env_csv`) that
+  share one truthy rule, one blank-handling rule and one error-message shape.
+  `load_dotenv()` is called exactly once, by `AppConfig.from_env()`.
+- **`from_env(env: Env = PROCESS_ENV)`**: every config reads from an injectable mapping.
+  Tests pass a plain dict — no `monkeypatch.setenv`, and a developer's local `.env`
+  can't leak into them.
+- **`from_env_optional()`**: for components that may be absent (Slack, heartbeat).
+  Returns `None` for "not configured", raises for "configured wrong".
+- **Validation**: `_validate()` is called from `__post_init__`, so *every* construction
+  path is checked — including configs built directly in tests. It does value checks only.
+- **Prerequisite probes**: checks that touch the filesystem, git or the network go in
+  `check_prerequisites()`, which `app.run()` calls once at startup — so the fail-fast
+  guarantee holds however the config was built, while parsing and holding a config in
+  memory stay cheap and side-effect free.
+- **No default for a dangerous field**: `ClaudeConfig.work_dir` (and therefore
+  `AppConfig.claude`) is required. A config that must be set is better than one that
+  silently falls back to the process's cwd.
+- **Defaults live in the dataclass**, and `from_env` must pass the same default to its
+  reader. A `Config.from_env({}) == Config()` test guards the drift.
+- Knobs that aren't user-facing (Slack's render throttle and message ceiling, the app's
+  cleanup interval) are config fields with `DEFAULT_*` constants but no env var — tests
+  tune them through the config instead of monkeypatching module state.
 
 ### Error handling
 
@@ -164,6 +206,9 @@ src/agent_bridge/
 ### Testing
 
 - Run tests: `uv run pytest tests/ -v`
+- Tests drive behaviour by constructing config objects, never by setting env vars.
+  Env parsing is covered separately, per config class, in `test_config.py` modules
+  that pass explicit dicts to `from_env`.
 - The test tree mirrors `src/` (`tests/bridge/`, `tests/agents/claude/`,
   `tests/platforms/slack/`, …). Cross-layer seams are tested through the
   protocols using the typed fakes in `tests/fakes/`; `tests/contracts/`
@@ -190,7 +235,7 @@ src/agent_bridge/
 
 ### Adding a new platform adapter
 
-1. Create `platforms/{name}/config.py` — config with `from_env()` + `_validate()`
+1. Create `platforms/{name}/config.py` — config with `from_env(env)` + `_validate()` (called from `__post_init__`), parsing through `agent_bridge/env.py`; add `from_env_optional()` if the platform can be absent, and wire it into `AppConfig`
 2. Create `platforms/{name}/adapter.py` — implements `PlatformAdapter` protocol
 3. Define session key format (e.g. `discord:{guild}:{channel}`)
 4. Own per-session locking strategy
@@ -203,7 +248,7 @@ src/agent_bridge/
 
 ### Adding a new agent
 
-1. Create `agents/{name}/config.py` — config with `from_env()` + `_validate()`
+1. Create `agents/{name}/config.py` — config with `from_env(env)` + `_validate()` (called from `__post_init__`), parsing through `agent_bridge/env.py`; put any filesystem/git probes in `check_prerequisites()` and call it from `app.run()`
 2. Create `agents/{name}/controller.py` — implements `AgentController` protocol
 3. Create `agents/{name}/events.py` — parse agent output → `BridgeEvent`s
 4. `run()` yields only generic `BridgeEvent`s — agent-internal events stay internal
@@ -257,13 +302,19 @@ bump the minor (not 1.0.0). Full process + one-time setup: `docs/releasing.md`.
 
 ## Environment variables
 
-All config loads from `.env` via python-dotenv. See `.env.example` for the full list.
+All config loads from `.env` via python-dotenv — once, in `AppConfig.from_env()`, which
+walks each layer's `{Component}Config.from_env(env)`. `src/agent_bridge/env.py` is the only
+module that reads `os.environ`. Booleans accept `true`/`1`/`yes`/`on` and
+`false`/`0`/`no`/`off` (case-insensitive); anything else is rejected at startup, as are
+unparseable numbers. See `.env.example` for the full list.
 
 | Variable | Required | Default | Component |
 |----------|----------|---------|-----------|
 | `ANTHROPIC_API_KEY` | No | — | Claude CLI (only if not already authenticated via `claude login`) |
 | `AGENT_BRIDGE_SLACK_BOT_TOKEN` | Yes (if using Slack) | — | Slack |
 | `AGENT_BRIDGE_SLACK_APP_TOKEN` | Yes (if using Slack) | — | Slack |
+| `AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_CHANNEL` | No | — | Slack (channel to greet after Socket Mode connects) |
+| `AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_MESSAGE` | No | — | Slack (text of that startup notice) |
 | `AGENT_BRIDGE_SLACK_ALLOW_CHANNELS` | No | — (allow all) | Slack (comma-separated channel-name allow-list; non-empty also blocks DMs) |
 | `AGENT_BRIDGE_SLACK_CHANNEL_NOT_ALLOWED_MESSAGE` | No | (fixed English notice) | Slack (reply sent to non-allowed channels) |
 | `AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED` | No | `false` | Slack (append usage/cost footer to the final reply) |

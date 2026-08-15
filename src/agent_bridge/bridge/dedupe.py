@@ -22,6 +22,8 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass
 
+from agent_bridge.bridge.config import DedupeConfig
+
 # Order matters: more specific patterns first so coarser ones (NUM) don't eat
 # parts of structured tokens.
 _NORMALIZERS: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -102,28 +104,24 @@ class DedupeResult:
 
 
 class PromptDedupeCache:
-    def __init__(
-        self,
-        ttl_seconds: float,
-        max_entries: int = 512,
-        simhash_threshold: int = 0,
-    ) -> None:
-        if ttl_seconds <= 0:
-            raise ValueError(f"ttl_seconds must be positive, got {ttl_seconds}")
-        if max_entries <= 0:
-            raise ValueError(f"max_entries must be positive, got {max_entries}")
-        if simhash_threshold < 0:
-            raise ValueError(f"simhash_threshold must be >= 0, got {simhash_threshold}")
-        self._ttl = ttl_seconds
-        self._max = max_entries
-        self._threshold = simhash_threshold
+    def __init__(self, config: DedupeConfig) -> None:
+        # Range checks live in DedupeConfig; a disabled config reaching here
+        # means the caller skipped the `enabled` gate.
+        if not config.enabled:
+            raise ValueError(
+                "ttl_seconds must be positive to build a cache, "
+                f"got {config.ttl_seconds}"
+            )
+        self._config = config
         # (scope, canonical_text) → entry. Exact lookups stay O(1); SimHash
         # falls back to scanning entries with matching scope.
         self._entries: OrderedDict[tuple[str, str], DedupeEntry] = OrderedDict()
 
     def _purge_expired(self, now: float) -> None:
         expired = [
-            k for k, e in self._entries.items() if now - e.started_at >= self._ttl
+            k
+            for k, e in self._entries.items()
+            if now - e.started_at >= self._config.ttl_seconds
         ]
         for k in expired:
             del self._entries[k]
@@ -146,15 +144,15 @@ class PromptDedupeCache:
             return DedupeResult(hit=exact, canonical=canonical, hamming=0)
 
         # 2. SimHash fuzzy match within the same scope (optional).
-        fp = simhash(canonical) if self._threshold > 0 else 0
-        if self._threshold > 0:
+        fp = simhash(canonical) if self._config.simhash_threshold > 0 else 0
+        if self._config.simhash_threshold > 0:
             best_key: tuple[str, str] | None = None
-            best_dist = self._threshold + 1
+            best_dist = self._config.simhash_threshold + 1
             for k, entry in self._entries.items():
                 if entry.scope != scope:
                     continue
                 d = hamming(entry.fingerprint, fp)
-                if d <= self._threshold and d < best_dist:
+                if d <= self._config.simhash_threshold and d < best_dist:
                     best_dist = d
                     best_key = k
             if best_key is not None:
@@ -170,7 +168,7 @@ class PromptDedupeCache:
             fingerprint=fp,
             started_at=now,
         )
-        while len(self._entries) > self._max:
+        while len(self._entries) > self._config.max_entries:
             self._entries.popitem(last=False)
         return DedupeResult(hit=None, canonical=canonical)
 

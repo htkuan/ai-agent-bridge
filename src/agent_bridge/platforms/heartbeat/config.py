@@ -1,41 +1,46 @@
 from __future__ import annotations
 
-import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from dotenv import load_dotenv
+from agent_bridge.env import (
+    PROCESS_ENV,
+    Env,
+    env_bool,
+    env_int,
+    env_path,
+    env_str,
+)
 
 
 @dataclass(frozen=True)
 class HeartbeatConfig:
-    enabled: bool = False
-    interval_minutes: int = 0
-    prompt: str = ""
-    state_path: Path = Path("./heartbeat.json")
+    """Present only when the heartbeat platform is on — ``enabled`` lives in
+    ``AppConfig.heartbeat is None``, not in a field here, so every constructed
+    config is a runnable one."""
+
+    interval_minutes: int
+    prompt: str
+    state_path: Path = field(default_factory=lambda: Path("./heartbeat.json"))
+
+    def __post_init__(self) -> None:
+        self._validate()
 
     @classmethod
-    def from_env(cls) -> HeartbeatConfig:
-        load_dotenv()
-
-        enabled = (
-            os.environ.get("AGENT_BRIDGE_HEARTBEAT_ENABLED", "false").lower() == "true"
-        )
-        if not enabled:
-            return cls()
-
-        config = cls(
-            enabled=True,
-            interval_minutes=int(
-                os.environ.get("AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES", "0")
-            ),
-            prompt=os.environ.get("AGENT_BRIDGE_HEARTBEAT_PROMPT", ""),
-            state_path=Path(
-                os.environ.get("AGENT_BRIDGE_HEARTBEAT_STATE_PATH", "./heartbeat.json")
+    def from_env(cls, env: Env = PROCESS_ENV) -> HeartbeatConfig:
+        return cls(
+            interval_minutes=env_int(env, "AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES", 0),
+            prompt=env_str(env, "AGENT_BRIDGE_HEARTBEAT_PROMPT", ""),
+            state_path=env_path(
+                env, "AGENT_BRIDGE_HEARTBEAT_STATE_PATH", "./heartbeat.json"
             ),
         )
-        config._validate()
-        return config
+
+    @classmethod
+    def from_env_optional(cls, env: Env = PROCESS_ENV) -> HeartbeatConfig | None:
+        if not env_bool(env, "AGENT_BRIDGE_HEARTBEAT_ENABLED", False):
+            return None
+        return cls.from_env(env)
 
     def _validate(self) -> None:
         if self.interval_minutes <= 0:

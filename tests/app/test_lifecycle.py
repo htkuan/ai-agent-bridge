@@ -70,7 +70,7 @@ async def test_cleanup_round_purges_sessions_usage_and_slack_state(tmp_path: Pat
     shutdown = asyncio.Event()
     task = asyncio.create_task(
         app._periodic_cleanup(
-            0.01, shutdown, session_manager, harness.adapter, bridge, controller
+            0.01, shutdown, session_manager, [harness.adapter], bridge, controller
         )
     )
     try:
@@ -94,7 +94,7 @@ async def test_cleanup_loop_survives_controller_errors(tmp_path: Path):
 
     shutdown = asyncio.Event()
     task = asyncio.create_task(
-        app._periodic_cleanup(0.01, shutdown, session_manager, None, bridge, controller)
+        app._periodic_cleanup(0.01, shutdown, session_manager, [], bridge, controller)
     )
     try:
         await _wait_until(lambda: controller.calls >= 1)
@@ -112,9 +112,7 @@ async def test_run_starts_adapters_and_stops_on_sigterm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     fake = FakePlatformAdapter()
-    monkeypatch.setattr(
-        app, "_build_adapters", lambda config, bridge, sm: (None, [fake])
-    )
+    monkeypatch.setattr(app, "_build_adapters", lambda config, bridge, sm: [fake])
     config = AppConfig(
         bridge=BridgeConfig(
             session=SessionConfig(store_path=tmp_path / "sessions.json")
@@ -153,9 +151,7 @@ async def test_run_probes_prerequisites_before_starting_anything(
     parses, so run() is what guarantees a bad work_dir never reaches an adapter.
     """
     fake = FakePlatformAdapter()
-    monkeypatch.setattr(
-        app, "_build_adapters", lambda config, bridge, sm: (None, [fake])
-    )
+    monkeypatch.setattr(app, "_build_adapters", lambda config, bridge, sm: [fake])
     config = AppConfig(claude=ClaudeConfig(work_dir=tmp_path / "gone"))
 
     # Bounded: without the probe, run() reaches `await shutdown_event.wait()`

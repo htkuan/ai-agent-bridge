@@ -66,26 +66,24 @@ def test_no_adapter_configured_raises(
 
 
 def test_slack_only(wiring: tuple[Bridge, SessionManager], tmp_path: Path):
-    slack, adapters = app._build_adapters(_config(tmp_path, slack=True), *wiring)
+    adapters = app._build_adapters(_config(tmp_path, slack=True), *wiring)
 
-    assert isinstance(slack, SlackAdapter)
-    assert adapters == [slack]
+    assert len(adapters) == 1
+    assert isinstance(adapters[0], SlackAdapter)
 
 
 def test_heartbeat_only(wiring: tuple[Bridge, SessionManager], tmp_path: Path):
-    slack, adapters = app._build_adapters(_config(tmp_path, heartbeat=True), *wiring)
+    adapters = app._build_adapters(_config(tmp_path, heartbeat=True), *wiring)
 
-    assert slack is None
     assert len(adapters) == 1
     assert isinstance(adapters[0], HeartbeatAdapter)
 
 
 def test_slack_and_heartbeat(wiring: tuple[Bridge, SessionManager], tmp_path: Path):
-    slack, adapters = app._build_adapters(
+    adapters = app._build_adapters(
         _config(tmp_path, slack=True, heartbeat=True), *wiring
     )
 
-    assert isinstance(slack, SlackAdapter)
     assert len(adapters) == 2
-    assert adapters[0] is slack
+    assert isinstance(adapters[0], SlackAdapter)
     assert isinstance(adapters[1], HeartbeatAdapter)

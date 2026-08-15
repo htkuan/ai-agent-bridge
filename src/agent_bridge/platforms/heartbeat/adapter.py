@@ -15,15 +15,26 @@ from agent_bridge.bridge.events import (
     UserQuestion,
 )
 from agent_bridge.bridge.protocols import MessageRouter
+from agent_bridge.platforms.base import (
+    BasePlatformAdapter,
+    BridgeRequest,
+    make_session_key,
+)
 from agent_bridge.platforms.heartbeat.config import HeartbeatConfig
 
 logger = logging.getLogger(__name__)
 
 
-class HeartbeatAdapter:
+class HeartbeatAdapter(BasePlatformAdapter[str]):
+    """Proactive adapter: fires the configured prompt on a fixed interval.
+
+    The per-turn run state is just the tick's session key — every event is
+    logged, none is rendered anywhere.
+    """
+
     def __init__(self, config: HeartbeatConfig, bridge: MessageRouter) -> None:
+        super().__init__(bridge)
         self._config = config
-        self._bridge = bridge
         self._task: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
 
@@ -78,27 +89,31 @@ class HeartbeatAdapter:
     async def _fire_once(self) -> None:
         fired_at = _now()
         # Unique key per tick → SessionManager always creates a fresh session.
-        session_key = f"heartbeat:tick:{fired_at.isoformat()}"
+        session_key = make_session_key("heartbeat", "tick", fired_at.isoformat())
         logger.info(
             "Heartbeat tick: session_key=%s prompt=%r",
             session_key,
             self._config.prompt,
         )
 
-        context = {"source": "heartbeat", "fired_at": fired_at.isoformat()}
         try:
-            async for event in self._bridge.handle_message(
-                session_key=session_key,
-                text=self._config.prompt,
-                context=context,
-                system_prompt=self._build_system_prompt(fired_at),
-                resumable=False,
-            ):
-                self._log_event(session_key, event)
+            await self.process(
+                BridgeRequest(
+                    session_key=session_key,
+                    text=self._config.prompt,
+                    context={"source": "heartbeat", "fired_at": fired_at.isoformat()},
+                    system_prompt=self._build_system_prompt(fired_at),
+                    resumable=False,
+                ),
+                state=session_key,
+            )
         except Exception:
             logger.exception("Heartbeat tick failed for session %s", session_key)
         finally:
             self._write_last_run(fired_at)
+
+    async def on_event(self, state: str, event: BridgeEvent) -> None:
+        self._log_event(state, event)
 
     @staticmethod
     def _build_system_prompt(fired_at: datetime) -> str:

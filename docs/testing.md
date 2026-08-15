@@ -34,17 +34,19 @@ tests/
 ├── fakes/                   # typed doubles for the protocol seams (pyright strict)
 │   ├── agents.py            # FakeAgentController — scripted event replay, records calls
 │   ├── bridge.py            # FakeBridge — implements MessageRouter, capacity_full mode
-│   ├── platforms.py         # FakePlatformAdapter — lifecycle recorder
+│   ├── platforms.py         # FakePlatformAdapter — lifecycle + cleanup recorder
 │   ├── slack.py             # FakeSlackClient / FakeBoltApp / event payload builders
 │   └── claude_cli.py        # scripted claude CLI stand-in + scenario schema
 ├── contracts/               # real implementation and its fake run the same suite
 │   ├── test_agent_controller.py
-│   └── test_message_router.py
+│   ├── test_message_router.py
+│   └── test_platform_adapter.py
 ├── test_env.py              # the typed env readers
 ├── test_config.py           # AppConfig — the aggregate app.py builds from
 ├── app/                     # app.py wiring + lifecycle
 ├── bridge/                  # router.py, session.py, dedupe.py, config.py (core layer)
 ├── agents/claude/           # controller + stream-json parser
+├── platforms/               # test_base.py: BasePlatformAdapter's shared dispatch flow
 ├── platforms/slack/         # adapter behaviour, one concern per file
 ├── platforms/heartbeat/
 └── e2e/                     # full-stack scenarios (real components + fake CLI)

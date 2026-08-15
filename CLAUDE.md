@@ -38,7 +38,7 @@ Events are defined in `src/agent_bridge/bridge/events.py`. Agent-internal events
 ### Protocols
 
 - `AgentController` — `run(session_id, prompt, is_new, context, system_prompt) → AsyncIterator[BridgeEvent]`. The platform adapter builds `prompt` (already pre-tagged with sender identity if needed) and `system_prompt` (platform-flavored directives); the agent forwards them as-is. The agent must not interpret platform-specific keys out of `context`.
-- `PlatformAdapter` — `start()`, `stop()`
+- `PlatformAdapter` — `start()`, `stop()`, `cleanup()` (periodic housekeeping; returns entries removed — the app's cleanup loop calls it on every adapter). `platforms/base.py` provides `BasePlatformAdapter`, the reusable implementation skeleton adapters subclass
 - `MessageRouter` — `handle_message(session_key, text, context, system_prompt, resumable) → AsyncIterator[BridgeEvent]`. The interface adapters send messages through; `Bridge` is the production implementation. Adapters depend on this protocol, not the concrete class, so tests can substitute fakes.
 
 Defined in `src/agent_bridge/bridge/protocols.py`. New agents/platforms implement these.
@@ -55,14 +55,14 @@ Defined in `src/agent_bridge/bridge/protocols.py`. New agents/platforms implemen
 ```
 1. User message arrives at Platform Adapter
 2. Adapter constructs session_key, acquires per-session lock
-3. Adapter builds `text` (pre-tagged with sender identity) and `system_prompt` (platform directives) — the agent stays platform-agnostic
-4. Bridge.handle_message(session_key, text, context, system_prompt, resumable)
+3. Adapter pre-processes its native event into a `BridgeRequest` (`text` pre-tagged with sender identity, `system_prompt` platform directives — the agent stays platform-agnostic) and calls `BasePlatformAdapter.process()`
+4. process() → Bridge.handle_message(session_key, text, context, system_prompt, resumable)
    → If `resumable=True`: SessionManager resolves key → (session_id, is_new), persisted on disk
    → If `resumable=False`: bridge mints a fresh ephemeral UUID, SessionManager untouched
    → Semaphore check (reject if capacity full)
    → AgentController.run(session_id, prompt, is_new, context, system_prompt)
 5. Agent yields BridgeEvents
-6. Adapter renders events as platform-native messages
+6. The base dispatches each event to the adapter's `on_*` hook, which renders it as a platform-native message
 ```
 
 ## Tech stack
@@ -108,6 +108,7 @@ src/agent_bridge/
 │       ├── controller.py # Subprocess spawner, stream reader, timeout handling
 │       └── events.py    # Claude stream-json parser → BridgeEvent converter
 └── platforms/
+    ├── base.py          # make_session_key + BridgeRequest + BasePlatformAdapter (shared pre-process → forward → post-process flow)
     ├── slack/
     │   ├── config.py    # SlackConfig (bot_token, app_token, allow-list, usage report, render knobs)
     │   └── adapter.py   # Event handlers, per-session state machine, message rendering
@@ -140,7 +141,9 @@ src/agent_bridge/
 - **`from __future__ import annotations`** at top of every module
 - **Type aliases** use Python 3.12 `type X = ...` syntax
 - **Pattern matching** (`match`/`case`) for event dispatch
-- **Protocols** over ABC for interface contracts
+- **Protocols** over ABC for interface contracts. Template-method base classes
+  (e.g. `platforms/base.py`'s `BasePlatformAdapter`) are *implementation reuse*,
+  not contracts — the Protocol stays the interface they structurally satisfy
 
 ### Naming
 
@@ -242,14 +245,18 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 ### Adding a new platform adapter
 
 1. Create `platforms/{name}/config.py` — config with `from_env(env)` + `_validate()` (called from `__post_init__`), parsing through `agent_bridge/env.py`; add `from_env_optional()` if the platform can be absent, and wire it into `AppConfig`
-2. Create `platforms/{name}/adapter.py` — implements `PlatformAdapter` protocol
-3. Define session key format (e.g. `discord:{guild}:{channel}`)
-4. Own per-session locking strategy
-5. Build the text the agent receives — pre-tag the prompt with sender identity if your platform has one (e.g. `[name]: text`); pass `None` if it doesn't (proactive triggers)
-6. Build the `system_prompt` — platform-flavored directives (chat framing, scheduled-invocation framing, webhook-trigger framing, etc.). The agent forwards it as-is
-7. Decide `resumable`: pass `True` (default) if the same `session_key` should be able to resume the same session later (e.g. chat threads); pass `False` for one-shot triggers where every call must be a fresh, untracked session (e.g. heartbeat ticks)
-8. Consume `BridgeEvent`s from `bridge.handle_message(session_key, text, context, system_prompt, resumable)`
-9. Wire up in `app.py`
+2. Create `platforms/{name}/adapter.py` — subclass `BasePlatformAdapter[YourRunState]` (`platforms/base.py`). The `PlatformAdapter` protocol stays the contract; the base is the shared flow. `YourRunState` is whatever per-turn state your hooks need (a render state, a session key, …)
+3. **Pre-process**: in your platform callback, build a `BridgeRequest` and call `await self.process(request, state)`:
+   - `session_key` via `make_session_key("{platform}", scope, identifier)` (e.g. `discord:{guild}:{channel}`)
+   - `text` — pre-tag with sender identity if your platform has one (e.g. `[name]: text`); don't if it doesn't (proactive triggers)
+   - `system_prompt` — platform-flavored directives (chat framing, scheduled-invocation framing, webhook-trigger framing, etc.). The agent forwards it as-is
+   - `resumable` — `True` (default) if the same `session_key` should be able to resume the same session later (e.g. chat threads); `False` for one-shot triggers where every call must be a fresh, untracked session (e.g. heartbeat ticks)
+4. **Post-process**: override the `on_*` hooks you render — `on_processing` / `on_text_delta` / `on_status_update` / `on_user_question` / `on_completion`, plus `on_stream_end` (safety net when the stream ends without a `Completion`) — or just `on_event` to treat every event uniformly
+5. Own per-session locking if your platform is conversational (see Slack's `_SessionState`); one-shot platforms don't need it. Errors from `process()` propagate — keep your own error envelope around it
+6. Override `cleanup()` if the adapter keeps per-session state that can go stale — `app.py`'s periodic loop calls it on every adapter
+7. Implement `start()` / `stop()` for your platform's lifecycle (connect/disconnect, task spawn/cancel)
+8. Wire up in `app.py`
+9. Add your adapter to `tests/contracts/test_platform_adapter.py` if its lifecycle is cheap to run in-process
 10. Add documentation in `docs/platforms/{name}.md`
 
 ### Adding a new agent

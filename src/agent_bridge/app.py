@@ -41,11 +41,8 @@ def _build_dedupe(config: DedupeConfig) -> PromptDedupeCache | None:
 
 def _build_adapters(
     config: AppConfig, bridge: Bridge, session_manager: SessionManager
-) -> tuple[SlackAdapter | None, list[PlatformAdapter]]:
-    """Construct every configured adapter — each independently optional.
-
-    Returns the slack adapter separately because periodic cleanup needs it.
-    """
+) -> list[PlatformAdapter]:
+    """Construct every configured adapter — each independently optional."""
     slack_adapter: SlackAdapter | None = None
     if config.slack is None:
         logger.info("Slack adapter disabled: no Slack tokens configured")
@@ -70,14 +67,14 @@ def _build_adapters(
             "No platform adapter configured. "
             "Set Slack tokens or AGENT_BRIDGE_HEARTBEAT_ENABLED=true."
         )
-    return slack_adapter, adapters
+    return adapters
 
 
 async def _periodic_cleanup(
     interval_seconds: float,
     shutdown_event: asyncio.Event,
     session_manager: SessionManager,
-    slack_adapter: SlackAdapter | None,
+    adapters: list[PlatformAdapter],
     bridge: Bridge,
     controller: ClaudeController,
 ) -> None:
@@ -86,11 +83,9 @@ async def _periodic_cleanup(
             await asyncio.wait_for(shutdown_event.wait(), timeout=interval_seconds)
         if not shutdown_event.is_set():
             purged_ids = session_manager.purge_expired()
-            stale = (
-                slack_adapter.cleanup_stale_sessions()
-                if slack_adapter is not None
-                else 0
-            )
+            stale = 0
+            for adapter in adapters:
+                stale += await adapter.cleanup()
             for sid in purged_ids:
                 bridge.forget_session_usage(sid)
                 try:
@@ -128,7 +123,7 @@ async def run(config: AppConfig) -> None:
         controller,
         dedupe=_build_dedupe(config.bridge.dedupe),
     )
-    slack_adapter, adapters = _build_adapters(config, bridge, session_manager)
+    adapters = _build_adapters(config, bridge, session_manager)
 
     # Graceful shutdown
     shutdown_event = asyncio.Event()
@@ -146,7 +141,7 @@ async def run(config: AppConfig) -> None:
             config.cleanup_interval_seconds,
             shutdown_event,
             session_manager,
-            slack_adapter,
+            adapters,
             bridge,
             controller,
         )

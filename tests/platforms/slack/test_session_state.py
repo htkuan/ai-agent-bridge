@@ -1,4 +1,4 @@
-"""Per-session state bookkeeping: _get_state and cleanup_stale_sessions."""
+"""Per-session state bookkeeping: _get_state and cleanup()."""
 
 from __future__ import annotations
 
@@ -21,10 +21,10 @@ def test_get_state_reuses_existing_entry():
     assert adapter._get_state("slack:C1:1.0") is adapter._get_state("slack:C1:1.0")
 
 
-def test_cleanup_without_session_manager_is_noop():
+async def test_cleanup_without_session_manager_is_noop():
     adapter = build_harness().adapter
     adapter._get_state("slack:C1:1.0")
-    assert adapter.cleanup_stale_sessions() == 0
+    assert await adapter.cleanup() == 0
     assert "slack:C1:1.0" in adapter._sessions
 
 
@@ -45,7 +45,7 @@ async def test_cleanup_removes_only_idle_expired_sessions(tmp_path: Path):
     locked = adapter._get_state("slack:locked:1.0")
 
     async with locked.lock:
-        assert adapter.cleanup_stale_sessions() == 1
+        assert await adapter.cleanup() == 1
 
     assert "slack:stale:1.0" not in adapter._sessions
     assert set(adapter._sessions) == {

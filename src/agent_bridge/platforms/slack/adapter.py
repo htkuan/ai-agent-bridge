@@ -264,7 +264,7 @@ class SlackAdapter(BasePlatformAdapter[_RenderState]):
     def _get_state(self, session_key: str) -> _SessionState:
         return self._sessions.setdefault(session_key, _SessionState())
 
-    def cleanup_stale_sessions(self) -> int:
+    async def cleanup(self) -> int:
         """Remove state for expired sessions. Returns count removed."""
         if self._session_manager is None:
             return 0

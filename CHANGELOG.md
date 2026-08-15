@@ -2,6 +2,33 @@
 
 <!-- version list -->
 
+## v0.5.0 (2026-08-15)
+
+### Bug Fixes
+
+- **config**: Close the fail-fast gaps found reviewing the config refactor
+  ([`d56aea0`](https://github.com/htkuan/ai-agent-bridge/commit/d56aea025a9743b5e9330e8b41973a71b607cfda))
+
+### Documentation
+
+- Document the config architecture
+  ([`a2b7098`](https://github.com/htkuan/ai-agent-bridge/commit/a2b7098d0cd749214b9b3de0a700656f1f42abe9))
+
+### Refactoring
+
+- Give every component its own config and centralise env reading
+  ([`6f4e1bb`](https://github.com/htkuan/ai-agent-bridge/commit/6f4e1bb36045a9603fdd335be0705b00d0b66671))
+
+### Breaking Changes
+
+- Config classes and component constructors changed shape. Bridge(config, session_manager,
+  controller, dedupe=...), SessionManager(SessionConfig(...)), PromptDedupeCache(DedupeConfig(...)),
+  BridgeConfig fields are nested, HeartbeatConfig lost its `enabled` field (absence is
+  AppConfig.heartbeat is None), and main() delegates to run(config). Setting only one of the two
+  Slack tokens is now a startup error instead of silently disabling Slack, and boolean env values
+  outside true/1/yes/on/false/0/no/off are rejected rather than read as false.
+
+
 ## v0.4.1 (2026-08-13)
 
 ### Bug Fixes

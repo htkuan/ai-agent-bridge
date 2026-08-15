@@ -27,6 +27,11 @@ from agent_bridge.bridge.events import (
 )
 from agent_bridge.bridge.protocols import MessageRouter
 from agent_bridge.bridge.session import SessionManager
+from agent_bridge.platforms.base import (
+    BasePlatformAdapter,
+    BridgeRequest,
+    make_session_key,
+)
 from agent_bridge.platforms.slack.config import SlackConfig, normalize_channel
 
 logger = logging.getLogger(__name__)
@@ -163,7 +168,6 @@ class _RenderState:
     pending_user_questions: list[dict[str, Any]] = field(
         default_factory=list[dict[str, Any]]
     )
-    completed: bool = False
 
 
 def _api_error_detail(e: SlackApiError) -> str:
@@ -234,15 +238,15 @@ class SlackInfoCache:
         return (self.workspace or "", channel_name, self.users[user_id])
 
 
-class SlackAdapter:
+class SlackAdapter(BasePlatformAdapter[_RenderState]):
     def __init__(
         self,
         config: SlackConfig,
         bridge: MessageRouter,
         session_manager: SessionManager | None = None,
     ) -> None:
+        super().__init__(bridge)
         self._config = config
-        self._bridge = bridge
         self._session_manager = session_manager
         self._app = AsyncApp(token=config.bot_token)
         self._handler: AsyncSocketModeHandler | None = None
@@ -255,7 +259,7 @@ class SlackAdapter:
 
     @staticmethod
     def _session_key(channel: str, thread_ts: str) -> str:
-        return f"slack:{channel}:{thread_ts}"
+        return make_session_key("slack", channel, thread_ts)
 
     def _get_state(self, session_key: str) -> _SessionState:
         return self._sessions.setdefault(session_key, _SessionState())
@@ -536,41 +540,47 @@ class SlackAdapter:
             message_ts=existing_message_ts,
         )
 
-        async for event_obj in self._bridge.handle_message(
-            session_key=session_key,
-            text=self._tag_prompt(text, context),
-            context=context,
-            system_prompt=self._build_system_prompt(context),
-        ):
-            match event_obj:
-                case Processing():
-                    await self._render_processing(st)
-                case TextDelta(text=chunk):
-                    await self._render_text_delta(st, chunk)
-                case StatusUpdate(status=status):
-                    await self._render_status(st, status)
-                case UserQuestion(questions=questions):
-                    logger.info(
-                        "Session %s: agent asked %d question(s), "
-                        "entering waiting_for_answer",
-                        session_key,
-                        len(questions),
-                    )
-                    st.pending_user_questions = questions
-                case Completion(
-                    text=final_text,
-                    is_error=is_error,
-                    usage=usage,
-                    session_usage=session_usage,
-                ):
-                    result = await self._render_completion(
-                        st, final_text, is_error, usage, session_usage
-                    )
-                    if result is not None:
-                        return result
-
-        await self._render_incomplete_tail(st)
+        final = await self.process(
+            BridgeRequest(
+                session_key=session_key,
+                text=self._tag_prompt(text, context),
+                context=context,
+                system_prompt=self._build_system_prompt(context),
+            ),
+            st,
+        )
+        # A cut stream (no Completion) never enters waiting_for_answer, even
+        # if a UserQuestion made it through before the cut.
+        if final is not None and st.pending_user_questions:
+            return "waiting_for_answer"
         return None
+
+    # --- Post-processing hooks: render each event into the Slack thread ---
+
+    async def on_processing(self, state: _RenderState, event: Processing) -> None:
+        await self._render_processing(state)
+
+    async def on_text_delta(self, state: _RenderState, event: TextDelta) -> None:
+        await self._render_text_delta(state, event.text)
+
+    async def on_status_update(self, state: _RenderState, event: StatusUpdate) -> None:
+        await self._render_status(state, event.status)
+
+    async def on_user_question(self, state: _RenderState, event: UserQuestion) -> None:
+        logger.info(
+            "Session %s: agent asked %d question(s), entering waiting_for_answer",
+            state.session_key,
+            len(event.questions),
+        )
+        state.pending_user_questions = event.questions
+
+    async def on_completion(self, state: _RenderState, event: Completion) -> None:
+        await self._render_completion(
+            state, event.text, event.is_error, event.usage, event.session_usage
+        )
+
+    async def on_stream_end(self, state: _RenderState) -> None:
+        await self._render_incomplete_tail(state)
 
     async def _render_processing(self, st: _RenderState) -> None:
         """Post (or reset) the placeholder message the stream renders into."""
@@ -625,13 +635,12 @@ class SlackAdapter:
         is_error: bool,
         usage: Usage | None,
         session_usage: Usage | None,
-    ) -> str | None:
-        """Render the final reply (or the agent's questions). Returns
-        ``"waiting_for_answer"`` when the session should wait for a reply."""
-        st.completed = True
+    ) -> None:
+        """Render the final reply — or the agent's questions, when a
+        ``UserQuestion`` preceded this ``Completion``."""
         if st.pending_user_questions:
             await self._post_questions(st)
-            return "waiting_for_answer"
+            return
 
         logger.debug(
             "Session %s: Completion → final message (is_error=%s)",
@@ -664,7 +673,6 @@ class SlackAdapter:
         # body is truncated to a snippet.
         footer = "" if is_error else self._build_usage_footer(usage, session_usage)
         await self._post_final(st, final, footer)
-        return None
 
     async def _post_questions(self, st: _RenderState) -> None:
         logger.debug(
@@ -702,7 +710,7 @@ class SlackAdapter:
     async def _render_incomplete_tail(self, st: _RenderState) -> None:
         """Safety net: if the stream ended without Completion, strip residual
         tool status from the message."""
-        if st.completed or not st.message_ts or not st.accumulated_text:
+        if not st.message_ts or not st.accumulated_text:
             return
         logger.warning(
             "Session %s: stream ended without Completion — cleaning up message",

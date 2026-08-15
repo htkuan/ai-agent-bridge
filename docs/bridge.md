@@ -273,9 +273,12 @@ The Bridge is intentionally not subclassable. To extend the system you implement
 class PlatformAdapter(Protocol):
     async def start(self) -> None: ...
     async def stop(self) -> None: ...
+    async def cleanup(self) -> int: ...  # periodic housekeeping; returns entries removed
 ```
 
 The adapter is responsible for defining `session_key` format, owning per-session locking, building `text` and `system_prompt`, and choosing `resumable=True/False`. It calls `bridge.handle_message(...)` and renders the resulting `BridgeEvent`s.
+
+In practice adapters subclass `BasePlatformAdapter` (`platforms/base.py`), which owns the shared flow: the platform callback pre-processes its native event into a `BridgeRequest`, `process()` forwards it through `handle_message` and dispatches each streamed event to an `on_*` hook, and the subclass overrides only the hooks it renders. The Protocol stays the contract; the base is implementation reuse.
 
 See [docs/platforms/slack.md](platforms/slack.md) and [docs/platforms/heartbeat.md](platforms/heartbeat.md) for working examples.
 

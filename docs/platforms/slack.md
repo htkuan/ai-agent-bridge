@@ -313,7 +313,9 @@ This split keeps the agent platform-agnostic: a future platform that sends raw d
 
 ## Stale Session Cleanup
 
-A periodic cleanup task (every hour by default) removes stale session state entries — sessions that:
+The adapter's `cleanup()` override (the `PlatformAdapter` protocol's periodic
+housekeeping hook, called by `app.py`'s cleanup loop every hour by default)
+removes stale session state entries — sessions that:
 - Are not currently processing
 - Are not waiting for an answer
 - Have no pending messages
@@ -323,13 +325,16 @@ This prevents memory leaks from accumulated `_SessionState` objects.
 
 ## Implementing a New Platform Adapter
 
-Use the Slack adapter as a reference. A platform adapter must:
+Use the Slack adapter as a reference. Subclass `BasePlatformAdapter[YourRunState]`
+(`platforms/base.py`) — it owns the bridge call and the event dispatch. A platform
+adapter must:
 
-1. **Define session key format** — how messages map to sessions
-2. **Implement `PlatformAdapter` protocol** — `start()` and `stop()`
-3. **Own per-session locking** — prevent concurrent processing of the same session
-4. **Consume `BridgeEvent`s** — call `bridge.handle_message()` and render each event type
-5. **Handle `UserQuestion`** — pause and wait for user's answer
-6. **Manage pending messages** — decide queuing strategy (Slack keeps only the latest)
+1. **Define session key format** — how messages map to sessions (`make_session_key`)
+2. **Pre-process** — build a `BridgeRequest` from your platform's native event and call `process()`
+3. **Post-process** — override the `on_*` hooks to render each event type (Slack: six hooks delegating to its `_render_*` helpers)
+4. **Implement lifecycle** — `start()` and `stop()`
+5. **Own per-session locking** — prevent concurrent processing of the same session
+6. **Handle `UserQuestion`** — pause and wait for user's answer
+7. **Manage pending messages** — decide queuing strategy (Slack keeps only the latest)
 
 The bridge and agent require zero changes.

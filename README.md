@@ -135,7 +135,7 @@ All agent output flows through generic events — the shared language between ag
 
 ### Add a new platform
 
-Create `platforms/{name}/` with `config.py` and `adapter.py`. Implement the `PlatformAdapter` protocol. Define your session key format. See [Slack Adapter docs](docs/platforms/slack.md) for reference.
+Create `platforms/{name}/` with `config.py` and `adapter.py`. Subclass `BasePlatformAdapter` (`platforms/base.py`): pre-process your platform's native event into a `BridgeRequest`, call `process()`, and override the `on_*` hooks to render the streamed events. Define your session key format with `make_session_key`. See [Slack Adapter docs](docs/platforms/slack.md) for reference.
 
 ### Add a new agent
 

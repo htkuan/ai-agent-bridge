@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v0.7.0 (2026-08-16)
+
+### Features
+
+- **server**: Add shared HTTP server hosting console and platform routers
+  ([`10ad1e6`](https://github.com/htkuan/ai-agent-bridge/commit/10ad1e684d7930a4ff6b95784f91f8a10b12fd44))
+
+- **webhook**: Add HTTP webhook platform with 202-plus-callback delivery
+  ([`b1eeff8`](https://github.com/htkuan/ai-agent-bridge/commit/b1eeff89ec458736e55822b4d435b9f2283e2176))
+
+
 ## v0.6.0 (2026-08-15)
 
 ### Documentation

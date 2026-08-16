@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 import pytest
 
 from agent_bridge import app
@@ -20,6 +21,10 @@ from agent_bridge.platforms.heartbeat.adapter import HeartbeatAdapter
 from agent_bridge.platforms.heartbeat.config import HeartbeatConfig
 from agent_bridge.platforms.slack.adapter import SlackAdapter
 from agent_bridge.platforms.slack.config import SlackConfig
+from agent_bridge.platforms.webhook.adapter import WebhookAdapter
+from agent_bridge.platforms.webhook.config import WebhookConfig
+from agent_bridge.server.config import HttpConfig
+from agent_bridge.server.http_server import HttpServer
 from tests.fakes import FakeAgentController
 
 # --- _build_dedupe ---
@@ -47,7 +52,12 @@ def wiring(tmp_path: Path) -> tuple[Bridge, SessionManager]:
 
 
 def _config(
-    tmp_path: Path, *, slack: bool = False, heartbeat: bool = False
+    tmp_path: Path,
+    *,
+    slack: bool = False,
+    heartbeat: bool = False,
+    webhook: bool = False,
+    http: bool = False,
 ) -> AppConfig:
     return AppConfig(
         claude=ClaudeConfig(work_dir=tmp_path),
@@ -55,6 +65,8 @@ def _config(
         heartbeat=(
             HeartbeatConfig(interval_minutes=5, prompt="tick") if heartbeat else None
         ),
+        webhook=WebhookConfig(token="t") if webhook else None,
+        http=HttpConfig(port=0) if http else None,
     )
 
 
@@ -87,3 +99,43 @@ def test_slack_and_heartbeat(wiring: tuple[Bridge, SessionManager], tmp_path: Pa
     assert len(adapters) == 2
     assert isinstance(adapters[0], SlackAdapter)
     assert isinstance(adapters[1], HeartbeatAdapter)
+
+
+# --- the HTTP server and the webhook platform ---
+
+
+def test_build_http_server_none_when_not_configured(tmp_path: Path):
+    assert app._build_http_server(_config(tmp_path)) is None
+
+
+def test_build_http_server_returns_server(tmp_path: Path):
+    server = app._build_http_server(_config(tmp_path, http=True))
+    assert isinstance(server, HttpServer)
+
+
+async def test_webhook_mounts_router_on_http_server(
+    wiring: tuple[Bridge, SessionManager], tmp_path: Path
+):
+    server = HttpServer(HttpConfig(port=0))
+    adapters = app._build_adapters(
+        _config(tmp_path, webhook=True, http=True), *wiring, http_server=server
+    )
+
+    assert len(adapters) == 1
+    assert isinstance(adapters[0], WebhookAdapter)
+    # The route answers (401: unauthenticated) instead of 404 — it's mounted.
+    transport = httpx.ASGITransport(app=server.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post(
+            "/platforms/webhook/v1/messages",
+            json={"conversation_id": "c", "text": "hi"},
+        )
+    assert response.status_code == 401
+
+
+def test_webhook_without_http_server_raises(
+    wiring: tuple[Bridge, SessionManager], tmp_path: Path
+):
+    config = _config(tmp_path, webhook=True, http=True)
+    with pytest.raises(ValueError, match="HTTP server"):
+        app._build_adapters(config, *wiring, http_server=None)

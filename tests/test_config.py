@@ -12,6 +12,8 @@ from agent_bridge.bridge.config import BridgeConfig
 from agent_bridge.config import DEFAULT_CLEANUP_INTERVAL_SECONDS, AppConfig
 from agent_bridge.platforms.heartbeat.config import HeartbeatConfig
 from agent_bridge.platforms.slack.config import SlackConfig
+from agent_bridge.platforms.webhook.config import WebhookConfig
+from agent_bridge.server.config import HttpConfig
 
 
 def _env(tmp_path: Path, **extra: str) -> dict[str, str]:
@@ -27,6 +29,8 @@ def test_from_env_defaults(tmp_path: Path):
     assert config.claude == ClaudeConfig(work_dir=tmp_path.resolve())
     assert config.slack is None
     assert config.heartbeat is None
+    assert config.webhook is None
+    assert config.http is None
     assert config.log_level == "INFO"
     assert config.cleanup_interval_seconds == DEFAULT_CLEANUP_INTERVAL_SECONDS
 
@@ -42,6 +46,10 @@ def test_from_env_wires_every_layer(tmp_path: Path):
             AGENT_BRIDGE_HEARTBEAT_ENABLED="true",
             AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES="5",
             AGENT_BRIDGE_HEARTBEAT_PROMPT="tick",
+            AGENT_BRIDGE_WEBHOOK_ENABLED="true",
+            AGENT_BRIDGE_WEBHOOK_TOKEN="s3cret",
+            AGENT_BRIDGE_HTTP_ENABLED="true",
+            AGENT_BRIDGE_HTTP_PORT="9000",
             AGENT_BRIDGE_LOG_LEVEL="debug",
         )
     )
@@ -49,6 +57,8 @@ def test_from_env_wires_every_layer(tmp_path: Path):
     assert config.claude.effort == "low"
     assert config.slack == SlackConfig(bot_token="xoxb-x", app_token="xapp-x")
     assert config.heartbeat == HeartbeatConfig(interval_minutes=5, prompt="tick")
+    assert config.webhook == WebhookConfig(token="s3cret")
+    assert config.http == HttpConfig(port=9000)
     assert config.log_level == "DEBUG"
 
 
@@ -92,3 +102,26 @@ def test_rejects_non_positive_cleanup_interval(tmp_path: Path):
 def test_claude_config_is_required():
     with pytest.raises(TypeError, match="claude"):
         AppConfig()  # pyright: ignore[reportCallIssue]
+
+
+def test_webhook_without_http_server_raises(tmp_path: Path):
+    with pytest.raises(ValueError, match="AGENT_BRIDGE_HTTP_ENABLED"):
+        AppConfig(
+            claude=ClaudeConfig(work_dir=tmp_path), webhook=WebhookConfig(token="t")
+        )
+
+
+def test_webhook_without_http_server_raises_from_env(tmp_path: Path):
+    with pytest.raises(ValueError, match="AGENT_BRIDGE_HTTP_ENABLED"):
+        AppConfig.from_env(
+            _env(
+                tmp_path,
+                AGENT_BRIDGE_WEBHOOK_ENABLED="true",
+                AGENT_BRIDGE_WEBHOOK_TOKEN="t",
+            )
+        )
+
+
+def test_http_server_alone_is_fine(tmp_path: Path):
+    config = AppConfig(claude=ClaudeConfig(work_dir=tmp_path), http=HttpConfig())
+    assert config.webhook is None

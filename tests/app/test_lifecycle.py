@@ -112,7 +112,9 @@ async def test_run_starts_adapters_and_stops_on_sigterm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     fake = FakePlatformAdapter()
-    monkeypatch.setattr(app, "_build_adapters", lambda config, bridge, sm: [fake])
+    monkeypatch.setattr(
+        app, "_build_adapters", lambda config, bridge, sm, http_server=None: [fake]
+    )
     config = AppConfig(
         bridge=BridgeConfig(
             session=SessionConfig(store_path=tmp_path / "sessions.json")
@@ -151,7 +153,9 @@ async def test_run_probes_prerequisites_before_starting_anything(
     parses, so run() is what guarantees a bad work_dir never reaches an adapter.
     """
     fake = FakePlatformAdapter()
-    monkeypatch.setattr(app, "_build_adapters", lambda config, bridge, sm: [fake])
+    monkeypatch.setattr(
+        app, "_build_adapters", lambda config, bridge, sm, http_server=None: [fake]
+    )
     config = AppConfig(claude=ClaudeConfig(work_dir=tmp_path / "gone"))
 
     # Bounded: without the probe, run() reaches `await shutdown_event.wait()`

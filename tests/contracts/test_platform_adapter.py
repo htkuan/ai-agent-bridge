@@ -21,15 +21,19 @@ from agent_bridge.bridge.protocols import PlatformAdapter
 from agent_bridge.platforms.base import BasePlatformAdapter
 from agent_bridge.platforms.heartbeat.adapter import HeartbeatAdapter
 from agent_bridge.platforms.heartbeat.config import HeartbeatConfig
+from agent_bridge.platforms.webhook.adapter import WebhookAdapter
+from agent_bridge.platforms.webhook.config import WebhookConfig
 from tests.fakes import FakeBridge, FakePlatformAdapter
 
 
-@pytest.fixture(params=["fake", "base", "heartbeat"])
+@pytest.fixture(params=["fake", "base", "heartbeat", "webhook"])
 def adapter(request: pytest.FixtureRequest, tmp_path: Path) -> PlatformAdapter:
     if request.param == "fake":
         return FakePlatformAdapter()
     if request.param == "base":
         return BasePlatformAdapter[None](FakeBridge())
+    if request.param == "webhook":
+        return WebhookAdapter(WebhookConfig(token="t"), FakeBridge())
     state_path = tmp_path / "heartbeat.json"
     # A just-fired state file so start() schedules the first tick a full
     # interval out instead of firing during the test.

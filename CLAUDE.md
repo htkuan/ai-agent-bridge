@@ -74,6 +74,8 @@ Defined in `src/agent_bridge/bridge/protocols.py`. New agents/platforms implemen
 | Build backend | **hatchling** | |
 | Slack SDK | **slack-bolt** (optional dep) | Async Socket Mode |
 | Async HTTP | **aiohttp** | Required by slack-bolt |
+| HTTP server | **fastapi + uvicorn** (optional dep, `[http]`) | Shared server (`server/`) hosting console + HTTP platforms |
+| HTTP client | **httpx** (optional dep, `[http]`) | Webhook callback delivery; ASGI transport in tests |
 | Env config | **python-dotenv** | `.env` file loading |
 | Testing | **pytest + pytest-asyncio** | `asyncio_mode = "auto"` |
 | Coverage | **pytest-cov** | `fail_under = 75` ratchet; `[tool.coverage.report]` in pyproject.toml |
@@ -87,7 +89,9 @@ Defined in `src/agent_bridge/bridge/protocols.py`. New agents/platforms implemen
 
 One package per layer. `agents/` and `platforms/` both depend on `bridge/`;
 `bridge/` depends on neither — it holds the shared contract they plug into.
-`app.py` is the only module that knows all three.
+`server/` is shared HTTP infrastructure (not a platform) and imports none of
+the layers: HTTP-based platforms own an `APIRouter` that `app.py` mounts onto
+it. `app.py` is the only module that knows all the pieces.
 
 ```
 src/agent_bridge/
@@ -107,14 +111,21 @@ src/agent_bridge/
 │       ├── config.py    # ClaudeConfig (work_dir, permission_mode, timeout, effort, cli_path)
 │       ├── controller.py # Subprocess spawner, stream reader, timeout handling
 │       └── events.py    # Claude stream-json parser → BridgeEvent converter
+├── server/              # Shared HTTP infra (FastAPI + uvicorn) — hosts routers, knows no layer
+│   ├── config.py        # HttpConfig (host, port)
+│   ├── http_server.py   # HttpServer: FastAPI app + embedded uvicorn lifecycle + include_router()
+│   └── console.py       # Console routes (GET / placeholder, GET /api/health)
 └── platforms/
     ├── base.py          # make_session_key + BridgeRequest + BasePlatformAdapter (shared pre-process → forward → post-process flow)
     ├── slack/
     │   ├── config.py    # SlackConfig (bot_token, app_token, allow-list, usage report, render knobs)
     │   └── adapter.py   # Event handlers, per-session state machine, message rendering
-    └── heartbeat/
-        ├── config.py    # HeartbeatConfig (interval, prompt, state path)
-        └── adapter.py   # Periodic one-shot triggers (resumable=False)
+    ├── heartbeat/
+    │   ├── config.py    # HeartbeatConfig (interval, prompt, state path)
+    │   └── adapter.py   # Periodic one-shot triggers (resumable=False)
+    └── webhook/
+        ├── config.py    # WebhookConfig (bearer token, callback/idle knobs)
+        └── adapter.py   # POST endpoint (202) → background turn → callback POST (httpx)
 ```
 
 ## Conventions
@@ -164,6 +175,8 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 ├── ClaudeConfig                                   → ClaudeController
 ├── SlackConfig     | None                         → SlackAdapter    (None ⇒ not configured)
 ├── HeartbeatConfig | None                         → HeartbeatAdapter (None ⇒ disabled)
+├── WebhookConfig   | None                         → WebhookAdapter  (None ⇒ disabled; requires http)
+├── HttpConfig      | None                         → HttpServer      (None ⇒ no HTTP server)
 ├── log_level
 └── cleanup_interval_seconds
 ```
@@ -254,7 +267,7 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 4. **Post-process**: override the `on_*` hooks you render — `on_processing` / `on_text_delta` / `on_status_update` / `on_user_question` / `on_completion`, plus `on_stream_end` (safety net when the stream ends without a `Completion`) — or just `on_event` to treat every event uniformly
 5. Own per-session locking if your platform is conversational (see Slack's `_SessionState`); one-shot platforms don't need it. Errors from `process()` propagate — keep your own error envelope around it
 6. Override `cleanup()` if the adapter keeps per-session state that can go stale — `app.py`'s periodic loop calls it on every adapter
-7. Implement `start()` / `stop()` for your platform's lifecycle (connect/disconnect, task spawn/cancel)
+7. Implement `start()` / `stop()` for your platform's lifecycle (connect/disconnect, task spawn/cancel). HTTP-based platforms don't own a socket: expose an `APIRouter` (own prefix, e.g. `/platforms/{name}`) that `app.py` mounts on the shared `HttpServer` (`server/`), and keep `start()`/`stop()` for auxiliary resources only (see the webhook adapter)
 8. Wire up in `app.py`
 9. Add your adapter to `tests/contracts/test_platform_adapter.py` if its lifecycle is cheap to run in-process
 10. Add documentation in `docs/platforms/{name}.md`
@@ -348,4 +361,9 @@ unparseable numbers. See `.env.example` for the full list.
 | `AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES` | Yes (if heartbeat enabled) | — | Heartbeat |
 | `AGENT_BRIDGE_HEARTBEAT_PROMPT` | Yes (if heartbeat enabled) | — | Heartbeat |
 | `AGENT_BRIDGE_HEARTBEAT_STATE_PATH` | No | `./heartbeat.json` | Heartbeat |
+| `AGENT_BRIDGE_HTTP_ENABLED` | No | `false` | HTTP server (console + HTTP platforms) |
+| `AGENT_BRIDGE_HTTP_HOST` | No | `127.0.0.1` | HTTP server (loopback by default) |
+| `AGENT_BRIDGE_HTTP_PORT` | No | `8080` | HTTP server |
+| `AGENT_BRIDGE_WEBHOOK_ENABLED` | No | `false` | Webhook (requires the HTTP server) |
+| `AGENT_BRIDGE_WEBHOOK_TOKEN` | Yes (if webhook enabled) | — | Webhook (bearer token; endpoint never comes up without it) |
 | `AGENT_BRIDGE_LOG_LEVEL` | No | `INFO` | Global |

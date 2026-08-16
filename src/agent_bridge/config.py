@@ -15,6 +15,8 @@ from agent_bridge.bridge.config import BridgeConfig
 from agent_bridge.env import PROCESS_ENV, Env, env_str, load_env_file
 from agent_bridge.platforms.heartbeat.config import HeartbeatConfig
 from agent_bridge.platforms.slack.config import SlackConfig
+from agent_bridge.platforms.webhook.config import WebhookConfig
+from agent_bridge.server.config import HttpConfig
 
 # Interval for periodic maintenance (session purge, stale pending cleanup).
 DEFAULT_CLEANUP_INTERVAL_SECONDS = 3600.0
@@ -29,6 +31,10 @@ class AppConfig:
     # None ⇒ that platform is not configured; app.py skips building it.
     slack: SlackConfig | None = None
     heartbeat: HeartbeatConfig | None = None
+    webhook: WebhookConfig | None = None
+    # None ⇒ no HTTP server. Shared infrastructure, not a platform: the
+    # webhook platform (and the console) mount routes onto it.
+    http: HttpConfig | None = None
     log_level: str = "INFO"
     cleanup_interval_seconds: float = DEFAULT_CLEANUP_INTERVAL_SECONDS
 
@@ -49,6 +55,8 @@ class AppConfig:
             bridge=BridgeConfig.from_env(env),
             slack=SlackConfig.from_env_optional(env),
             heartbeat=HeartbeatConfig.from_env_optional(env),
+            webhook=WebhookConfig.from_env_optional(env),
+            http=HttpConfig.from_env_optional(env),
             log_level=env_str(env, "AGENT_BRIDGE_LOG_LEVEL", "INFO").upper(),
         )
 
@@ -62,4 +70,10 @@ class AppConfig:
             raise ValueError(
                 "AppConfig.cleanup_interval_seconds must be positive, "
                 f"got {self.cleanup_interval_seconds}"
+            )
+        if self.webhook is not None and self.http is None:
+            raise ValueError(
+                "The webhook platform needs the HTTP server: set "
+                "AGENT_BRIDGE_HTTP_ENABLED=true alongside "
+                "AGENT_BRIDGE_WEBHOOK_ENABLED"
             )

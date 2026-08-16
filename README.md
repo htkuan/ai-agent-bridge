@@ -2,7 +2,7 @@
 
 Modular bridge that connects **chat platforms** to **AI agents**. Each layer is independent — swap platforms or agents without touching the others.
 
-Currently supports: **Slack** + **Claude Code**
+Currently supports: **Slack**, **Heartbeat**, **HTTP Webhook** + **Claude Code**
 
 ```
 ┌──────────────┐     ┌──────────┐     ┌──────────────┐
@@ -88,7 +88,7 @@ The system has three independent layers:
 
 | Layer | Role | Docs |
 |-------|------|------|
-| **Platform Adapter** | Owns session semantics, per-session locking, UI rendering | [Slack Adapter](docs/platforms/slack.md) |
+| **Platform Adapter** | Owns session semantics, per-session locking, UI rendering | [Slack](docs/platforms/slack.md) · [Heartbeat](docs/platforms/heartbeat.md) · [Webhook](docs/platforms/webhook.md) |
 | **Bridge** | Routes messages, maps session keys → IDs, enforces concurrency | Core — see below |
 | **Agent Controller** | Executes prompts, yields generic events | [Claude Agent](docs/agents/claude.md) |
 
@@ -129,13 +129,18 @@ All agent output flows through generic events — the shared language between ag
 | `AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES` | Yes (if heartbeat enabled) | — | Interval between heartbeat ticks (minutes) |
 | `AGENT_BRIDGE_HEARTBEAT_PROMPT` | Yes (if heartbeat enabled) | — | Prompt sent on every heartbeat tick |
 | `AGENT_BRIDGE_HEARTBEAT_STATE_PATH` | No | `./heartbeat.json` | Last-run timestamp path (used for restart catch-up) |
+| `AGENT_BRIDGE_HTTP_ENABLED` | No | `false` | Enable the shared HTTP server (console page + HTTP platforms) |
+| `AGENT_BRIDGE_HTTP_HOST` | No | `127.0.0.1` | HTTP server bind address (loopback by default) |
+| `AGENT_BRIDGE_HTTP_PORT` | No | `8080` | HTTP server port |
+| `AGENT_BRIDGE_WEBHOOK_ENABLED` | No | `false` | Enable the webhook platform — `POST /platforms/webhook/v1/messages`, result delivered via callback |
+| `AGENT_BRIDGE_WEBHOOK_TOKEN` | Yes (if webhook enabled) | — | Bearer token guarding the webhook endpoint |
 | `AGENT_BRIDGE_LOG_LEVEL` | No | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
 
 ## Extending
 
 ### Add a new platform
 
-Create `platforms/{name}/` with `config.py` and `adapter.py`. Subclass `BasePlatformAdapter` (`platforms/base.py`): pre-process your platform's native event into a `BridgeRequest`, call `process()`, and override the `on_*` hooks to render the streamed events. Define your session key format with `make_session_key`. See [Slack Adapter docs](docs/platforms/slack.md) for reference.
+Create `platforms/{name}/` with `config.py` and `adapter.py`. Subclass `BasePlatformAdapter` (`platforms/base.py`): pre-process your platform's native event into a `BridgeRequest`, call `process()`, and override the `on_*` hooks to render the streamed events. Define your session key format with `make_session_key`. HTTP-based platforms expose an `APIRouter` that gets mounted on the [shared HTTP server](docs/server.md). See the [Slack](docs/platforms/slack.md) and [Webhook](docs/platforms/webhook.md) docs for reference.
 
 ### Add a new agent
 

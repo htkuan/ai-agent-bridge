@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import signal
+from typing import TYPE_CHECKING
 
 from agent_bridge.agents.claude.controller import ClaudeController
 from agent_bridge.bridge.config import DedupeConfig
@@ -16,6 +17,9 @@ from agent_bridge.bridge.session import SessionManager
 from agent_bridge.config import AppConfig
 from agent_bridge.platforms.heartbeat.adapter import HeartbeatAdapter
 from agent_bridge.platforms.slack.adapter import SlackAdapter
+
+if TYPE_CHECKING:
+    from agent_bridge.server.http_server import HttpServer
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +43,21 @@ def _build_dedupe(config: DedupeConfig) -> PromptDedupeCache | None:
     return PromptDedupeCache(config)
 
 
+def _build_http_server(config: AppConfig) -> HttpServer | None:
+    if config.http is None:
+        return None
+    # Imported lazily: fastapi/uvicorn are optional deps ([http]) that a
+    # deployment without the HTTP server never needs installed.
+    from agent_bridge.server.http_server import HttpServer
+
+    return HttpServer(config.http)
+
+
 def _build_adapters(
-    config: AppConfig, bridge: Bridge, session_manager: SessionManager
+    config: AppConfig,
+    bridge: Bridge,
+    session_manager: SessionManager,
+    http_server: HttpServer | None = None,
 ) -> list[PlatformAdapter]:
     """Construct every configured adapter — each independently optional."""
     slack_adapter: SlackAdapter | None = None
@@ -59,13 +76,30 @@ def _build_adapters(
             config.heartbeat.interval_minutes,
         )
 
+    webhook_adapter: PlatformAdapter | None = None
+    if config.webhook is not None:
+        # AppConfig._validate guarantees this for env-built configs; guard
+        # again for programmatically assembled ones.
+        if http_server is None:
+            raise ValueError(
+                "The webhook platform needs the HTTP server: set "
+                "AGENT_BRIDGE_HTTP_ENABLED=true"
+            )
+        from agent_bridge.platforms.webhook.adapter import WebhookAdapter
+
+        adapter = WebhookAdapter(config.webhook, bridge)
+        http_server.include_router(adapter.router)
+        webhook_adapter = adapter
+        logger.info("Webhook adapter enabled (POST /platforms/webhook/v1/messages)")
+
     adapters: list[PlatformAdapter] = [
-        a for a in (slack_adapter, heartbeat_adapter) if a is not None
+        a for a in (slack_adapter, heartbeat_adapter, webhook_adapter) if a is not None
     ]
     if not adapters:
         raise ValueError(
-            "No platform adapter configured. "
-            "Set Slack tokens or AGENT_BRIDGE_HEARTBEAT_ENABLED=true."
+            "No platform adapter configured. Set Slack tokens, "
+            "AGENT_BRIDGE_HEARTBEAT_ENABLED=true, or "
+            "AGENT_BRIDGE_WEBHOOK_ENABLED=true."
         )
     return adapters
 
@@ -123,7 +157,8 @@ async def run(config: AppConfig) -> None:
         controller,
         dedupe=_build_dedupe(config.bridge.dedupe),
     )
-    adapters = _build_adapters(config, bridge, session_manager)
+    http_server = _build_http_server(config)
+    adapters = _build_adapters(config, bridge, session_manager, http_server)
 
     # Graceful shutdown
     shutdown_event = asyncio.Event()
@@ -151,11 +186,17 @@ async def run(config: AppConfig) -> None:
     try:
         for adapter in adapters:
             await adapter.start()
+        # Server last: it only accepts traffic once every adapter is ready.
+        if http_server is not None:
+            await http_server.start()
         logger.info("agent-bridge is running. Press Ctrl+C to stop.")
         await shutdown_event.wait()
     finally:
         logger.info("Shutting down...")
         cleanup_task.cancel()
+        # Mirror of startup: stop accepting new requests, then the adapters.
+        if http_server is not None:
+            await http_server.stop()
         for adapter in adapters:
             await adapter.stop()
         logger.info("Stopped.")

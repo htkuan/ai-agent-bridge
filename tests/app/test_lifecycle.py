@@ -70,7 +70,7 @@ async def test_cleanup_round_purges_sessions_usage_and_slack_state(tmp_path: Pat
     shutdown = asyncio.Event()
     task = asyncio.create_task(
         app._periodic_cleanup(
-            0.01, shutdown, session_manager, [harness.adapter], bridge, controller
+            0.01, shutdown, session_manager, [harness.adapter], bridge, [controller]
         )
     )
     try:
@@ -94,7 +94,7 @@ async def test_cleanup_loop_survives_controller_errors(tmp_path: Path):
 
     shutdown = asyncio.Event()
     task = asyncio.create_task(
-        app._periodic_cleanup(0.01, shutdown, session_manager, [], bridge, controller)
+        app._periodic_cleanup(0.01, shutdown, session_manager, [], bridge, [controller])
     )
     try:
         await _wait_until(lambda: controller.calls >= 1)

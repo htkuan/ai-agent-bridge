@@ -18,6 +18,7 @@ Source: `src/agent_bridge/bridge/`. The package is also the layer both sides plu
 | Does | Does Not |
 |------|----------|
 | Resolve `session_key → session_id` (via `SessionManager`) | Define what a "session" means — that's the platform's job |
+| Route by `agent` name to one of several registered controllers | Decide which agent a session uses — that's the platform's pick |
 | Cap total in-flight sessions globally (Semaphore) | Serialize per-session — that's the platform's lock |
 | Optionally short-circuit identical prompts across sessions (`PromptDedupeCache`) | Know about Slack threads, Discord channels, etc. |
 | Forward `BridgeEvent`s yielded by the controller | Render those events into messages — that's the platform's job |
@@ -45,12 +46,35 @@ Each component takes its own config object, and `BridgeConfig` is the aggregate:
 | `DedupeConfig` | `PromptDedupeCache` | `ttl_seconds`, `max_entries`, `simhash_threshold`, plus the `enabled` property (`ttl_seconds > 0`) |
 
 ```python
-bridge = Bridge(config.router, session_manager, controller, dedupe=dedupe)
+bridge = Bridge(
+    config.router,
+    session_manager,
+    controller,  # the default (agent=None)
+    dedupe=dedupe,
+    named_controllers={"backend": other},  # routed to by name
+)
 ```
 
 Validation runs on **every** construction (`__post_init__`), not just `from_env()` — so a
 config built directly in a test is checked the same way one read from the environment is.
 Invalid values raise `ValueError`, which at startup means the process fails fast.
+
+### Named agent routing
+
+`handle_message(..., agent=...)` picks the controller: `None` (the default) routes to the
+default controller; a name routes to the matching entry in `named_controllers`. The
+platform decides which name a session uses (e.g. Slack's per-channel profiles); the bridge
+only resolves it. Resolution happens **before** the dedupe claim, session mint, and
+semaphore — an unknown name yields a single error `Completion`
+(`error_code="unknown_agent"`) without touching any shared state. Startup validation makes
+that unreachable for env-built configs; the guard covers programmatic ones. The concurrency
+semaphore stays global across all controllers.
+
+`SessionManager` records each resumable session's `agent`. When the same `session_key`
+later arrives with a different name (an operator remapped the channel), the old session is
+abandoned — a session created under one controller's work dir must not be resumed under
+another's — and its id is handed to the periodic cleanup via `purge_expired()`, exactly
+like a TTL purge.
 
 ## Data Flow
 
@@ -58,12 +82,15 @@ Invalid values raise `ValueError`, which at startup means the process fails fast
 Platform Adapter                Bridge                       SessionManager / DedupeCache / Controller
 ─────────────────               ──────                       ──────────────────────────────────────────
 bridge.handle_message(
-  session_key,                                                            
-  text,                  ─────►  ① Dedupe lookup_or_claim?         ─────► PromptDedupeCache
-  context,                       hit ──► yield Completion             (skipped if disabled / non-resumable)
-  system_prompt,                       (metadata.dedupe=…),return
-  resumable=True/False)
-                                ② Resolve session                  ─────► SessionManager.get_or_create(key)
+  session_key,                   ⓪ Resolve agent → controller
+  text,                            unknown ──► yield Completion(is_error=True,
+  context,                                       error_code="unknown_agent"), return
+  system_prompt,
+  resumable=True/False,   ─────►  ① Dedupe lookup_or_claim?         ─────► PromptDedupeCache
+  agent=None/"name")               hit ──► yield Completion             (skipped if disabled / non-resumable)
+                                        (metadata.dedupe=…),return
+
+                                ② Resolve session                  ─────► SessionManager.get_or_create(key, agent)
                                    (or mint UUID if !resumable)            (resumable=True only)
 
                                 ③ Capacity gate                    ─────► Semaphore.locked()?
@@ -85,8 +112,9 @@ bridge.handle_message(
 
 The order matters:
 
-1. **Dedupe runs before session resolution.** A dedupe hit must not touch `SessionManager` (no wasted disk write, no minted `session_id`) — that's one of the points of dedupe.
-2. **Capacity gate runs after session resolution.** The `session_id` is needed for the rejection log line; on a capacity reject we *do* free the dedupe slot so retries aren't blocked for the full TTL.
+1. **Agent resolution runs first.** An unknown agent name must fail before it can claim a dedupe slot, mint a session, or touch the semaphore.
+2. **Dedupe runs before session resolution.** A dedupe hit must not touch `SessionManager` (no wasted disk write, no minted `session_id`) — that's one of the points of dedupe.
+3. **Capacity gate runs after session resolution.** The `session_id` is needed for the rejection log line; on a capacity reject we *do* free the dedupe slot so retries aren't blocked for the full TTL.
 
 ## Session Resolution
 

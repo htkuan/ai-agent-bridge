@@ -33,14 +33,17 @@ async def test_resolve_channel_dm_without_name_falls_back_to_id():
     assert await cache.resolve_channel("D9", _client()) == "D9"
 
 
-async def test_resolve_channel_api_error_falls_back_to_id_and_caches():
+async def test_resolve_channel_api_error_falls_back_to_id_without_caching():
+    """A transient API failure must not pin the channel to its id — that
+    would silently route a profiled channel to the default agent for the
+    whole process lifetime."""
     cache = SlackInfoCache()
     client = _client()
     client.fail_next["conversations_info"] = "channel_not_found"
     assert await cache.resolve_channel("C1", client) == "C1"
-    # The fallback is cached: no retry on the next lookup.
-    assert await cache.resolve_channel("C1", client) == "C1"
-    assert len(client.calls_to("conversations_info")) == 1
+    # Not cached: the next lookup retries and recovers the real name.
+    assert await cache.resolve_channel("C1", client) == "general"
+    assert len(client.calls_to("conversations_info")) == 2
 
 
 async def test_resolve_channel_missing_scope_warning_names_the_needed_scope(caplog):

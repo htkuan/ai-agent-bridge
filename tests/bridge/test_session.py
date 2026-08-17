@@ -295,3 +295,80 @@ def test_delete_failure_restores_entry(tmp_path: Path):
         assert mgr.get("slack:C123:ts1") == sid
     finally:
         store.chmod(0o644)
+
+
+# --- Agent affinity: a remapped key must not resume the old session ---
+
+
+def test_same_agent_resumes(tmp_path: Path):
+    mgr = SessionManager(SessionConfig(store_path=tmp_path / "s.json"))
+
+    sid1, new1 = mgr.get_or_create("slack:C1:ts1", agent="research")
+    sid2, new2 = mgr.get_or_create("slack:C1:ts1", agent="research")
+
+    assert (new1, new2) == (True, False)
+    assert sid1 == sid2
+
+
+def test_agent_mismatch_mints_fresh_session(tmp_path: Path):
+    mgr = SessionManager(SessionConfig(store_path=tmp_path / "s.json"))
+
+    sid1, _ = mgr.get_or_create("slack:C1:ts1", agent="research")
+    sid2, new2 = mgr.get_or_create("slack:C1:ts1", agent="ops")
+
+    assert new2 is True
+    assert sid1 != sid2
+
+
+def test_agent_to_default_remap_mints_fresh_session(tmp_path: Path):
+    mgr = SessionManager(SessionConfig(store_path=tmp_path / "s.json"))
+
+    sid1, _ = mgr.get_or_create("slack:C1:ts1", agent="research")
+    sid2, new2 = mgr.get_or_create("slack:C1:ts1")
+
+    assert new2 is True
+    assert sid1 != sid2
+
+
+def test_orphaned_session_drained_by_purge_expired(tmp_path: Path):
+    mgr = SessionManager(SessionConfig(store_path=tmp_path / "s.json"))
+
+    sid1, _ = mgr.get_or_create("slack:C1:ts1")
+    mgr.get_or_create("slack:C1:ts1", agent="research")
+
+    # The remapped-away session surfaces exactly once, like a TTL purge.
+    assert mgr.purge_expired() == [sid1]
+    assert mgr.purge_expired() == []
+
+
+def test_pre_upgrade_entry_without_agent_field_resumes_as_default(tmp_path: Path):
+    """Old sessions.json entries lack "agent" — they belong to the default
+    agent and must keep resuming for unmapped keys."""
+    store = tmp_path / "s.json"
+    mgr1 = SessionManager(SessionConfig(store_path=store))
+    sid1, _ = mgr1.get_or_create("slack:C1:ts1")
+    # Simulate a pre-upgrade store: strip any agent key from the entry.
+    data = json.loads(store.read_text())
+    data["slack:C1:ts1"].pop("agent", None)
+    store.write_text(json.dumps(data))
+
+    mgr2 = SessionManager(SessionConfig(store_path=store))
+    sid2, is_new = mgr2.get_or_create("slack:C1:ts1")
+
+    assert is_new is False
+    assert sid1 == sid2
+
+
+def test_agent_persisted_across_restart(tmp_path: Path):
+    store = tmp_path / "s.json"
+    mgr1 = SessionManager(SessionConfig(store_path=store))
+    sid1, _ = mgr1.get_or_create("slack:C1:ts1", agent="research")
+
+    mgr2 = SessionManager(SessionConfig(store_path=store))
+    sid_same, new_same = mgr2.get_or_create("slack:C1:ts1", agent="research")
+    assert (sid_same, new_same) == (sid1, False)
+
+    mgr3 = SessionManager(SessionConfig(store_path=store))
+    sid_other, new_other = mgr3.get_or_create("slack:C1:ts1", agent="ops")
+    assert new_other is True
+    assert sid_other != sid1

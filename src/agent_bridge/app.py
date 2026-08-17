@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import signal
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from agent_bridge.agents.claude.controller import ClaudeController
@@ -110,7 +111,7 @@ async def _periodic_cleanup(
     session_manager: SessionManager,
     adapters: list[PlatformAdapter],
     bridge: Bridge,
-    controller: ClaudeController,
+    controllers: Sequence[ClaudeController],
 ) -> None:
     while not shutdown_event.is_set():
         with contextlib.suppress(TimeoutError):
@@ -122,10 +123,13 @@ async def _periodic_cleanup(
                 stale += await adapter.cleanup()
             for sid in purged_ids:
                 bridge.forget_session_usage(sid)
-                try:
-                    await controller.cleanup_session(sid)
-                except Exception:
-                    logger.exception("Worktree cleanup failed for session %s", sid)
+                # A purged/orphaned id doesn't say which controller owned it —
+                # cleanup on all of them; misses are cheap no-ops.
+                for controller in controllers:
+                    try:
+                        await controller.cleanup_session(sid)
+                    except Exception:
+                        logger.exception("Worktree cleanup failed for session %s", sid)
             if purged_ids or stale:
                 logger.info(
                     "Cleanup: purged %d expired sessions, %d stale pending",
@@ -140,9 +144,24 @@ async def run(config: AppConfig) -> None:
     # of the world the config points at. Here rather than in ``from_env`` so a
     # programmatically built config gets the same fail-fast guarantee.
     config.claude.check_prerequisites()
+    for name, profile in config.claude_profiles.items():
+        try:
+            profile.check_prerequisites()
+        except ValueError as e:
+            # The probe speaks in AGENT_BRIDGE_CLAUDE_* terms; point at the
+            # profile that actually holds the bad value.
+            raise ValueError(f"claude.profiles.{name}: {e}") from e
 
     logger.info("Claude work dir: %s", config.claude.work_dir)
     logger.info("Permission mode: %s", config.claude.permission_mode)
+    for name, profile in config.claude_profiles.items():
+        logger.info(
+            "Claude profile %s: work_dir=%s, permission_mode=%s, model=%s",
+            name,
+            profile.work_dir,
+            profile.permission_mode,
+            profile.model or "(default)",
+        )
     logger.info("Session TTL: %s hours", config.bridge.session.ttl_hours)
     logger.info("Claude timeout: %s seconds", config.claude.timeout_seconds)
     logger.info(
@@ -151,11 +170,16 @@ async def run(config: AppConfig) -> None:
 
     session_manager = SessionManager(config.bridge.session)
     controller = ClaudeController(config.claude)
+    named_controllers = {
+        name: ClaudeController(profile)
+        for name, profile in config.claude_profiles.items()
+    }
     bridge = Bridge(
         config.bridge.router,
         session_manager,
         controller,
         dedupe=_build_dedupe(config.bridge.dedupe),
+        named_controllers=named_controllers,
     )
     http_server = _build_http_server(config)
     adapters = _build_adapters(config, bridge, session_manager, http_server)
@@ -178,7 +202,7 @@ async def run(config: AppConfig) -> None:
             session_manager,
             adapters,
             bridge,
-            controller,
+            [controller, *named_controllers.values()],
         )
     )
 

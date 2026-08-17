@@ -125,3 +125,163 @@ def test_webhook_without_http_server_raises_from_env(tmp_path: Path):
 def test_http_server_alone_is_fine(tmp_path: Path):
     config = AppConfig(claude=ClaudeConfig(work_dir=tmp_path), http=HttpConfig())
     assert config.webhook is None
+
+
+# --- the profiles file (AGENT_BRIDGE_PROFILES_PATH) ---
+
+_SLACK_TOKENS = {
+    "AGENT_BRIDGE_SLACK_BOT_TOKEN": "xoxb-x",
+    "AGENT_BRIDGE_SLACK_APP_TOKEN": "xapp-x",
+}
+
+
+def _profiles_env(tmp_path: Path, content: str, **extra: str) -> dict[str, str]:
+    path = tmp_path / "profiles.toml"
+    path.write_text(content)
+    return _env(tmp_path, AGENT_BRIDGE_PROFILES_PATH=str(path), **extra)
+
+
+def test_profiles_path_unset_means_no_profiles(tmp_path: Path):
+    config = AppConfig.from_env(_env(tmp_path))
+    assert config.claude_profiles == {}
+
+
+def test_profiles_file_builds_named_profiles_and_slack_mapping(tmp_path: Path):
+    other = tmp_path / "other"
+    env = _profiles_env(
+        tmp_path,
+        f"""
+        [claude.profiles.backend]
+        work_dir = {str(other)!r}
+        permission_mode = "plan"
+        model = "claude-opus-5"
+
+        [claude.profiles.docs]
+
+        [slack.channel_profiles]
+        backend-team = "backend"
+        docs-help = "docs"
+        """,
+        **_SLACK_TOKENS,
+    )
+    config = AppConfig.from_env(env)
+
+    backend = config.claude_profiles["backend"]
+    assert backend.work_dir == other.resolve()
+    assert backend.permission_mode == "plan"
+    assert backend.model == "claude-opus-5"
+    # Unset fields inherit the base (env-built) Claude config.
+    assert backend.timeout_seconds == config.claude.timeout_seconds
+    assert config.claude_profiles["docs"] == config.claude
+    assert config.slack is not None
+    assert config.slack.channel_profiles == {
+        "backend-team": "backend",
+        "docs-help": "docs",
+    }
+
+
+def test_profile_inherits_base_built_from_env(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        "[claude.profiles.backend]",
+        AGENT_BRIDGE_CLAUDE_EFFORT="low",
+    )
+    config = AppConfig.from_env(env)
+    assert config.claude_profiles["backend"].effort == "low"
+
+
+def test_empty_profiles_file_is_fine(tmp_path: Path):
+    config = AppConfig.from_env(_profiles_env(tmp_path, ""))
+    assert config.claude_profiles == {}
+
+
+def test_profiles_file_missing_raises(tmp_path: Path):
+    env = _env(tmp_path, AGENT_BRIDGE_PROFILES_PATH=str(tmp_path / "nope.toml"))
+    with pytest.raises(ValueError, match="AGENT_BRIDGE_PROFILES_PATH"):
+        AppConfig.from_env(env)
+
+
+def test_profiles_file_invalid_toml_raises(tmp_path: Path):
+    with pytest.raises(ValueError, match="Invalid TOML"):
+        AppConfig.from_env(_profiles_env(tmp_path, "not = [valid"))
+
+
+def test_profiles_file_unknown_section_raises(tmp_path: Path):
+    with pytest.raises(ValueError, match=r"Unknown section.*discord"):
+        AppConfig.from_env(_profiles_env(tmp_path, "[discord]"))
+
+
+def test_profiles_file_unknown_key_under_claude_raises(tmp_path: Path):
+    with pytest.raises(ValueError, match=r"Unknown key.*\[claude\]"):
+        AppConfig.from_env(_profiles_env(tmp_path, "[claude]\nprofile = 1"))
+
+
+def test_profiles_file_unknown_key_under_slack_raises(tmp_path: Path):
+    with pytest.raises(ValueError, match=r"Unknown key.*\[slack\]"):
+        AppConfig.from_env(
+            _profiles_env(tmp_path, "[slack]\nchannels = 1", **_SLACK_TOKENS)
+        )
+
+
+def test_profiles_file_section_must_be_a_table(tmp_path: Path):
+    with pytest.raises(ValueError, match=r"\[claude\].*must be a table"):
+        AppConfig.from_env(_profiles_env(tmp_path, 'claude = "x"'))
+
+
+def test_profiles_file_channel_profiles_must_be_a_table(tmp_path: Path):
+    with pytest.raises(ValueError, match=r"\[slack\.channel_profiles\].*table"):
+        AppConfig.from_env(
+            _profiles_env(tmp_path, '[slack]\nchannel_profiles = "x"', **_SLACK_TOKENS)
+        )
+
+
+def test_channel_mapping_without_slack_configured_raises(tmp_path: Path):
+    content = """
+    [claude.profiles.backend]
+
+    [slack.channel_profiles]
+    backend-team = "backend"
+    """
+    with pytest.raises(ValueError, match="Slack is not configured"):
+        AppConfig.from_env(_profiles_env(tmp_path, content))
+
+
+def test_channel_mapping_to_unknown_profile_raises(tmp_path: Path):
+    content = """
+    [slack.channel_profiles]
+    backend-team = "nope"
+    """
+    with pytest.raises(ValueError, match=r"unknown Claude profile.*nope"):
+        AppConfig.from_env(_profiles_env(tmp_path, content, **_SLACK_TOKENS))
+
+
+def test_channel_mapping_to_unknown_profile_raises_on_construction(tmp_path: Path):
+    # The cross-check guards programmatically assembled configs too.
+    with pytest.raises(ValueError, match="unknown Claude profile"):
+        AppConfig(
+            claude=ClaudeConfig(work_dir=tmp_path),
+            slack=SlackConfig(
+                bot_token="xoxb-x",
+                app_token="xapp-x",
+                channel_profiles={"general": "nope"},
+            ),
+        )
+
+
+def test_channel_mapping_to_defined_profile_constructs(tmp_path: Path):
+    config = AppConfig(
+        claude=ClaudeConfig(work_dir=tmp_path),
+        claude_profiles={"ops": ClaudeConfig(work_dir=tmp_path)},
+        slack=SlackConfig(
+            bot_token="xoxb-x",
+            app_token="xapp-x",
+            channel_profiles={"general": "ops"},
+        ),
+    )
+    assert config.slack is not None
+    assert config.slack.profile_for_channel("general") == "ops"
+
+
+def test_profiles_file_empty_claude_section_is_fine(tmp_path: Path):
+    config = AppConfig.from_env(_profiles_env(tmp_path, "[claude]"))
+    assert config.claude_profiles == {}

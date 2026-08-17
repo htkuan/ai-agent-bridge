@@ -134,6 +134,9 @@ class ClaudeController:
 
         cmd.extend(["--effort", self._config.effort])
 
+        if self._config.model:
+            cmd.extend(["--model", self._config.model])
+
         if system_prompt:
             cmd.extend(["--append-system-prompt", system_prompt])
 

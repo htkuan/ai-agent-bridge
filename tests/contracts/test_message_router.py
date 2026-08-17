@@ -3,7 +3,9 @@
 The real ``Bridge`` and ``FakeBridge`` must satisfy the same expectations:
 a normal run opens with ``Processing`` and ends with exactly one terminal
 ``Completion``; a saturated router rejects with a single error ``Completion``
-carrying ``error_code == "capacity_full"``.
+carrying ``error_code == "capacity_full"``; an unknown ``agent`` rejects with
+a single error ``Completion`` carrying ``error_code == "unknown_agent"``,
+while a registered one routes normally.
 """
 
 from __future__ import annotations
@@ -80,3 +82,44 @@ async def test_capacity_rejection_is_a_single_error_completion(
     assert isinstance(only, Completion)
     assert only.is_error is True
     assert only.metadata.get("error_code") == "capacity_full"
+
+
+@pytest.fixture(params=["bridge", "fake"])
+def named_router(
+    request: pytest.FixtureRequest, session_manager: SessionManager
+) -> MessageRouter:
+    script: list[BridgeEvent] = [Completion(text="ok", is_error=False)]
+    if request.param == "bridge":
+        return Bridge(
+            RouterConfig(),
+            session_manager,
+            FakeAgentController([script]),
+            named_controllers={"research": FakeAgentController([script])},
+        )
+    return FakeBridge([Processing(), *script], known_agents=frozenset({"research"}))
+
+
+async def test_unknown_agent_is_a_single_error_completion(
+    named_router: MessageRouter,
+) -> None:
+    events = [
+        e async for e in named_router.handle_message("slack:c1:t3", "hi", agent="nope")
+    ]
+    assert len(events) == 1
+    only = events[0]
+    assert isinstance(only, Completion)
+    assert only.is_error is True
+    assert only.metadata.get("error_code") == "unknown_agent"
+
+
+async def test_known_agent_routes_normally(named_router: MessageRouter) -> None:
+    events = [
+        e
+        async for e in named_router.handle_message(
+            "slack:c1:t4", "hi", agent="research"
+        )
+    ]
+    assert isinstance(events[0], Processing)
+    last = events[-1]
+    assert isinstance(last, Completion)
+    assert last.is_error is False

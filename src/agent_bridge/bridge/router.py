@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 
 from agent_bridge.bridge.config import RouterConfig
@@ -31,10 +31,17 @@ class Bridge:
         session_manager: SessionManager,
         controller: AgentController,
         dedupe: PromptDedupeCache | None = None,
+        *,
+        named_controllers: Mapping[str, AgentController] | None = None,
     ) -> None:
         self._config = config
         self._session_manager = session_manager
         self._controller = controller
+        # Named agents (e.g. Claude profiles). ``agent=None`` routes to the
+        # default ``controller``; the semaphore stays shared across all of them.
+        self._named_controllers: dict[str, AgentController] = dict(
+            named_controllers or {}
+        )
         self._sem = asyncio.Semaphore(config.max_concurrent_sessions)
         # None ⇒ feature off. Preserves pre-dedupe behaviour for tests/dev.
         self._dedupe = dedupe
@@ -110,6 +117,25 @@ class Bridge:
             },
         )
 
+    def _resolve_controller(self, agent: str | None) -> AgentController | Completion:
+        """The controller ``agent`` names — or the error ``Completion`` to
+        yield when the name isn't registered. Resolution must happen before
+        the dedupe claim, session mint, and semaphore, so an unknown name
+        can't poison any shared state. Startup validation makes this
+        unreachable for env-built configs; the guard covers programmatically
+        assembled ones.
+        """
+        if agent is None:
+            return self._controller
+        named = self._named_controllers.get(agent)
+        if named is not None:
+            return named
+        return Completion(
+            text=f"Unknown agent {agent!r} — check the server configuration.",
+            is_error=True,
+            metadata={"error_code": "unknown_agent"},
+        )
+
     def _release_dedupe(self, claim: _DedupeClaim | None, *, failed: bool) -> None:
         """Release a claimed dedupe entry once its run finished.
 
@@ -131,6 +157,7 @@ class Bridge:
         context: dict[str, str] | None = None,
         system_prompt: str | None = None,
         resumable: bool = True,
+        agent: str | None = None,
     ) -> AsyncIterator[BridgeEvent]:
         """Resolve session, acquire a processing slot, call agent, forward events.
 
@@ -145,7 +172,15 @@ class Bridge:
         ephemeral UUID and skips the SessionManager entirely — the session
         leaves no trace on disk. Use this for one-shot, proactive triggers
         (e.g. heartbeat ticks) where each call is conceptually independent.
+
+        ``agent`` picks a named controller; ``None`` means the default one.
         """
+        controller = self._resolve_controller(agent)
+        if isinstance(controller, Completion):
+            logger.warning("Unknown agent %r for session key %s", agent, session_key)
+            yield controller
+            return
+
         # Dedupe runs before session mint to avoid wasted work.
         claim = self._try_claim_dedupe(session_key, text, resumable)
         if isinstance(claim, Completion):
@@ -153,7 +188,9 @@ class Bridge:
             return
 
         if resumable:
-            session_id, is_new = self._session_manager.get_or_create(session_key)
+            session_id, is_new = self._session_manager.get_or_create(
+                session_key, agent=agent
+            )
         else:
             session_id = str(uuid.uuid4())
             is_new = True
@@ -192,7 +229,7 @@ class Bridge:
         # lock out retries for the full TTL.
         last_completion_error = False
         try:
-            async for event in self._controller.run(
+            async for event in controller.run(
                 session_id,
                 text,
                 is_new,

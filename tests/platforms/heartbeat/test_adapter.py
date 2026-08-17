@@ -36,6 +36,7 @@ class _StubBridge:
         context: dict[str, str] | None = None,
         system_prompt: str | None = None,
         resumable: bool = True,
+        agent: str | None = None,
     ) -> AsyncIterator[BridgeEvent]:
         self.calls.append(
             {
@@ -44,6 +45,7 @@ class _StubBridge:
                 "context": context,
                 "system_prompt": system_prompt,
                 "resumable": resumable,
+                "agent": agent,
             }
         )
         for event in self._events:

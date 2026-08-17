@@ -107,3 +107,77 @@ def test_missing_token_rejected_on_construction():
 def test_rendering_knobs_must_be_positive(field: str, value: float):
     with pytest.raises(ValueError, match=field):
         SlackConfig(bot_token="xoxb-x", app_token="xapp-x", **{field: value})
+
+
+# --- channel_profiles: the [slack.channel_profiles] section + lookups ---
+
+
+def test_channel_profiles_default_empty():
+    assert SlackConfig.from_env(_TOKENS).channel_profiles == {}
+
+
+def test_channel_profiles_from_data_normalizes_keys_and_trims_values():
+    mapping = SlackConfig.channel_profiles_from_data(
+        {" #Ops-Alerts ": " ops ", "team-eng": "eng"}
+    )
+    assert mapping == {"ops-alerts": "ops", "team-eng": "eng"}
+
+
+def test_channel_profiles_from_data_empty_is_empty():
+    assert SlackConfig.channel_profiles_from_data({}) == {}
+
+
+@pytest.mark.parametrize("value", [5, "", "   ", None])
+def test_channel_profiles_from_data_rejects_bad_values(value: object):
+    with pytest.raises(ValueError, match="non-empty profile name"):
+        SlackConfig.channel_profiles_from_data({"general": value})
+
+
+def test_channel_profiles_from_data_rejects_blank_channel_name():
+    with pytest.raises(ValueError, match="blank channel name"):
+        SlackConfig.channel_profiles_from_data({" # ": "ops"})
+
+
+def test_channel_profiles_from_data_rejects_normalized_duplicates():
+    with pytest.raises(ValueError, match="more than once"):
+        SlackConfig.channel_profiles_from_data({"Ops": "a", "#ops": "b"})
+
+
+def test_profile_for_channel_normalizes_the_lookup_side():
+    config = SlackConfig(
+        bot_token="xoxb-x",
+        app_token="xapp-x",
+        channel_profiles={"ops-alerts": "ops"},
+    )
+    assert config.profile_for_channel("#Ops-Alerts") == "ops"
+    assert config.profile_for_channel("ops-alerts") == "ops"
+    assert config.profile_for_channel("general") is None
+
+
+def test_mapped_channel_outside_allow_list_is_dead_config():
+    with pytest.raises(ValueError, match="not in AGENT_BRIDGE_SLACK_ALLOW_CHANNELS"):
+        SlackConfig(
+            bot_token="xoxb-x",
+            app_token="xapp-x",
+            allow_channels=frozenset({"general"}),
+            channel_profiles={"ops-alerts": "ops"},
+        )
+
+
+def test_mapped_channel_inside_allow_list_is_fine():
+    config = SlackConfig(
+        bot_token="xoxb-x",
+        app_token="xapp-x",
+        allow_channels=frozenset({"general", "ops-alerts"}),
+        channel_profiles={"ops-alerts": "ops"},
+    )
+    assert config.profile_for_channel("ops-alerts") == "ops"
+
+
+def test_empty_allow_list_permits_any_mapping():
+    config = SlackConfig(
+        bot_token="xoxb-x",
+        app_token="xapp-x",
+        channel_profiles={"anything": "ops"},
+    )
+    assert config.profile_for_channel("anything") == "ops"

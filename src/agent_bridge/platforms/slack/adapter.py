@@ -189,19 +189,22 @@ class SlackInfoCache:
     async def resolve_channel(self, channel: str, client: Any) -> str:
         """Return the channel name, fetching only on cache miss.
 
-        DMs/group-DMs have no name; falls back to the channel id.
+        DMs/group-DMs have no name; falls back to the channel id. API
+        failures return the fallback WITHOUT caching it — a transient error
+        must not pin the channel to its id (and thereby to the default
+        agent profile) for the process lifetime.
         """
         if channel not in self.channels:
             try:
                 conv_info = await client.conversations_info(channel=channel)
-                self.channels[channel] = conv_info["channel"].get("name") or channel
             except SlackApiError as e:
                 logger.warning(
                     "Failed to resolve channel name for %s: %s",
                     channel,
                     _api_error_detail(e),
                 )
-                self.channels[channel] = channel
+                return channel
+            self.channels[channel] = conv_info["channel"].get("name") or channel
         return self.channels[channel]
 
     async def resolve(
@@ -546,6 +549,9 @@ class SlackAdapter(BasePlatformAdapter[_RenderState]):
                 text=self._tag_prompt(text, context),
                 context=context,
                 system_prompt=self._build_system_prompt(context),
+                # Per-channel agent profile; DMs resolve to the channel id,
+                # never match, and fall through to the default agent.
+                agent=self._config.profile_for_channel(context.get("channel_name", "")),
             ),
             st,
         )

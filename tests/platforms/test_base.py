@@ -105,17 +105,25 @@ async def test_default_on_event_noops():
 
 
 async def test_request_fields_forwarded_verbatim():
-    bridge = FakeBridge()
+    bridge = FakeBridge(known_agents=frozenset({"researcher"}))
     request = BridgeRequest(
         session_key="tg:chat1:2",
         text="[alice]: hi",
         context={"user": "alice"},
         system_prompt="be brief",
         resumable=False,
+        agent="researcher",
     )
     await BasePlatformAdapter[None](bridge).process(request, None)
     assert bridge.calls == [
-        RouterCall("tg:chat1:2", "[alice]: hi", {"user": "alice"}, "be brief", False)
+        RouterCall(
+            "tg:chat1:2",
+            "[alice]: hi",
+            {"user": "alice"},
+            "be brief",
+            False,
+            "researcher",
+        )
     ]
 
 
@@ -126,6 +134,7 @@ async def test_request_defaults_match_handle_message_defaults():
     assert call.context is None
     assert call.system_prompt is None
     assert call.resumable is True
+    assert call.agent is None
 
 
 async def test_default_lifecycle_and_cleanup():

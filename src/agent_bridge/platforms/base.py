@@ -25,8 +25,9 @@ class BridgeRequest:
 
     Mirrors ``MessageRouter.handle_message`` parameter-for-parameter: the
     platform builds ``text`` (pre-tagged with sender identity if it has one)
-    and ``system_prompt`` (platform-flavored directives), and decides whether
-    the same ``session_key`` may resume the session later (``resumable``).
+    and ``system_prompt`` (platform-flavored directives), decides whether
+    the same ``session_key`` may resume the session later (``resumable``),
+    and picks the named agent to route to (``agent``; None = default).
     """
 
     session_key: str
@@ -34,6 +35,7 @@ class BridgeRequest:
     context: dict[str, str] | None = None
     system_prompt: str | None = None
     resumable: bool = True
+    agent: str | None = None
 
 
 class BasePlatformAdapter[RunStateT]:
@@ -83,6 +85,7 @@ class BasePlatformAdapter[RunStateT]:
             context=request.context,
             system_prompt=request.system_prompt,
             resumable=request.resumable,
+            agent=request.agent,
         ):
             match event:
                 case Processing():

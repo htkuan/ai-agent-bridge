@@ -35,6 +35,11 @@ class MessageRouter(Protocol):
     ``Bridge`` is the production implementation.  Adapters depend on this
     protocol — not the concrete class — so tests can substitute a fake
     that replays a scripted event stream.
+
+    ``agent`` selects a named agent controller registered with the router;
+    ``None`` routes to the default one. The platform decides which name a
+    session uses (e.g. Slack's per-channel profiles); the router only
+    resolves it.
     """
 
     def handle_message(
@@ -44,6 +49,7 @@ class MessageRouter(Protocol):
         context: dict[str, str] | None = None,
         system_prompt: str | None = None,
         resumable: bool = True,
+        agent: str | None = None,
     ) -> AsyncIterator[BridgeEvent]: ...
 
 

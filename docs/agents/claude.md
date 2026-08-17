@@ -14,6 +14,7 @@ claude -p "<prompt>" --output-format stream-json --verbose \
   [--session-id ID | --resume ID] \
   [--permission-mode MODE] \
   --effort LEVEL \
+  [--model MODEL] \
   [--append-system-prompt "<context>"]
 ```
 
@@ -37,6 +38,7 @@ The process runs, streams events via stdout, and exits. Session continuity is ha
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | `600` | Maximum time (seconds) for a single invocation. Process is terminated on timeout. |
 | `AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED` | `false` | Run each session in its own git worktree (see [Worktree Mode](#worktree-mode)). |
 | `AGENT_BRIDGE_CLAUDE_EFFORT` | `xhigh` | Effort level passed to `claude --effort`. One of `low`, `medium`, `high`, `xhigh`, `max`. |
+| `AGENT_BRIDGE_CLAUDE_MODEL` | — | Model passed to `claude --model` (alias or full model id). Unset = the CLI's own default. The value is opaque to the bridge — no validation. |
 | `AGENT_BRIDGE_CLAUDE_CLI_PATH` | `claude` | Path to the Claude Code CLI executable. Override when `claude` is not on `PATH` or to pin a specific binary. |
 
 ### Permission Modes
@@ -60,6 +62,34 @@ cheap and side-effect free.
 
 `work_dir` is deliberately required (no default): it is the directory the agent gets loose
 in, and every plausible fallback — cwd, home — is a directory it should not touch.
+
+### Named Profiles
+
+The variables above define the **default** controller. A TOML file pointed at by
+`AGENT_BRIDGE_PROFILES_PATH` can define additional **named profiles** — each a full
+`ClaudeConfig` that becomes its own `ClaudeController`, routed to by name (today: per
+Slack channel, see [the Slack adapter](../platforms/slack.md#optional-per-channel-claude-profiles)).
+
+```toml
+[claude.profiles.backend]
+work_dir = "/repos/backend"
+
+[claude.profiles.infra]
+work_dir = "/repos/infra"
+permission_mode = "plan"
+model = "claude-opus-5"
+```
+
+- Fields a profile doesn't set **inherit the env-built default** (`AGENT_BRIDGE_CLAUDE_*`).
+  Available fields: `work_dir`, `permission_mode`, `timeout_seconds`, `worktree_enabled`,
+  `effort`, `model`, `cli_path` — same meaning as their env counterparts.
+- Profile names must match `[a-z0-9_-]+`; `default` is reserved for the env-built config.
+- Unknown fields, wrong types, and invalid values fail startup — every profile runs the
+  same `_validate()` and `check_prerequisites()` as the default config.
+- All profiles share the bridge's global concurrency limit; each gets its own worktree
+  namespace under its own `work_dir` when `worktree_enabled` is on.
+
+See `profiles.example.toml` at the repo root for a commented template.
 
 ### Worktree Mode
 

@@ -39,7 +39,7 @@ Events are defined in `src/agent_bridge/bridge/events.py`. Agent-internal events
 
 - `AgentController` — `run(session_id, prompt, is_new, context, system_prompt) → AsyncIterator[BridgeEvent]`. The platform adapter builds `prompt` (already pre-tagged with sender identity if needed) and `system_prompt` (platform-flavored directives); the agent forwards them as-is. The agent must not interpret platform-specific keys out of `context`.
 - `PlatformAdapter` — `start()`, `stop()`, `cleanup()` (periodic housekeeping; returns entries removed — the app's cleanup loop calls it on every adapter). `platforms/base.py` provides `BasePlatformAdapter`, the reusable implementation skeleton adapters subclass
-- `MessageRouter` — `handle_message(session_key, text, context, system_prompt, resumable) → AsyncIterator[BridgeEvent]`. The interface adapters send messages through; `Bridge` is the production implementation. Adapters depend on this protocol, not the concrete class, so tests can substitute fakes.
+- `MessageRouter` — `handle_message(session_key, text, context, system_prompt, resumable, agent) → AsyncIterator[BridgeEvent]`. The interface adapters send messages through; `Bridge` is the production implementation. Adapters depend on this protocol, not the concrete class, so tests can substitute fakes. `agent` selects a named controller registered with the bridge (`None` = the default one); the platform picks the name, the bridge resolves it — an unknown name is a single error `Completion` (`error_code="unknown_agent"`) before any shared state is touched.
 
 Defined in `src/agent_bridge/bridge/protocols.py`. New agents/platforms implement these.
 
@@ -49,14 +49,19 @@ Defined in `src/agent_bridge/bridge/protocols.py`. New agents/platforms implemen
 - `SessionManager` maps session keys → UUIDs with TTL expiry
 - Persisted to JSON file, auto-purges expired sessions
 - Bridge resolves keys — it doesn't define what a "session" means
+- Each resumable session records its `agent` name; a key re-arriving under a
+  different agent (channel remapped to another profile) abandons the old session
+  (a session created under one work_dir can't be resumed under another) and mints
+  a fresh one — the orphaned id is drained via `purge_expired()` for cleanup
 
 ### Data flow
 
 ```
 1. User message arrives at Platform Adapter
 2. Adapter constructs session_key, acquires per-session lock
-3. Adapter pre-processes its native event into a `BridgeRequest` (`text` pre-tagged with sender identity, `system_prompt` platform directives — the agent stays platform-agnostic) and calls `BasePlatformAdapter.process()`
-4. process() → Bridge.handle_message(session_key, text, context, system_prompt, resumable)
+3. Adapter pre-processes its native event into a `BridgeRequest` (`text` pre-tagged with sender identity, `system_prompt` platform directives, `agent` the named profile the platform picked — the agent stays platform-agnostic) and calls `BasePlatformAdapter.process()`
+4. process() → Bridge.handle_message(session_key, text, context, system_prompt, resumable, agent)
+   → Bridge resolves `agent` → controller (None = default; unknown name = error Completion, nothing touched)
    → If `resumable=True`: SessionManager resolves key → (session_id, is_new), persisted on disk
    → If `resumable=False`: bridge mints a fresh ephemeral UUID, SessionManager untouched
    → Semaphore check (reject if capacity full)
@@ -172,7 +177,8 @@ from the environment itself.
 ```
 AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system from this alone
 ├── BridgeConfig     .session / .router / .dedupe  → SessionManager / Bridge / PromptDedupeCache
-├── ClaudeConfig                                   → ClaudeController
+├── ClaudeConfig                                   → ClaudeController (the default agent)
+├── claude_profiles  dict[str, ClaudeConfig]       → one named ClaudeController per profile
 ├── SlackConfig     | None                         → SlackAdapter    (None ⇒ not configured)
 ├── HeartbeatConfig | None                         → HeartbeatAdapter (None ⇒ disabled)
 ├── WebhookConfig   | None                         → WebhookAdapter  (None ⇒ disabled; requires http)
@@ -196,6 +202,13 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
   `check_prerequisites()`, which `app.run()` calls once at startup — so the fail-fast
   guarantee holds however the config was built, while parsing and holding a config in
   memory stay cheap and side-effect free.
+- **The profiles file**: `AGENT_BRIDGE_PROFILES_PATH` points at a TOML file holding the
+  *structured* part of the config — named Claude profiles (`[claude.profiles.<name>]`,
+  unset fields inherit the env-built base) and the Slack channel→profile map
+  (`[slack.channel_profiles]`). Env stays the home of flat/global settings and secrets.
+  Read once by `AppConfig.from_env` (same rank as the `.env` overlay); unknown
+  sections/keys/fields fail fast. See `profiles.example.toml` and
+  `docs/agents/claude.md#named-profiles`.
 - **No default for a dangerous field**: `ClaudeConfig.work_dir` (and therefore
   `AppConfig.claude`) is required. A config that must be set is better than one that
   silently falls back to the process's cwd.
@@ -350,7 +363,9 @@ unparseable numbers. See `.env.example` for the full list.
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Claude |
 | `AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED` | No | `false` | Claude |
 | `AGENT_BRIDGE_CLAUDE_EFFORT` | No | `xhigh` | Claude (one of `low`, `medium`, `high`, `xhigh`, `max`) |
+| `AGENT_BRIDGE_CLAUDE_MODEL` | No | — (CLI default) | Claude (passed to `claude --model`; opaque, unvalidated) |
 | `AGENT_BRIDGE_CLAUDE_CLI_PATH` | No | `claude` | Claude (path to the Claude Code CLI executable) |
+| `AGENT_BRIDGE_PROFILES_PATH` | No | — (disabled) | App (TOML file with named Claude profiles + Slack channel→profile map; see `profiles.example.toml`) |
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Bridge |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Bridge |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Bridge |

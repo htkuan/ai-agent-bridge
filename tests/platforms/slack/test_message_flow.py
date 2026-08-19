@@ -6,7 +6,8 @@ from collections.abc import AsyncIterator
 
 from agent_bridge.bridge.events import BridgeEvent, Completion, Processing, UserQuestion
 from agent_bridge.platforms.slack.adapter import _PendingMessage
-from tests.fakes import mention_event
+from agent_bridge.platforms.slack.config import SlackConfig
+from tests.fakes import dm_event, mention_event
 from tests.platforms.slack.harness import build_harness
 
 WAITING_PLACEHOLDER = ":hourglass: Waiting for previous task to finish..."
@@ -194,3 +195,96 @@ async def test_error_resets_state_and_deletes_parked_placeholder():
     assert state.processing is False
     assert state.pending is None
     assert ("C123", placeholder["ts"]) not in harness.client.messages
+
+
+# --- Per-channel agent profiles ---
+
+
+def _profiled_config() -> SlackConfig:
+    return SlackConfig(
+        bot_token="xoxb-x",
+        app_token="xapp-x",
+        channel_profiles={"general": "research"},
+    )
+
+
+async def test_mapped_channel_routes_to_its_profile():
+    harness = build_harness(
+        config=_profiled_config(), known_agents=frozenset({"research"})
+    )
+
+    await harness.adapter._process_message(
+        mention_event(text="<@UBOT> hello", ts="1.0"),
+        harness.client.say_for("C123"),
+        harness.client,
+    )
+
+    assert harness.bridge.calls[0].agent == "research"
+    assert list(harness.client.messages.values()) == ["ok"]
+
+
+async def test_unmapped_channel_uses_default_agent():
+    config = SlackConfig(
+        bot_token="xoxb-x",
+        app_token="xapp-x",
+        channel_profiles={"some-other-channel": "research"},
+    )
+    harness = build_harness(config=config)
+
+    await harness.adapter._process_message(
+        mention_event(text="<@UBOT> hello", ts="1.0"),
+        harness.client.say_for("C123"),
+        harness.client,
+    )
+
+    assert harness.bridge.calls[0].agent is None
+
+
+async def test_dm_uses_default_agent():
+    # DMs have no channel name — resolution falls back to the id, which
+    # never matches a mapping key.
+    harness = build_harness(
+        config=_profiled_config(), known_agents=frozenset({"research"})
+    )
+
+    await harness.adapter._process_message(
+        dm_event(text="hello", channel="D9"),
+        harness.client.say_for("D9"),
+        harness.client,
+    )
+
+    assert harness.bridge.calls[0].agent is None
+
+
+async def test_drained_pending_message_keeps_its_channel_profile():
+    """The pending path resolves context at park time — the profile must
+    survive the drain."""
+    harness = build_harness(
+        config=_profiled_config(), known_agents=frozenset({"research"})
+    )
+    adapter = harness.adapter
+    state = adapter._get_state("slack:C123:1.0")
+    placeholder = await harness.client.chat_postMessage(
+        channel="C123", text=WAITING_PLACEHOLDER, thread_ts="1.0"
+    )
+    state.pending = _PendingMessage(
+        text="queued",
+        context={
+            "channel_id": "C123",
+            "channel_name": "general",
+            "thread_ts": "1.0",
+            "user_id": "U123",
+            "user_name": "alice",
+        },
+        message_ts=placeholder["ts"],
+        channel="C123",
+        thread_ts="1.0",
+    )
+
+    await adapter._process_message(
+        mention_event(text="<@UBOT> first", ts="1.0"),
+        harness.client.say_for("C123"),
+        harness.client,
+    )
+
+    assert [call.agent for call in harness.bridge.calls] == ["research", "research"]

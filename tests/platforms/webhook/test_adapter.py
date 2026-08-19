@@ -111,6 +111,7 @@ class _BlockingBridge:
         context: dict[str, str] | None = None,
         system_prompt: str | None = None,
         resumable: bool = True,
+        agent: str | None = None,
     ) -> AsyncIterator[BridgeEvent]:
         self.started += 1
         yield Processing()
@@ -126,6 +127,7 @@ class _RaisingBridge:
         context: dict[str, str] | None = None,
         system_prompt: str | None = None,
         resumable: bool = True,
+        agent: str | None = None,
     ) -> AsyncIterator[BridgeEvent]:
         yield Processing()
         raise RuntimeError("controller exploded")

@@ -29,6 +29,7 @@ def build_harness(
     *,
     events: list[BridgeEvent] | None = None,
     capacity_full: bool = False,
+    known_agents: frozenset[str] = frozenset(),
     config: SlackConfig | None = None,
     client: FakeSlackClient | None = None,
     session_manager: SessionManager | None = None,
@@ -37,7 +38,7 @@ def build_harness(
         channel_names={"C123": "general"}, user_names={"U123": "alice"}
     )
     app = FakeBoltApp(client)
-    bridge = FakeBridge(events, capacity_full=capacity_full)
+    bridge = FakeBridge(events, capacity_full=capacity_full, known_agents=known_agents)
     adapter: Any = SlackAdapter.__new__(SlackAdapter)
     adapter._config = config or SlackConfig(bot_token="xoxb-x", app_token="xapp-x")
     adapter._bridge = bridge

@@ -122,6 +122,8 @@ All agent output flows through generic events — the shared language between ag
 | `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude permission mode |
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Per-invocation timeout (seconds) |
 | `AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED` | No | `false` | Run each session in an isolated git worktree (requires `origin/HEAD`) |
+| `AGENT_BRIDGE_CLAUDE_MODEL` | No | — (CLI default) | Model passed to `claude --model` |
+| `AGENT_BRIDGE_PROFILES_PATH` | No | — (disabled) | TOML file with named Claude profiles + Slack channel→profile routing (see `profiles.example.toml`) |
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Session mapping file path |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Session TTL (hours) |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Max concurrent agent processes |

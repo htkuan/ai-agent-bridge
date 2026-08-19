@@ -668,3 +668,126 @@ async def test_forget_session_usage_drops_running_total(session_mgr):
 
     c2 = await _completion(bridge, "slack:c:t")
     assert c2.session_usage is None  # accumulator reset → now untracked
+
+
+# --- Named agent routing ---
+
+
+@pytest.mark.asyncio
+async def test_agent_routes_to_named_controller(session_mgr):
+    default = FakeController()
+    research = FakeController()
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5),
+        session_mgr,
+        default,
+        named_controllers={"research": research},
+    )
+
+    async for _ in bridge.handle_message("slack:C1:t1", "hi", agent="research"):
+        pass
+
+    assert research.calls == ["hi"]
+    assert default.calls == []
+
+
+@pytest.mark.asyncio
+async def test_agent_none_routes_to_default_controller(session_mgr):
+    default = FakeController()
+    research = FakeController()
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5),
+        session_mgr,
+        default,
+        named_controllers={"research": research},
+    )
+
+    async for _ in bridge.handle_message("slack:C1:t1", "hi"):
+        pass
+
+    assert default.calls == ["hi"]
+    assert research.calls == []
+
+
+@pytest.mark.asyncio
+async def test_unknown_agent_rejects_before_any_side_effect(session_mgr):
+    """The rejection must precede the dedupe claim, session mint, and
+    semaphore — a misconfigured channel must not poison any shared state."""
+    controller = FakeController()
+    cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, controller, dedupe=cache
+    )
+
+    events = [
+        e async for e in bridge.handle_message("slack:C1:t1", "alert", agent="nope")
+    ]
+
+    assert len(events) == 1
+    assert isinstance(events[0], Completion)
+    assert events[0].is_error is True
+    assert events[0].metadata["error_code"] == "unknown_agent"
+    assert session_mgr.list_sessions() == {}
+    assert controller.calls == []
+    assert not bridge._sem.locked()
+
+    # No dedupe slot was claimed: the same prompt through a valid route runs.
+    async for _ in bridge.handle_message("slack:C1:t2", "alert"):
+        pass
+    assert controller.calls == ["alert"]
+
+
+@pytest.mark.asyncio
+async def test_same_key_different_agent_gets_fresh_session(session_mgr):
+    seen: list[tuple[str, bool]] = []
+
+    class CapturingController:
+        async def run(
+            self, session_id, prompt, is_new, context=None, system_prompt=None
+        ):
+            seen.append((session_id, is_new))
+            yield Completion(text="ok")
+
+    controller = CapturingController()
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5),
+        session_mgr,
+        controller,
+        named_controllers={"research": controller},
+    )
+
+    async for _ in bridge.handle_message("slack:C1:t1", "a"):
+        pass
+    async for _ in bridge.handle_message("slack:C1:t1", "b", agent="research"):
+        pass
+
+    # The remap minted a fresh session instead of resuming the default one.
+    assert [is_new for _, is_new in seen] == [True, True]
+    assert seen[0][0] != seen[1][0]
+
+
+@pytest.mark.asyncio
+async def test_same_key_same_agent_resumes_session(session_mgr):
+    seen: list[tuple[str, bool]] = []
+
+    class CapturingController:
+        async def run(
+            self, session_id, prompt, is_new, context=None, system_prompt=None
+        ):
+            seen.append((session_id, is_new))
+            yield Completion(text="ok")
+
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5),
+        session_mgr,
+        FakeController(),
+        named_controllers={"research": CapturingController()},
+    )
+
+    async for _ in bridge.handle_message("slack:C1:t1", "a", agent="research"):
+        pass
+    async for _ in bridge.handle_message("slack:C1:t1", "b", agent="research"):
+        pass
+
+    assert [is_new for _, is_new in seen] == [True, False]
+    assert seen[0][0] == seen[1][0]

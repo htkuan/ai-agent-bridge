@@ -171,3 +171,149 @@ def test_worktree_prereqs_pass_with_origin_head(tmp_path: Path):
     config.check_prerequisites()  # must not raise
     assert config.worktree_enabled is True
     assert config.work_dir == repo.resolve()
+
+
+# --- model: opaque pass-through for the CLI's --model flag ---
+
+
+def test_model_defaults_to_none(tmp_path: Path):
+    config = ClaudeConfig.from_env({"AGENT_BRIDGE_CLAUDE_WORK_DIR": str(tmp_path)})
+    assert config.model is None
+
+
+def test_model_read_from_env_and_trimmed(tmp_path: Path):
+    config = ClaudeConfig.from_env(
+        {
+            "AGENT_BRIDGE_CLAUDE_WORK_DIR": str(tmp_path),
+            "AGENT_BRIDGE_CLAUDE_MODEL": "  claude-opus-5  ",
+        }
+    )
+    assert config.model == "claude-opus-5"
+
+
+def test_model_blank_env_is_none(tmp_path: Path):
+    config = ClaudeConfig.from_env(
+        {
+            "AGENT_BRIDGE_CLAUDE_WORK_DIR": str(tmp_path),
+            "AGENT_BRIDGE_CLAUDE_MODEL": "   ",
+        }
+    )
+    assert config.model is None
+
+
+def test_model_rejects_blank_on_construction(tmp_path: Path):
+    with pytest.raises(ValueError, match="AGENT_BRIDGE_CLAUDE_MODEL"):
+        ClaudeConfig(work_dir=tmp_path, model="   ")
+
+
+# --- profiles_from_data: the [claude.profiles] section of the profiles file ---
+
+
+def _base(tmp_path: Path) -> ClaudeConfig:
+    return ClaudeConfig(work_dir=tmp_path, effort="high", model="base-model")
+
+
+def test_profiles_empty_data_gives_no_profiles(tmp_path: Path):
+    assert ClaudeConfig.profiles_from_data({}, _base(tmp_path)) == {}
+
+
+def test_profile_inherits_unset_fields_from_base(tmp_path: Path):
+    base = _base(tmp_path)
+    profiles = ClaudeConfig.profiles_from_data({"backend": {}}, base)
+    assert profiles == {"backend": base}
+
+
+def test_profile_overrides_every_field(tmp_path: Path):
+    other = tmp_path / "other"
+    profiles = ClaudeConfig.profiles_from_data(
+        {
+            "backend": {
+                "work_dir": str(other),
+                "permission_mode": "plan",
+                "timeout_seconds": 30,
+                "worktree_enabled": True,
+                "effort": "low",
+                "model": "claude-sonnet-5",
+                "cli_path": "/opt/claude",
+            }
+        },
+        _base(tmp_path),
+    )
+    profile = profiles["backend"]
+    assert profile.work_dir == other.resolve()
+    assert profile.permission_mode == "plan"
+    assert profile.timeout_seconds == 30.0
+    assert profile.worktree_enabled is True
+    assert profile.effort == "low"
+    assert profile.model == "claude-sonnet-5"
+    assert profile.cli_path == "/opt/claude"
+
+
+def test_profile_partial_override_keeps_base_for_the_rest(tmp_path: Path):
+    base = _base(tmp_path)
+    profiles = ClaudeConfig.profiles_from_data(
+        {"docs": {"permission_mode": "plan"}}, base
+    )
+    profile = profiles["docs"]
+    assert profile.permission_mode == "plan"
+    assert profile.work_dir == base.work_dir
+    assert profile.effort == "high"
+    assert profile.model == "base-model"
+
+
+def test_profile_name_with_hyphen_and_underscore_ok(tmp_path: Path):
+    profiles = ClaudeConfig.profiles_from_data({"team-a_2": {}}, _base(tmp_path))
+    assert set(profiles) == {"team-a_2"}
+
+
+@pytest.mark.parametrize("name", ["Backend", "team a", "", "team.a"])
+def test_profile_invalid_name_rejected(tmp_path: Path, name: str):
+    with pytest.raises(ValueError, match="Invalid profile name"):
+        ClaudeConfig.profiles_from_data({name: {}}, _base(tmp_path))
+
+
+def test_profile_reserved_default_rejected(tmp_path: Path):
+    with pytest.raises(ValueError, match="reserved"):
+        ClaudeConfig.profiles_from_data({"default": {}}, _base(tmp_path))
+
+
+def test_profile_must_be_a_table(tmp_path: Path):
+    with pytest.raises(ValueError, match="must be a table"):
+        ClaudeConfig.profiles_from_data({"backend": "oops"}, _base(tmp_path))
+
+
+def test_profile_unknown_field_rejected(tmp_path: Path):
+    with pytest.raises(ValueError, match=r"Unknown field.*workdir"):
+        ClaudeConfig.profiles_from_data(
+            {"backend": {"workdir": "somewhere"}}, _base(tmp_path)
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "match"),
+    [
+        ("work_dir", 123, "non-empty string"),
+        ("work_dir", "", "non-empty string"),
+        ("permission_mode", "", "non-empty string"),
+        ("timeout_seconds", "fast", "must be a number"),
+        ("timeout_seconds", True, "must be a number"),
+        ("timeout_seconds", float("inf"), "finite"),
+        ("worktree_enabled", "yes", "must be a boolean"),
+        ("effort", 3, "non-empty string"),
+        ("model", 5, "non-empty string"),
+        ("model", "  ", "non-empty string"),
+        ("cli_path", "", "non-empty string"),
+    ],
+)
+def test_profile_field_type_errors(
+    tmp_path: Path, field: str, value: object, match: str
+):
+    with pytest.raises(ValueError, match=match):
+        ClaudeConfig.profiles_from_data({"backend": {field: value}}, _base(tmp_path))
+
+
+def test_profile_runs_the_same_value_validation_as_base(tmp_path: Path):
+    with pytest.raises(ValueError, match="AGENT_BRIDGE_CLAUDE_EFFORT"):
+        ClaudeConfig.profiles_from_data(
+            {"backend": {"effort": "ultra"}}, _base(tmp_path)
+        )

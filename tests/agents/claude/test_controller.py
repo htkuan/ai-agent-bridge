@@ -108,6 +108,23 @@ def test_build_command_includes_custom_effort(tmp_path: Path):
     assert cmd[cmd.index("--effort") + 1] == "low"
 
 
+# --- Model flag ---
+
+
+def test_build_command_omits_model_when_unset(tmp_path: Path):
+    controller = ClaudeController(ClaudeConfig(work_dir=tmp_path))
+    cmd = controller._build_command("s1", "hi", is_new=True)
+    assert "--model" not in cmd
+
+
+def test_build_command_includes_model_when_set(tmp_path: Path):
+    controller = ClaudeController(
+        ClaudeConfig(work_dir=tmp_path, model="claude-opus-5")
+    )
+    cmd = controller._build_command("s1", "hi", is_new=True)
+    assert cmd[cmd.index("--model") + 1] == "claude-opus-5"
+
+
 # --- CLI path ---
 
 

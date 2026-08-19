@@ -1,0 +1,42 @@
+# Named Claude profiles + per-channel routing.
+#
+# Point AGENT_BRIDGE_PROFILES_PATH at a copy of this file to give different
+# Slack channels differently-configured Claude controllers. Environment
+# variables keep holding the flat, global config (tokens, the default
+# AGENT_BRIDGE_CLAUDE_* settings); this file holds the structured part.
+#
+# Only two sections are recognised — [claude.profiles.*] and
+# [slack.channel_profiles] — anything else fails startup, as does any
+# unknown field inside a profile.
+
+# --- Named profiles -------------------------------------------------------
+# Each [claude.profiles.<name>] table defines one named controller. Names
+# must match [a-z0-9_-]+ ("default" is reserved for the env-built config).
+# Any field left out inherits the value from the global AGENT_BRIDGE_CLAUDE_*
+# environment variables. Available fields (same meaning as their env
+# counterparts): work_dir, permission_mode, timeout_seconds,
+# worktree_enabled, effort, model, cli_path.
+
+[claude.profiles.backend]
+work_dir = "/repos/backend"
+
+[claude.profiles.infra]
+work_dir = "/repos/infra"
+permission_mode = "plan"
+model = "claude-opus-5"
+timeout_seconds = 900
+
+# --- Slack channel routing ------------------------------------------------
+# Channel NAME (not ID) → profile name. Names are matched like
+# AGENT_BRIDGE_SLACK_ALLOW_CHANNELS: '#', whitespace, and case are ignored.
+# Channels not listed here (and DMs, which have no name) use the default
+# env-built controller. If AGENT_BRIDGE_SLACK_ALLOW_CHANNELS is set, every
+# channel mapped here must also be on that allow-list.
+#
+# Remapping a channel to a different profile starts fresh sessions for its
+# threads — a session created under one profile's work_dir cannot be
+# resumed under another's.
+
+[slack.channel_profiles]
+backend-team = "backend"
+infra-ops = "infra"

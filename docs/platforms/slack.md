@@ -89,6 +89,46 @@ AGENT_BRIDGE_SLACK_ALLOW_CHANNELS=ops-alerts,team-eng,incidents
 
 The gate runs first in `_process_message`, resolving the channel name via the cached `conversations:info` lookup, so it costs at most one API call per distinct channel. That lookup needs `channels:read` (see [Bot Token Scopes](#3-bot-token-scopes)) — without it the name resolution fails and **every** channel is rejected, allow-listed or not. See [Troubleshooting](#troubleshooting).
 
+### Optional: Per-Channel Claude Profiles
+
+Route different channels to differently-configured Claude controllers — a different
+`work_dir`, permission mode, model, etc. per channel. Point `AGENT_BRIDGE_PROFILES_PATH`
+at a TOML file (template: `profiles.example.toml`):
+
+```toml
+[claude.profiles.backend]
+work_dir = "/repos/backend"
+
+[claude.profiles.infra]
+work_dir = "/repos/infra"
+permission_mode = "plan"
+model = "claude-opus-5"
+
+[slack.channel_profiles]
+backend-team = "backend"
+infra-ops = "infra"
+```
+
+- Keys under `[slack.channel_profiles]` are **channel names**, normalized like the
+  allow-list (`#`, whitespace, and case ignored). Values are profile names defined under
+  `[claude.profiles.*]` — see [the Claude agent docs](../agents/claude.md#named-profiles)
+  for what a profile can set.
+- **Unmapped channels (and DMs, which have no name) use the default env-built controller.**
+- Startup fails fast on dead config: a mapping to an undefined profile, or — when
+  `AGENT_BRIDGE_SLACK_ALLOW_CHANNELS` is set — a mapped channel missing from the
+  allow-list.
+- The mapping key is the channel *name*, so **renaming a channel drops it out of its
+  mapping** (same caveat as the allow-list) — it falls back to the default controller
+  until the file is updated and the bridge restarted.
+- **Remapping a channel starts fresh sessions for its threads.** A session created under
+  one profile's `work_dir` cannot be `--resume`d under another's, so the session manager
+  detects the profile change, abandons the old session (its worktree is cleaned up by the
+  periodic cleanup), and mints a new one.
+- If the channel-name lookup fails transiently (Slack API error), the failure is not
+  cached: that one message can't match a mapping (with an allow-list set it is rejected
+  outright; otherwise it falls back to the default controller), and the next message
+  retries the lookup.
+
 ### Optional: Usage / Cost Report
 
 Append a usage/cost footer below the final agent reply:

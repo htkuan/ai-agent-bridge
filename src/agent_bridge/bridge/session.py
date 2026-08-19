@@ -15,25 +15,43 @@ class SessionManager:
         self._config = config
         self._ttl = timedelta(hours=config.ttl_hours)
         self._sessions: dict[str, dict[str, str]] = {}
+        # Session IDs abandoned by an agent remap; drained by purge_expired()
+        # so the app's cleanup loop treats them like TTL-purged sessions.
+        self._orphaned: list[str] = []
         self._load()
         self._purge_expired()
 
-    def get_or_create(self, key: str) -> tuple[str, bool]:
+    def get_or_create(self, key: str, agent: str | None = None) -> tuple[str, bool]:
         """Get existing session or create a new one. Returns (session_id, is_new).
 
-        If the session exists but has expired, it is removed and a new one is created.
-        If the file write fails, the in-memory change is rolled back.
+        If the session exists but has expired, it is removed and a new one is
+        created. The same happens when the key's stored ``agent`` differs from
+        the requested one: a remapped key must not resume a session created
+        under a different agent's work dir (the CLI stores sessions per
+        project directory — resuming elsewhere fails), so the old session is
+        orphaned and a fresh one minted. If the file write fails, the
+        in-memory change is rolled back.
         """
         if key in self._sessions:
-            if self._is_expired(self._sessions[key]):
+            entry = self._sessions[key]
+            if self._is_expired(entry):
                 logger.info("Session expired for key %s, creating new one", key)
                 del self._sessions[key]
+            elif entry.get("agent") != agent:
+                logger.info(
+                    "Session for key %s belongs to agent %r, now %r — recreating",
+                    key,
+                    entry.get("agent"),
+                    agent,
+                )
+                self._orphaned.append(entry["session_id"])
+                del self._sessions[key]
             else:
-                old_last_used = self._sessions[key]["last_used"]
-                self._sessions[key]["last_used"] = _now_iso()
+                old_last_used = entry["last_used"]
+                entry["last_used"] = _now_iso()
                 if not self._save():
-                    self._sessions[key]["last_used"] = old_last_used
-                return self._sessions[key]["session_id"], False
+                    entry["last_used"] = old_last_used
+                return entry["session_id"], False
 
         session_id = str(uuid.uuid4())
         new_entry = {
@@ -41,6 +59,8 @@ class SessionManager:
             "created_at": _now_iso(),
             "last_used": _now_iso(),
         }
+        if agent is not None:
+            new_entry["agent"] = agent
         self._sessions[key] = new_entry
         if not self._save():
             del self._sessions[key]
@@ -72,7 +92,8 @@ class SessionManager:
         return {k: v for k, v in self._sessions.items() if not self._is_expired(v)}
 
     def purge_expired(self) -> list[str]:
-        """Remove all expired sessions. Returns session IDs of purged entries."""
+        """Remove all expired sessions. Returns session IDs of purged entries,
+        plus any sessions orphaned by an agent remap since the last call."""
         return self._purge_expired()
 
     def _is_expired(self, entry: dict[str, str]) -> bool:
@@ -92,7 +113,9 @@ class SessionManager:
             del self._sessions[key]
         if expired:
             self._save()
-        return [sid for _, sid in expired]
+        orphaned = self._orphaned
+        self._orphaned = []
+        return orphaned + [sid for _, sid in expired]
 
     def _load(self) -> None:
         if self._config.store_path.exists():

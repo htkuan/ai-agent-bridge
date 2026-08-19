@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 from agent_bridge.env import (
     PROCESS_ENV,
@@ -43,6 +44,10 @@ class SlackConfig:
     # a built-in default layout is used.
     usage_report_enabled: bool = False
     usage_report_template: str | None = None
+    # Channel name → named agent profile. Filled from the profiles file
+    # (`[slack.channel_profiles]`), not an env var. Keys are normalized
+    # channel names; unmapped channels (and DMs) use the default agent.
+    channel_profiles: dict[str, str] = field(default_factory=dict[str, str])
     # Rendering knobs — no env var, but tunable per adapter instance (tests
     # shrink the throttle instead of monkeypatching module state).
     update_throttle_seconds: float = DEFAULT_UPDATE_THROTTLE_SECONDS
@@ -105,6 +110,45 @@ class SlackConfig:
             raise ValueError(
                 f"SlackConfig.msg_max_bytes must be positive, got {self.msg_max_bytes}"
             )
+        if self.allow_channels:
+            # A mapped channel outside the allow-list can never reach the
+            # agent — dead config, so fail fast.
+            unlisted = set(self.channel_profiles) - self.allow_channels
+            if unlisted:
+                raise ValueError(
+                    "slack.channel_profiles maps channels that are not in "
+                    "AGENT_BRIDGE_SLACK_ALLOW_CHANNELS: "
+                    f"{', '.join(sorted(unlisted))}"
+                )
+
+    def profile_for_channel(self, name: str) -> str | None:
+        """The named agent profile for a channel, or None for the default.
+        Normalizes the lookup side the same way the mapping keys were."""
+        return self.channel_profiles.get(normalize_channel(name))
+
+    @staticmethod
+    def channel_profiles_from_data(data: Mapping[str, object]) -> dict[str, str]:
+        """Parse the ``[slack.channel_profiles]`` section of the profiles file
+        into a normalized channel-name → profile-name mapping."""
+        mapping: dict[str, str] = {}
+        for channel, profile in data.items():
+            if not isinstance(profile, str) or not profile.strip():
+                raise ValueError(
+                    f"slack.channel_profiles.{channel} must be a non-empty "
+                    f"profile name, got {profile!r}"
+                )
+            key = normalize_channel(channel)
+            if not key:
+                raise ValueError(
+                    f"slack.channel_profiles has a blank channel name: {channel!r}"
+                )
+            if key in mapping:
+                raise ValueError(
+                    f"slack.channel_profiles maps channel {key!r} more than "
+                    "once (after normalization)"
+                )
+            mapping[key] = profile.strip()
+        return mapping
 
 
 def normalize_channel(name: str) -> str:

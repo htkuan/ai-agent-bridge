@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.8.0 (2026-08-19)
+
+### Features
+
+- Route slack channels to named claude controller profiles
+  ([`fe1999d`](https://github.com/htkuan/ai-agent-bridge/commit/fe1999d57703371a28ea57c155823ef38303462e))
+
+
 ## v0.7.0 (2026-08-16)
 
 ### Features

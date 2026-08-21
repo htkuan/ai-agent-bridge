@@ -50,11 +50,25 @@ def test_unparseable_enabled_flag_is_rejected():
 
 def test_from_env_reads_all_variables(tmp_path: Path):
     config = HeartbeatConfig.from_env(
-        {**_ENABLED, "AGENT_BRIDGE_HEARTBEAT_STATE_PATH": str(tmp_path / "h.json")}
+        {
+            **_ENABLED,
+            "AGENT_BRIDGE_HEARTBEAT_STATE_PATH": str(tmp_path / "h.json"),
+            "AGENT_BRIDGE_HEARTBEAT_AGENT": "night-shift",
+        }
     )
     assert config.interval_minutes == 15
     assert config.prompt == "go"
     assert config.state_path == tmp_path / "h.json"
+    assert config.agent == "night-shift"
+
+
+def test_agent_defaults_to_none():
+    assert HeartbeatConfig.from_env(_ENABLED).agent is None
+
+
+def test_blank_agent_means_unset():
+    config = HeartbeatConfig.from_env({**_ENABLED, "AGENT_BRIDGE_HEARTBEAT_AGENT": ""})
+    assert config.agent is None
 
 
 def test_state_path_defaults():

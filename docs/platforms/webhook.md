@@ -80,6 +80,7 @@ Body:
 | `text` | Yes | — | The message. Non-empty |
 | `sender` | No | — | Identity tag; the adapter pre-tags the prompt as `[sender]: text` |
 | `resumable` | No | `true` | `false` ⇒ fresh, untracked session per call (nothing persisted to `sessions.json`) |
+| `agent` | No | — (bridge default) | Named agent profile to route to (`[a-z0-9_-]+`, ≤ 64 chars — see the profiles file). An unknown name is still `202`-accepted: the callback carries an `unknown_agent` error. Reusing a `conversation_id` under a *different* agent abandons the old session and starts fresh — pick one agent per conversation |
 | `callback_url` | No | — | Where the result is POSTed. Omit for fire-and-forget (result only logged) |
 
 Responses:
@@ -89,7 +90,7 @@ Responses:
 | `202` | Accepted — the turn runs in the background. Body: `{"status": "accepted", "conversation_id": ..., "resumable": ...}` |
 | `401` | Missing/invalid bearer token |
 | `409` | A turn for this `conversation_id` is already in flight — retry after its callback arrives |
-| `422` | Body failed validation (bad `conversation_id`, empty `text`, malformed `callback_url`) |
+| `422` | Body failed validation (bad `conversation_id`, empty `text`, malformed `callback_url`, `agent` not matching `[a-z0-9_-]+`) |
 
 `202` means "accepted for processing", not "will succeed": failures discovered
 later (including global capacity rejection) arrive on the callback with
@@ -115,6 +116,7 @@ Error results carry `is_error: true` and, when known, an `error_code`:
 | `error_code` | Cause |
 |--------------|-------|
 | `capacity_full` | The bridge's global concurrency gate had no free slot (`AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS`) |
+| `unknown_agent` | The request's `agent` names no registered profile — check the profiles file |
 | `no_completion` | The agent stream ended without a final completion |
 | `internal_error` | The turn raised unexpectedly (details in the service log) |
 

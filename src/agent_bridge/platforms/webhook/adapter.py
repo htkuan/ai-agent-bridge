@@ -62,6 +62,12 @@ class WebhookMessage(BaseModel):
     text: str = Field(min_length=1)
     sender: str | None = Field(default=None, max_length=128)
     resumable: bool = True
+    # Optional named agent profile; None = the bridge's default. An unknown
+    # name isn't a 4xx — the turn is accepted and the callback carries the
+    # bridge's error Completion (error_code "unknown_agent"). Reusing a
+    # conversation_id under a different agent abandons the old session and
+    # starts fresh.
+    agent: str | None = Field(default=None, max_length=64, pattern=r"^[a-z0-9_-]+$")
     # Optional: no callback means fire-and-forget (result only logged).
     callback_url: HttpUrl | None = None
 
@@ -229,12 +235,15 @@ class WebhookAdapter(BasePlatformAdapter[str]):
         context = {"source": "webhook", "conversation_id": message.conversation_id}
         if message.sender:
             context["sender"] = message.sender
+        if message.agent:
+            context["agent"] = message.agent
         return BridgeRequest(
             session_key=session_key,
             text=text,
             context=context,
             system_prompt=_SYSTEM_PROMPT,
             resumable=message.resumable,
+            agent=message.agent,
         )
 
     async def _deliver_callback(self, url: str, payload: dict[str, object]) -> None:

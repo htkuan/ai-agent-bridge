@@ -176,6 +176,7 @@ def _log_startup_config(config: AppConfig) -> None:
             pi_profile.model or "(default)",
             ",".join(pi_profile.tools) or "(all)",
         )
+    logger.info("Default agent: %s", config.default_agent or "(env-built claude)")
     logger.info("Session TTL: %s hours", config.bridge.session.ttl_hours)
     logger.info("Claude timeout: %s seconds", config.claude.timeout_seconds)
     logger.info(
@@ -213,6 +214,7 @@ async def run(config: AppConfig) -> None:
         controller,
         dedupe=_build_dedupe(config.bridge.dedupe),
         named_controllers=named_controllers,
+        default_agent=config.default_agent,
     )
     http_server = _build_http_server(config)
     adapters = _build_adapters(config, bridge, session_manager, http_server)

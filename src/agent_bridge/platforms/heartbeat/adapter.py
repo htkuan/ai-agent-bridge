@@ -104,6 +104,7 @@ class HeartbeatAdapter(BasePlatformAdapter[str]):
                     context={"source": "heartbeat", "fired_at": fired_at.isoformat()},
                     system_prompt=self._build_system_prompt(fired_at),
                     resumable=False,
+                    agent=self._config.agent,
                 ),
                 state=session_key,
             )

@@ -33,6 +33,7 @@ class Bridge:
         dedupe: PromptDedupeCache | None = None,
         *,
         named_controllers: Mapping[str, AgentController] | None = None,
+        default_agent: str | None = None,
     ) -> None:
         self._config = config
         self._session_manager = session_manager
@@ -42,6 +43,10 @@ class Bridge:
         self._named_controllers: dict[str, AgentController] = dict(
             named_controllers or {}
         )
+        # When set, ``agent=None`` resolves to this *name* instead — early,
+        # before the session lookup, so sessions record the actual profile and
+        # a redeploy that flips the default abandons them like any remap.
+        self._default_agent = default_agent
         self._sem = asyncio.Semaphore(config.max_concurrent_sessions)
         # None ⇒ feature off. Preserves pre-dedupe behaviour for tests/dev.
         self._dedupe = dedupe
@@ -117,6 +122,13 @@ class Bridge:
             },
         )
 
+    def _effective_agent(self, agent: str | None) -> str | None:
+        """The name a request actually routes (and sticks its session) to:
+        an explicit ``agent`` wins, ``None`` falls back to the configured
+        default name — which may itself be None (the env-built controller).
+        """
+        return agent if agent is not None else self._default_agent
+
     def _resolve_controller(self, agent: str | None) -> AgentController | Completion:
         """The controller ``agent`` names — or the error ``Completion`` to
         yield when the name isn't registered. Resolution must happen before
@@ -173,8 +185,11 @@ class Bridge:
         leaves no trace on disk. Use this for one-shot, proactive triggers
         (e.g. heartbeat ticks) where each call is conceptually independent.
 
-        ``agent`` picks a named controller; ``None`` means the default one.
+        ``agent`` picks a named controller; ``None`` means the default —
+        the configured ``default_agent`` name when one is set, otherwise the
+        env-built default ``controller``.
         """
+        agent = self._effective_agent(agent)
         controller = self._resolve_controller(agent)
         if isinstance(controller, Completion):
             logger.warning("Unknown agent %r for session key %s", agent, session_key)

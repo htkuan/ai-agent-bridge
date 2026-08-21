@@ -125,6 +125,7 @@ All agent output flows through generic events — the shared language between ag
 | `AGENT_BRIDGE_CLAUDE_MODEL` | No | — (CLI default) | Model passed to `claude --model` |
 | `AGENT_BRIDGE_PROFILES_PATH` | No | — (disabled) | TOML file with named agent profiles (`[claude.profiles.*]`, `[pi.profiles.*]`) + Slack channel→profile routing (see `profiles.example.toml`) |
 | `AGENT_BRIDGE_PI_*` | No | — | Base config for named [Pi agent](docs/agents/pi.md) profiles (work dir, provider, model, thinking, tool allowlist) |
+| `AGENT_BRIDGE_DEFAULT_AGENT` | No | — (env-built claude) | Profile name that messages without an explicit agent route to |
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Session mapping file path |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Session TTL (hours) |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Max concurrent agent processes |
@@ -132,6 +133,7 @@ All agent output flows through generic events — the shared language between ag
 | `AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES` | Yes (if heartbeat enabled) | — | Interval between heartbeat ticks (minutes) |
 | `AGENT_BRIDGE_HEARTBEAT_PROMPT` | Yes (if heartbeat enabled) | — | Prompt sent on every heartbeat tick |
 | `AGENT_BRIDGE_HEARTBEAT_STATE_PATH` | No | `./heartbeat.json` | Last-run timestamp path (used for restart catch-up) |
+| `AGENT_BRIDGE_HEARTBEAT_AGENT` | No | — (bridge default) | Named agent profile the heartbeat ticks route to |
 | `AGENT_BRIDGE_HTTP_ENABLED` | No | `false` | Enable the shared HTTP server (console page + HTTP platforms) |
 | `AGENT_BRIDGE_HTTP_HOST` | No | `127.0.0.1` | HTTP server bind address (loopback by default) |
 | `AGENT_BRIDGE_HTTP_PORT` | No | `8080` | HTTP server port |

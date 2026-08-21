@@ -22,6 +22,9 @@ class HeartbeatConfig:
     interval_minutes: int
     prompt: str
     state_path: Path = field(default_factory=lambda: Path("./heartbeat.json"))
+    # Named agent profile the ticks route to; None = the bridge's default.
+    # AppConfig validates the name against the profile registry at boot.
+    agent: str | None = None
 
     def __post_init__(self) -> None:
         self._validate()
@@ -34,6 +37,7 @@ class HeartbeatConfig:
             state_path=env_path(
                 env, "AGENT_BRIDGE_HEARTBEAT_STATE_PATH", "./heartbeat.json"
             ),
+            agent=env_str(env, "AGENT_BRIDGE_HEARTBEAT_AGENT", "") or None,
         )
 
     @classmethod

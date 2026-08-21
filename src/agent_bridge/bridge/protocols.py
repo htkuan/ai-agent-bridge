@@ -28,6 +28,14 @@ class AgentController(Protocol):
         system_prompt: str | None = None,
     ) -> AsyncIterator[BridgeEvent]: ...
 
+    async def cleanup_session(self, session_id: str) -> None:
+        """Release per-session resources the agent holds (worktrees, session
+        files, id mappings).  The app's cleanup loop calls this for every
+        purged session on every controller — a session this agent never saw
+        must be a cheap no-op, and it must never raise for one it did own.
+        """
+        ...
+
 
 class MessageRouter(Protocol):
     """Interface platform adapters send messages through.

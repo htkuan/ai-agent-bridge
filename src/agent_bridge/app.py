@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from agent_bridge.agents.claude.controller import ClaudeController
 from agent_bridge.bridge.config import DedupeConfig
 from agent_bridge.bridge.dedupe import PromptDedupeCache
-from agent_bridge.bridge.protocols import PlatformAdapter
+from agent_bridge.bridge.protocols import AgentController, PlatformAdapter
 from agent_bridge.bridge.router import Bridge
 from agent_bridge.bridge.session import SessionManager
 from agent_bridge.config import AppConfig
@@ -111,7 +111,7 @@ async def _periodic_cleanup(
     session_manager: SessionManager,
     adapters: list[PlatformAdapter],
     bridge: Bridge,
-    controllers: Sequence[ClaudeController],
+    controllers: Sequence[AgentController],
 ) -> None:
     while not shutdown_event.is_set():
         with contextlib.suppress(TimeoutError):
@@ -129,7 +129,7 @@ async def _periodic_cleanup(
                     try:
                         await controller.cleanup_session(sid)
                     except Exception:
-                        logger.exception("Worktree cleanup failed for session %s", sid)
+                        logger.exception("Agent cleanup failed for session %s", sid)
             if purged_ids or stale:
                 logger.info(
                     "Cleanup: purged %d expired sessions, %d stale pending",

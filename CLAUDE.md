@@ -37,7 +37,7 @@ Events are defined in `src/agent_bridge/bridge/events.py`. Agent-internal events
 
 ### Protocols
 
-- `AgentController` — `run(session_id, prompt, is_new, context, system_prompt) → AsyncIterator[BridgeEvent]`. The platform adapter builds `prompt` (already pre-tagged with sender identity if needed) and `system_prompt` (platform-flavored directives); the agent forwards them as-is. The agent must not interpret platform-specific keys out of `context`.
+- `AgentController` — `run(session_id, prompt, is_new, context, system_prompt) → AsyncIterator[BridgeEvent]`, plus `cleanup_session(session_id)` (releases per-session resources — worktrees, id mappings; the app's cleanup loop calls it on every controller for every purged session, so unknown ids must be cheap no-ops). The platform adapter builds `prompt` (already pre-tagged with sender identity if needed) and `system_prompt` (platform-flavored directives); the agent forwards them as-is. The agent must not interpret platform-specific keys out of `context`. `agents/base.py` provides `CliAgentController`, the reusable subprocess engine CLI-driven agents subclass (spawn → stream-parse → teardown, with the exactly-one-`Completion` guarantee).
 - `PlatformAdapter` — `start()`, `stop()`, `cleanup()` (periodic housekeeping; returns entries removed — the app's cleanup loop calls it on every adapter). `platforms/base.py` provides `BasePlatformAdapter`, the reusable implementation skeleton adapters subclass
 - `MessageRouter` — `handle_message(session_key, text, context, system_prompt, resumable, agent) → AsyncIterator[BridgeEvent]`. The interface adapters send messages through; `Bridge` is the production implementation. Adapters depend on this protocol, not the concrete class, so tests can substitute fakes. `agent` selects a named controller registered with the bridge (`None` = the default one); the platform picks the name, the bridge resolves it — an unknown name is a single error `Completion` (`error_code="unknown_agent"`) before any shared state is touched.
 
@@ -112,9 +112,10 @@ src/agent_bridge/
 │   ├── dedupe.py        # PromptDedupeCache (optional cross-session prompt dedupe)
 │   └── config.py        # SessionConfig + RouterConfig + DedupeConfig, aggregated by BridgeConfig
 ├── agents/
+│   ├── base.py          # CliAgentController — shared subprocess engine (spawn → stream-parse → teardown) + RunState
 │   └── claude/
 │       ├── config.py    # ClaudeConfig (work_dir, permission_mode, timeout, effort, cli_path)
-│       ├── controller.py # Subprocess spawner, stream reader, timeout handling
+│       ├── controller.py # CliAgentController subclass: command builder + stream-json line parser
 │       └── events.py    # Claude stream-json parser → BridgeEvent converter
 ├── server/              # Shared HTTP infra (FastAPI + uvicorn) — hosts routers, knows no layer
 │   ├── config.py        # HttpConfig (host, port)
@@ -288,12 +289,13 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 ### Adding a new agent
 
 1. Create `agents/{name}/config.py` — config with `from_env(env)` + `_validate()` (called from `__post_init__`), parsing through `agent_bridge/env.py`; put any filesystem/git probes in `check_prerequisites()` and call it from `app.run()`
-2. Create `agents/{name}/controller.py` — implements `AgentController` protocol
+2. Create `agents/{name}/controller.py` — subclass `CliAgentController[YourRunState]` (`agents/base.py`). The `AgentController` protocol stays the contract; the base is the shared subprocess engine. Implement `build_command()` (the CLI invocation), `new_run_state()`, and `parse_line()` (stdout line → `BridgeEvent`s, setting `state.terminal` on the stream's terminal event so the engine stops reading instead of waiting for EOF). CLIs without a terminal event override `on_stream_end()` to synthesize the final `Completion` from the accumulated state at EOF. Override `cleanup_session()` if the agent keeps per-session resources (worktrees, session files, id mappings) — the app's cleanup loop calls it for every purged session
 3. Create `agents/{name}/events.py` — parse agent output → `BridgeEvent`s
 4. `run()` yields only generic `BridgeEvent`s — agent-internal events stay internal
 5. Treat `system_prompt` and `prompt` as opaque strings built by the platform — do not parse `context` for platform-specific keys
 6. Wire up in `app.py`
-7. Add documentation in `docs/agents/{name}.md`
+7. Add your controller to `tests/contracts/test_agent_controller.py`
+8. Add documentation in `docs/agents/{name}.md`
 
 ### Documentation maintenance
 

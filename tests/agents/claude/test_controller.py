@@ -25,7 +25,7 @@ def test_build_command_no_worktree(tmp_path: Path):
     controller = ClaudeController(
         ClaudeConfig(work_dir=tmp_path, worktree_enabled=False)
     )
-    cmd = controller._build_command("abc-123", "hello", is_new=True)
+    cmd = controller.build_command("abc-123", "hello", is_new=True)
     assert "-w" not in cmd
     assert "--session-id" in cmd
     assert "abc-123" in cmd
@@ -35,7 +35,7 @@ def test_build_command_with_worktree_new_session(tmp_path: Path):
     controller = ClaudeController(
         ClaudeConfig(work_dir=tmp_path, worktree_enabled=True)
     )
-    cmd = controller._build_command("abc-123", "hello", is_new=True)
+    cmd = controller.build_command("abc-123", "hello", is_new=True)
     # -w <session_id> appears before --session-id
     w_idx = cmd.index("-w")
     assert cmd[w_idx + 1] == "abc-123"
@@ -46,7 +46,7 @@ def test_build_command_with_worktree_resume(tmp_path: Path):
     controller = ClaudeController(
         ClaudeConfig(work_dir=tmp_path, worktree_enabled=True)
     )
-    cmd = controller._build_command("abc-123", "hi again", is_new=False)
+    cmd = controller.build_command("abc-123", "hi again", is_new=False)
     # -w still present on resume (Claude reuses the existing worktree)
     assert "-w" in cmd
     assert cmd[cmd.index("-w") + 1] == "abc-123"
@@ -69,27 +69,27 @@ def _system_prompt(cmd: list[str]) -> str | None:
 
 def test_build_command_passes_prompt_verbatim(tmp_path: Path):
     controller = ClaudeController(ClaudeConfig(work_dir=tmp_path))
-    cmd = controller._build_command("s1", "[alice]: hi there", is_new=True)
+    cmd = controller.build_command("s1", "[alice]: hi there", is_new=True)
     # Whatever the caller passed is what -p sees
     assert cmd[cmd.index("-p") + 1] == "[alice]: hi there"
 
 
 def test_build_command_omits_system_prompt_when_none(tmp_path: Path):
     controller = ClaudeController(ClaudeConfig(work_dir=tmp_path))
-    cmd = controller._build_command("s1", "hi", is_new=True, system_prompt=None)
+    cmd = controller.build_command("s1", "hi", is_new=True, system_prompt=None)
     assert "--append-system-prompt" not in cmd
 
 
 def test_build_command_omits_system_prompt_when_empty(tmp_path: Path):
     controller = ClaudeController(ClaudeConfig(work_dir=tmp_path))
-    cmd = controller._build_command("s1", "hi", is_new=True, system_prompt="")
+    cmd = controller.build_command("s1", "hi", is_new=True, system_prompt="")
     assert "--append-system-prompt" not in cmd
 
 
 def test_build_command_appends_system_prompt_verbatim(tmp_path: Path):
     controller = ClaudeController(ClaudeConfig(work_dir=tmp_path))
     sp = "platform-built directives that the agent must not parse"
-    cmd = controller._build_command("s1", "hi", is_new=True, system_prompt=sp)
+    cmd = controller.build_command("s1", "hi", is_new=True, system_prompt=sp)
     assert _system_prompt(cmd) == sp
 
 
@@ -98,13 +98,13 @@ def test_build_command_appends_system_prompt_verbatim(tmp_path: Path):
 
 def test_build_command_includes_default_effort(tmp_path: Path):
     controller = ClaudeController(ClaudeConfig(work_dir=tmp_path))
-    cmd = controller._build_command("s1", "hi", is_new=True)
+    cmd = controller.build_command("s1", "hi", is_new=True)
     assert cmd[cmd.index("--effort") + 1] == "xhigh"
 
 
 def test_build_command_includes_custom_effort(tmp_path: Path):
     controller = ClaudeController(ClaudeConfig(work_dir=tmp_path, effort="low"))
-    cmd = controller._build_command("s1", "hi", is_new=True)
+    cmd = controller.build_command("s1", "hi", is_new=True)
     assert cmd[cmd.index("--effort") + 1] == "low"
 
 
@@ -113,7 +113,7 @@ def test_build_command_includes_custom_effort(tmp_path: Path):
 
 def test_build_command_omits_model_when_unset(tmp_path: Path):
     controller = ClaudeController(ClaudeConfig(work_dir=tmp_path))
-    cmd = controller._build_command("s1", "hi", is_new=True)
+    cmd = controller.build_command("s1", "hi", is_new=True)
     assert "--model" not in cmd
 
 
@@ -121,7 +121,7 @@ def test_build_command_includes_model_when_set(tmp_path: Path):
     controller = ClaudeController(
         ClaudeConfig(work_dir=tmp_path, model="claude-opus-5")
     )
-    cmd = controller._build_command("s1", "hi", is_new=True)
+    cmd = controller.build_command("s1", "hi", is_new=True)
     assert cmd[cmd.index("--model") + 1] == "claude-opus-5"
 
 
@@ -130,7 +130,7 @@ def test_build_command_includes_model_when_set(tmp_path: Path):
 
 def test_build_command_uses_default_cli_path(tmp_path: Path):
     controller = ClaudeController(ClaudeConfig(work_dir=tmp_path))
-    cmd = controller._build_command("s1", "hi", is_new=True)
+    cmd = controller.build_command("s1", "hi", is_new=True)
     assert cmd[0] == "claude"
 
 
@@ -138,7 +138,7 @@ def test_build_command_uses_custom_cli_path(tmp_path: Path):
     controller = ClaudeController(
         ClaudeConfig(work_dir=tmp_path, cli_path="/opt/bin/claude")
     )
-    cmd = controller._build_command("s1", "hi", is_new=True)
+    cmd = controller.build_command("s1", "hi", is_new=True)
     assert cmd[0] == "/opt/bin/claude"
 
 
@@ -273,7 +273,7 @@ def test_build_command_dangerously_skip_permissions(tmp_path: Path):
     controller = ClaudeController(
         ClaudeConfig(work_dir=tmp_path, permission_mode="dangerously-skip-permissions")
     )
-    cmd = controller._build_command("s1", "hi", is_new=True)
+    cmd = controller.build_command("s1", "hi", is_new=True)
     assert "--dangerously-skip-permissions" in cmd
     assert "--permission-mode" not in cmd
 

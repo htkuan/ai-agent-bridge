@@ -72,3 +72,11 @@ async def test_failure_yields_error_completion_instead_of_raising(
     last = events[-1]
     assert isinstance(last, Completion)
     assert last.is_error is True
+
+
+async def test_cleanup_session_on_unknown_session_is_a_quiet_noop(
+    make_controller: ControllerFactory,
+) -> None:
+    # The app's cleanup loop calls every controller for every purged id.
+    controller = make_controller()
+    await controller.cleanup_session("never-seen-session")

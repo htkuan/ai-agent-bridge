@@ -265,11 +265,16 @@ The stdout line buffer is set to **10 MB** (default is 64 KB). Claude Code can p
 
 Use the Claude agent as a reference. An agent controller must:
 
-1. **Implement `AgentController` protocol**:
-   ```python
-   def run(self, session_id: str, prompt: str, is_new: bool,
-           context: dict[str, str] | None = None) -> AsyncIterator[BridgeEvent]:
-   ```
+1. **Satisfy the `AgentController` protocol** — `run()` yields `BridgeEvent`s
+   and `cleanup_session()` releases per-session resources (a no-op for
+   sessions the agent never saw). For a CLI-driven agent, subclass
+   `CliAgentController` (`agents/base.py`) instead of hand-rolling the
+   subprocess handling: implement `build_command()`, `new_run_state()`, and
+   `parse_line()` (set `state.terminal` on the stream's terminal event), and
+   the base engine owns spawning, stderr draining, the overall deadline,
+   process-tree kill, and the exactly-one-`Completion` guarantee. CLIs whose
+   stream has no terminal event override `on_stream_end()` to synthesize the
+   final `Completion` at EOF.
 
 2. **Yield only `BridgeEvent`s** — define internal event types in your own `events.py`, convert them to generic events before yielding
 

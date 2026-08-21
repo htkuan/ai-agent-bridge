@@ -146,7 +146,7 @@ Create `platforms/{name}/` with `config.py` and `adapter.py`. Subclass `BasePlat
 
 ### Add a new agent
 
-Create `agents/{name}/` with `config.py`, `controller.py`, and `events.py`. Implement the `AgentController` protocol — your `run()` yields `BridgeEvent`s. See [Claude Agent docs](docs/agents/claude.md) for reference.
+Create `agents/{name}/` with `config.py`, `controller.py`, and `events.py`. Subclass `CliAgentController` (`agents/base.py`): describe your CLI with `build_command()` and `parse_line()`, and the base engine handles the subprocess lifecycle — the `AgentController` protocol stays the contract, and `run()` yields `BridgeEvent`s. See [Claude Agent docs](docs/agents/claude.md) for reference.
 
 Neither change requires modifying the bridge, the other agent, or the other platform.
 

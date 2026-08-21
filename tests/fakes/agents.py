@@ -26,6 +26,8 @@ class FakeAgentController:
       (the terminal event is never emitted) — models a controller crash.
     - ``release``: when set, the final event is held back until the test
       sets the event — used to pin a concurrency slot open deterministically.
+
+    ``cleanup_session`` records the purged ids in ``cleaned``.
     """
 
     def __init__(
@@ -41,6 +43,7 @@ class FakeAgentController:
         self.error = error
         self.release = release
         self.calls: list[ControllerCall] = []
+        self.cleaned: list[str] = []
 
     async def run(
         self,
@@ -62,3 +65,6 @@ class FakeAgentController:
             await self.release.wait()
         if script:
             yield script[-1]
+
+    async def cleanup_session(self, session_id: str) -> None:
+        self.cleaned.append(session_id)

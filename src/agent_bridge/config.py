@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import cast
 
 from agent_bridge.agents.claude.config import ClaudeConfig
+from agent_bridge.agents.pi.config import PiConfig
 from agent_bridge.bridge.config import BridgeConfig
 from agent_bridge.env import PROCESS_ENV, Env, env_str, load_env_file
 from agent_bridge.platforms.heartbeat.config import HeartbeatConfig
@@ -31,11 +32,13 @@ class AppConfig:
     # No default: an app without an agent isn't runnable, and ClaudeConfig's
     # work_dir has no safe default to fall back to.
     claude: ClaudeConfig
-    # Named Claude profiles from the profiles file (AGENT_BRIDGE_PROFILES_PATH);
-    # each becomes its own controller, routed to by name.
+    # Named profiles from the profiles file (AGENT_BRIDGE_PROFILES_PATH);
+    # each becomes its own controller, routed to by name. Names are one
+    # global routing namespace across every agent type.
     claude_profiles: dict[str, ClaudeConfig] = field(
         default_factory=dict[str, ClaudeConfig]
     )
+    pi_profiles: dict[str, PiConfig] = field(default_factory=dict[str, PiConfig])
     bridge: BridgeConfig = field(default_factory=BridgeConfig)
     # None ⇒ that platform is not configured; app.py skips building it.
     slack: SlackConfig | None = None
@@ -67,10 +70,19 @@ class AppConfig:
         claude = ClaudeConfig.from_env(env)
         slack = SlackConfig.from_env_optional(env)
         claude_profiles: dict[str, ClaudeConfig] = {}
+        pi_profiles: dict[str, PiConfig] = {}
         profiles_path = env_str(env, "AGENT_BRIDGE_PROFILES_PATH", "")
         if profiles_path:
-            claude_section, slack_section = _load_profiles_file(Path(profiles_path))
+            claude_section, pi_section, slack_section = _load_profiles_file(
+                Path(profiles_path)
+            )
             claude_profiles = ClaudeConfig.profiles_from_data(claude_section, claude)
+            # The env-built PiConfig is the inheritance base only — pi has no
+            # env-built controller; its profiles are the sole way to route
+            # to it (there is no AppConfig.pi field).
+            pi_profiles = PiConfig.profiles_from_data(
+                pi_section, PiConfig.from_env(env)
+            )
             channel_profiles = SlackConfig.channel_profiles_from_data(slack_section)
             if channel_profiles:
                 if slack is None:
@@ -84,6 +96,7 @@ class AppConfig:
         return cls(
             claude=claude,
             claude_profiles=claude_profiles,
+            pi_profiles=pi_profiles,
             bridge=BridgeConfig.from_env(env),
             slack=slack,
             heartbeat=HeartbeatConfig.from_env_optional(env),
@@ -109,25 +122,34 @@ class AppConfig:
                 "AGENT_BRIDGE_HTTP_ENABLED=true alongside "
                 "AGENT_BRIDGE_WEBHOOK_ENABLED"
             )
-        if self.slack is not None:
-            unknown = set(self.slack.channel_profiles.values()) - set(
-                self.claude_profiles
+        # Profile names form one routing namespace — the bridge resolves a
+        # bare name with no notion of which agent type owns it.
+        overlap = set(self.claude_profiles) & set(self.pi_profiles)
+        if overlap:
+            raise ValueError(
+                "Profile name(s) defined by more than one agent: "
+                f"{', '.join(sorted(overlap))}. Profile names are global "
+                "across [claude.profiles] and [pi.profiles]"
             )
+        if self.slack is not None:
+            defined = set(self.claude_profiles) | set(self.pi_profiles)
+            unknown = set(self.slack.channel_profiles.values()) - defined
             if unknown:
                 raise ValueError(
-                    "slack.channel_profiles references unknown Claude "
+                    "slack.channel_profiles references unknown "
                     f"profile(s): {', '.join(sorted(unknown))}. Defined: "
-                    f"{', '.join(sorted(self.claude_profiles)) or '(none)'}"
+                    f"{', '.join(sorted(defined)) or '(none)'}"
                 )
 
 
 def _load_profiles_file(
     path: Path,
-) -> tuple[Mapping[str, object], Mapping[str, object]]:
-    """Read the profiles file → the raw ``[claude.profiles]`` and
-    ``[slack.channel_profiles]`` sections (each ``{}`` when absent).
-    Shape errors — unparseable TOML, unknown sections/keys — fail fast here;
-    each section's semantics are parsed by its own layer's config class.
+) -> tuple[Mapping[str, object], Mapping[str, object], Mapping[str, object]]:
+    """Read the profiles file → the raw ``[claude.profiles]``,
+    ``[pi.profiles]`` and ``[slack.channel_profiles]`` sections (each ``{}``
+    when absent). Shape errors — unparseable TOML, unknown sections/keys —
+    fail fast here; each section's semantics are parsed by its own layer's
+    config class.
     """
     if not path.is_file():
         raise ValueError(
@@ -137,14 +159,15 @@ def _load_profiles_file(
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as e:
         raise ValueError(f"Invalid TOML in {path}: {e}") from e
-    unknown = set(data) - {"claude", "slack"}
+    unknown = set(data) - {"claude", "pi", "slack"}
     if unknown:
         raise ValueError(
             f"Unknown section(s) in {path}: {', '.join(sorted(unknown))}. "
-            "Valid sections: claude, slack"
+            "Valid sections: claude, pi, slack"
         )
     return (
         _file_section(data, "claude", "profiles", path),
+        _file_section(data, "pi", "profiles", path),
         _file_section(data, "slack", "channel_profiles", path),
     )
 

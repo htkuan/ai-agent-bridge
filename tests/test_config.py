@@ -8,6 +8,7 @@ import pytest
 
 from agent_bridge import config as app_config
 from agent_bridge.agents.claude.config import ClaudeConfig
+from agent_bridge.agents.pi.config import PiConfig
 from agent_bridge.bridge.config import BridgeConfig
 from agent_bridge.config import DEFAULT_CLEANUP_INTERVAL_SECONDS, AppConfig
 from agent_bridge.platforms.heartbeat.config import HeartbeatConfig
@@ -251,13 +252,13 @@ def test_channel_mapping_to_unknown_profile_raises(tmp_path: Path):
     [slack.channel_profiles]
     backend-team = "nope"
     """
-    with pytest.raises(ValueError, match=r"unknown Claude profile.*nope"):
+    with pytest.raises(ValueError, match=r"unknown profile.*nope"):
         AppConfig.from_env(_profiles_env(tmp_path, content, **_SLACK_TOKENS))
 
 
 def test_channel_mapping_to_unknown_profile_raises_on_construction(tmp_path: Path):
     # The cross-check guards programmatically assembled configs too.
-    with pytest.raises(ValueError, match="unknown Claude profile"):
+    with pytest.raises(ValueError, match="unknown profile"):
         AppConfig(
             claude=ClaudeConfig(work_dir=tmp_path),
             slack=SlackConfig(
@@ -285,3 +286,88 @@ def test_channel_mapping_to_defined_profile_constructs(tmp_path: Path):
 def test_profiles_file_empty_claude_section_is_fine(tmp_path: Path):
     config = AppConfig.from_env(_profiles_env(tmp_path, "[claude]"))
     assert config.claude_profiles == {}
+
+
+# --- [pi.profiles]: the second agent type in the routing namespace ---
+
+
+def test_profiles_path_unset_means_no_pi_profiles(tmp_path: Path):
+    config = AppConfig.from_env(_env(tmp_path))
+    assert config.pi_profiles == {}
+
+
+def test_pi_profiles_inherit_base_built_from_env(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        """
+        [pi.profiles.fast]
+        model = "gpt-5.6-luna"
+        """,
+        AGENT_BRIDGE_PI_PROVIDER="openai-codex",
+        AGENT_BRIDGE_PI_WORK_DIR=str(tmp_path),
+    )
+    config = AppConfig.from_env(env)
+    fast = config.pi_profiles["fast"]
+    assert fast.model == "gpt-5.6-luna"
+    assert fast.provider == "openai-codex"
+    assert fast.work_dir == tmp_path.resolve()
+
+
+def test_pi_and_claude_profiles_coexist(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        """
+        [claude.profiles.backend]
+
+        [pi.profiles.fast]
+        """,
+        AGENT_BRIDGE_PI_WORK_DIR=str(tmp_path),
+    )
+    config = AppConfig.from_env(env)
+    assert set(config.claude_profiles) == {"backend"}
+    assert set(config.pi_profiles) == {"fast"}
+
+
+def test_profile_name_collision_across_agents_raises(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        """
+        [claude.profiles.bot]
+
+        [pi.profiles.bot]
+        """,
+        AGENT_BRIDGE_PI_WORK_DIR=str(tmp_path),
+    )
+    with pytest.raises(ValueError, match=r"more than one agent.*bot"):
+        AppConfig.from_env(env)
+
+
+def test_profile_name_collision_raises_on_construction(tmp_path: Path):
+    with pytest.raises(ValueError, match="more than one agent"):
+        AppConfig(
+            claude=ClaudeConfig(work_dir=tmp_path),
+            claude_profiles={"bot": ClaudeConfig(work_dir=tmp_path)},
+            pi_profiles={"bot": PiConfig(work_dir=tmp_path)},
+        )
+
+
+def test_channel_mapping_to_pi_profile_is_valid(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        """
+        [pi.profiles.fast]
+
+        [slack.channel_profiles]
+        quick-qa = "fast"
+        """,
+        AGENT_BRIDGE_PI_WORK_DIR=str(tmp_path),
+        **_SLACK_TOKENS,
+    )
+    config = AppConfig.from_env(env)
+    assert config.slack is not None
+    assert config.slack.profile_for_channel("quick-qa") == "fast"
+
+
+def test_profiles_file_unknown_key_under_pi_raises(tmp_path: Path):
+    with pytest.raises(ValueError, match=r"Unknown key.*\[pi\]"):
+        AppConfig.from_env(_profiles_env(tmp_path, "[pi]\nprofile = 1"))

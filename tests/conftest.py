@@ -9,10 +9,12 @@ import pytest
 
 from agent_bridge.bridge.config import SessionConfig
 from agent_bridge.bridge.session import SessionManager
-from tests.fakes import claude_cli
+from tests.fakes import claude_cli, pi_cli
 from tests.fakes.claude_cli import FakeClaudeCLI, Step
+from tests.fakes.pi_cli import FakePiCLI
 
 type FakeClaudeFactory = Callable[..., FakeClaudeCLI]
+type FakePiFactory = Callable[..., FakePiCLI]
 
 _E2E_DIR = Path(__file__).parent / "e2e"
 _LAYER_MARKERS = ("unit", "integration", "e2e")
@@ -100,6 +102,31 @@ def fake_claude(tmp_path: Path) -> FakeClaudeFactory:
     ) -> FakeClaudeCLI:
         return claude_cli.install(
             tmp_path / f"fake-claude-{next(counter)}",
+            steps,
+            work_dir=work_dir,
+            timeout_seconds=timeout_seconds,
+        )
+
+    return factory
+
+
+@pytest.fixture
+def fake_pi(tmp_path: Path) -> FakePiFactory:
+    """Factory: materialise a scripted pi CLI and get its PiConfig.
+
+    cli = fake_pi(pi_cli.reply_steps("hi"))
+    controller = PiController(cli.config)
+    """
+    counter = itertools.count()
+
+    def factory(
+        steps: list[Step],
+        *,
+        work_dir: Path | None = None,
+        timeout_seconds: float = 600.0,
+    ) -> FakePiCLI:
+        return pi_cli.install(
+            tmp_path / f"fake-pi-{next(counter)}",
             steps,
             work_dir=work_dir,
             timeout_seconds=timeout_seconds,

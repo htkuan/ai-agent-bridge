@@ -10,6 +10,7 @@ implementations' behaviour.
 from tests.fakes.agents import ControllerCall, FakeAgentController
 from tests.fakes.bridge import FakeBridge, RouterCall
 from tests.fakes.claude_cli import FakeClaudeCLI
+from tests.fakes.pi_cli import FakePiCLI
 from tests.fakes.platforms import FakePlatformAdapter
 from tests.fakes.slack import (
     FakeBoltApp,
@@ -25,6 +26,7 @@ __all__ = [
     "FakeBoltApp",
     "FakeBridge",
     "FakeClaudeCLI",
+    "FakePiCLI",
     "FakePlatformAdapter",
     "FakeSlackClient",
     "RouterCall",

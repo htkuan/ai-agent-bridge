@@ -12,20 +12,23 @@ from collections.abc import Callable
 import pytest
 
 from agent_bridge.agents.claude.controller import ClaudeController
+from agent_bridge.agents.pi.controller import PiController
 from agent_bridge.bridge.events import Completion, TextDelta
 from agent_bridge.bridge.protocols import AgentController
-from tests.conftest import FakeClaudeFactory
-from tests.fakes import FakeAgentController, claude_cli
+from tests.conftest import FakeClaudeFactory, FakePiFactory
+from tests.fakes import FakeAgentController, claude_cli, pi_cli
 
 type ControllerFactory = Callable[..., AgentController]
 
-# The "claude" parametrization drives a real CLI subprocess.
+# The "claude"/"pi" parametrizations drive a real CLI subprocess.
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture(params=["claude", "fake"])
+@pytest.fixture(params=["claude", "pi", "fake"])
 def make_controller(
-    request: pytest.FixtureRequest, fake_claude: FakeClaudeFactory
+    request: pytest.FixtureRequest,
+    fake_claude: FakeClaudeFactory,
+    fake_pi: FakePiFactory,
 ) -> ControllerFactory:
     def make(*, text: str = "hello", error: bool = False) -> AgentController:
         if request.param == "claude":
@@ -35,6 +38,15 @@ def make_controller(
                 else claude_cli.reply_steps(text)
             )
             return ClaudeController(fake_claude(steps).config)
+        if request.param == "pi":
+            # Pi has no error payload in-stream; failures exit without the
+            # terminal agent_end and the engine reports them.
+            steps = (
+                [pi_cli.stderr_line("boom"), pi_cli.exit_code(1)]
+                if error
+                else pi_cli.reply_steps(text)
+            )
+            return PiController(fake_pi(steps).config)
         if error:
             return FakeAgentController([[Completion(text="boom", is_error=True)]])
         return FakeAgentController(

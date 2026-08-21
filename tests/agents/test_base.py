@@ -65,6 +65,36 @@ class _EchoController(CliAgentController[_EchoState]):
         return Completion(text=" ".join(state.texts), is_error=False)
 
 
+class _StdinFeedingController(CliAgentController[RunState]):
+    """Toy agent whose CLI never reads the (large) stdin payload it is fed —
+    pins that a dead pipe is tolerated, not raised."""
+
+    agent_name = "Mute"
+
+    def __init__(self, work_dir: Path) -> None:
+        super().__init__(work_dir=work_dir, timeout_seconds=5.0)
+
+    def build_command(
+        self,
+        session_id: str,
+        prompt: str,
+        is_new: bool,
+        system_prompt: str | None = None,
+    ) -> list[str]:
+        return [sys.executable, "-c", "import time; time.sleep(0.3)"]
+
+    def new_run_state(self) -> RunState:
+        return RunState()
+
+    def parse_line(self, line: str, state: RunState) -> list[BridgeEvent]:
+        return []
+
+    def stdin_payload(self, prompt: str) -> bytes | None:
+        # Far beyond the pipe buffer, so the write can't finish before the
+        # process exits without reading.
+        return b"x" * (2 * 1024 * 1024)
+
+
 class _BareController(CliAgentController[RunState]):
     """No hooks overridden — pins the required-hook contract."""
 
@@ -88,6 +118,17 @@ async def test_on_stream_end_none_falls_back_to_generic_error(tmp_path: Path):
     assert isinstance(completion, Completion)
     assert completion.is_error is True
     assert "Echo process exited with code 2" in completion.text
+
+
+async def test_unread_stdin_payload_does_not_break_the_run(tmp_path: Path):
+    controller = _StdinFeedingController(tmp_path)
+    events = [e async for e in controller.run("s1", "hi", is_new=True)]
+    # The run still terminates with the engine's generic completion (no
+    # output was ever parsed) instead of surfacing the broken pipe.
+    completion = events[-1]
+    assert isinstance(completion, Completion)
+    assert completion.is_error is True
+    assert "Mute process exited" in completion.text
 
 
 async def test_default_cleanup_session_is_a_noop(tmp_path: Path):

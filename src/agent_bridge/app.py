@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from agent_bridge.agents.claude.controller import ClaudeController
+from agent_bridge.agents.pi.controller import PiController
 from agent_bridge.bridge.config import DedupeConfig
 from agent_bridge.bridge.dedupe import PromptDedupeCache
 from agent_bridge.bridge.protocols import AgentController, PlatformAdapter
@@ -138,20 +139,24 @@ async def _periodic_cleanup(
                 )
 
 
-async def run(config: AppConfig) -> None:
-    """Build the whole system from ``config`` and supervise it until shutdown."""
-    # Value checks already ran on construction; this is the startup-only probe
-    # of the world the config points at. Here rather than in ``from_env`` so a
-    # programmatically built config gets the same fail-fast guarantee.
+def _check_agent_prerequisites(config: AppConfig) -> None:
+    """Startup-only probe of the world the config points at. The probes speak
+    in AGENT_BRIDGE_* terms; point at the profile actually holding the bad
+    value."""
     config.claude.check_prerequisites()
     for name, profile in config.claude_profiles.items():
         try:
             profile.check_prerequisites()
         except ValueError as e:
-            # The probe speaks in AGENT_BRIDGE_CLAUDE_* terms; point at the
-            # profile that actually holds the bad value.
             raise ValueError(f"claude.profiles.{name}: {e}") from e
+    for name, pi_profile in config.pi_profiles.items():
+        try:
+            pi_profile.check_prerequisites()
+        except ValueError as e:
+            raise ValueError(f"pi.profiles.{name}: {e}") from e
 
+
+def _log_startup_config(config: AppConfig) -> None:
     logger.info("Claude work dir: %s", config.claude.work_dir)
     logger.info("Permission mode: %s", config.claude.permission_mode)
     for name, profile in config.claude_profiles.items():
@@ -162,18 +167,46 @@ async def run(config: AppConfig) -> None:
             profile.permission_mode,
             profile.model or "(default)",
         )
+    for name, pi_profile in config.pi_profiles.items():
+        logger.info(
+            "Pi profile %s: work_dir=%s, provider=%s, model=%s, tools=%s",
+            name,
+            pi_profile.work_dir,
+            pi_profile.provider or "(default)",
+            pi_profile.model or "(default)",
+            ",".join(pi_profile.tools) or "(all)",
+        )
     logger.info("Session TTL: %s hours", config.bridge.session.ttl_hours)
     logger.info("Claude timeout: %s seconds", config.claude.timeout_seconds)
     logger.info(
         "Max concurrent sessions: %s", config.bridge.router.max_concurrent_sessions
     )
 
-    session_manager = SessionManager(config.bridge.session)
-    controller = ClaudeController(config.claude)
-    named_controllers = {
+
+def _build_named_controllers(config: AppConfig) -> dict[str, AgentController]:
+    # One routing namespace across agent types; AppConfig validated the names
+    # don't collide.
+    named: dict[str, AgentController] = {
         name: ClaudeController(profile)
         for name, profile in config.claude_profiles.items()
     }
+    named.update(
+        {name: PiController(profile) for name, profile in config.pi_profiles.items()}
+    )
+    return named
+
+
+async def run(config: AppConfig) -> None:
+    """Build the whole system from ``config`` and supervise it until shutdown."""
+    # Value checks already ran on construction; the probes run here rather
+    # than in ``from_env`` so a programmatically built config gets the same
+    # fail-fast guarantee.
+    _check_agent_prerequisites(config)
+    _log_startup_config(config)
+
+    session_manager = SessionManager(config.bridge.session)
+    controller = ClaudeController(config.claude)
+    named_controllers = _build_named_controllers(config)
     bridge = Bridge(
         config.bridge.router,
         session_manager,

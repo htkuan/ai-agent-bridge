@@ -13,6 +13,7 @@ import pytest
 
 from agent_bridge import app
 from agent_bridge.agents.claude.config import ClaudeConfig
+from agent_bridge.agents.pi.config import PiConfig
 from agent_bridge.bridge.config import BridgeConfig, RouterConfig, SessionConfig
 from agent_bridge.bridge.events import Usage
 from agent_bridge.bridge.router import Bridge
@@ -103,6 +104,27 @@ async def test_cleanup_loop_survives_controller_errors(tmp_path: Path):
     finally:
         shutdown.set()
         await task  # returns cleanly despite the failed cleanup
+
+
+# --- run(): profile prerequisite probes fail fast, naming the profile ---
+
+
+async def test_run_fails_fast_on_bad_claude_profile_prereqs(tmp_path: Path):
+    config = AppConfig(
+        claude=ClaudeConfig(work_dir=tmp_path),
+        claude_profiles={"backend": ClaudeConfig(work_dir=tmp_path / "nope")},
+    )
+    with pytest.raises(ValueError, match=r"claude\.profiles\.backend"):
+        await app.run(config)
+
+
+async def test_run_fails_fast_on_bad_pi_profile_prereqs(tmp_path: Path):
+    config = AppConfig(
+        claude=ClaudeConfig(work_dir=tmp_path),
+        pi_profiles={"fast": PiConfig(work_dir=tmp_path / "nope")},
+    )
+    with pytest.raises(ValueError, match=r"pi\.profiles\.fast"):
+        await app.run(config)
 
 
 # --- run(): startup, signal handling, shutdown ---

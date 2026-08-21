@@ -104,6 +104,7 @@ src/agent_bridge/
 ├── app.py               # Entry point: builds everything from an AppConfig, signal handling, cleanup
 ├── config.py            # AppConfig — aggregates every layer's config; the only caller of load_dotenv
 ├── env.py               # Typed env readers (env_str/int/float/bool/path/csv) — the only module reading os.environ
+├── profile_fields.py    # Typed TOML field readers for [<agent>.profiles.<name>] tables — env.py's counterpart for the profiles file
 ├── bridge/
 │   ├── router.py        # Bridge — pure routing + global concurrency (Semaphore)
 │   ├── events.py        # BridgeEvent type union (Processing, TextDelta, StatusUpdate, UserQuestion, Completion)
@@ -113,10 +114,14 @@ src/agent_bridge/
 │   └── config.py        # SessionConfig + RouterConfig + DedupeConfig, aggregated by BridgeConfig
 ├── agents/
 │   ├── base.py          # CliAgentController — shared subprocess engine (spawn → stream-parse → teardown) + RunState
-│   └── claude/
-│       ├── config.py    # ClaudeConfig (work_dir, permission_mode, timeout, effort, cli_path)
-│       ├── controller.py # CliAgentController subclass: command builder + stream-json line parser
-│       └── events.py    # Claude stream-json parser → BridgeEvent converter
+│   ├── claude/
+│   │   ├── config.py    # ClaudeConfig (work_dir, permission_mode, timeout, effort, cli_path)
+│   │   ├── controller.py # CliAgentController subclass: command builder + stream-json line parser
+│   │   └── events.py    # Claude stream-json parser → BridgeEvent converter
+│   └── pi/
+│       ├── config.py    # PiConfig (work_dir, provider, model, thinking, tools allow/denylist)
+│       ├── controller.py # CliAgentController subclass: prompt via stdin, --session-id create-or-resume
+│       └── events.py    # pi --mode json parser + PiRunState fold (Completion synthesized at agent_end)
 ├── server/              # Shared HTTP infra (FastAPI + uvicorn) — hosts routers, knows no layer
 │   ├── config.py        # HttpConfig (host, port)
 │   ├── http_server.py   # HttpServer: FastAPI app + embedded uvicorn lifecycle + include_router()
@@ -180,6 +185,7 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 ├── BridgeConfig     .session / .router / .dedupe  → SessionManager / Bridge / PromptDedupeCache
 ├── ClaudeConfig                                   → ClaudeController (the default agent)
 ├── claude_profiles  dict[str, ClaudeConfig]       → one named ClaudeController per profile
+├── pi_profiles      dict[str, PiConfig]           → one named PiController per profile (no env-built default; names are one global namespace with claude_profiles)
 ├── SlackConfig     | None                         → SlackAdapter    (None ⇒ not configured)
 ├── HeartbeatConfig | None                         → HeartbeatAdapter (None ⇒ disabled)
 ├── WebhookConfig   | None                         → WebhookAdapter  (None ⇒ disabled; requires http)
@@ -204,12 +210,14 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
   guarantee holds however the config was built, while parsing and holding a config in
   memory stay cheap and side-effect free.
 - **The profiles file**: `AGENT_BRIDGE_PROFILES_PATH` points at a TOML file holding the
-  *structured* part of the config — named Claude profiles (`[claude.profiles.<name>]`,
-  unset fields inherit the env-built base) and the Slack channel→profile map
-  (`[slack.channel_profiles]`). Env stays the home of flat/global settings and secrets.
-  Read once by `AppConfig.from_env` (same rank as the `.env` overlay); unknown
-  sections/keys/fields fail fast. See `profiles.example.toml` and
-  `docs/agents/claude.md#named-profiles`.
+  *structured* part of the config — named agent profiles (`[claude.profiles.<name>]`,
+  `[pi.profiles.<name>]`; unset fields inherit that agent's env-built base) and the
+  Slack channel→profile map (`[slack.channel_profiles]`). Profile names are one global
+  routing namespace across agent types — a name defined by two agents fails startup,
+  and channel mappings may reference any of them. Env stays the home of flat/global
+  settings and secrets. Read once by `AppConfig.from_env` (same rank as the `.env`
+  overlay); unknown sections/keys/fields fail fast. See `profiles.example.toml`,
+  `docs/agents/claude.md#named-profiles` and `docs/agents/pi.md`.
 - **No default for a dangerous field**: `ClaudeConfig.work_dir` (and therefore
   `AppConfig.claude`) is required. A config that must be set is better than one that
   silently falls back to the process's cwd.
@@ -367,7 +375,15 @@ unparseable numbers. See `.env.example` for the full list.
 | `AGENT_BRIDGE_CLAUDE_EFFORT` | No | `xhigh` | Claude (one of `low`, `medium`, `high`, `xhigh`, `max`) |
 | `AGENT_BRIDGE_CLAUDE_MODEL` | No | — (CLI default) | Claude (passed to `claude --model`; opaque, unvalidated) |
 | `AGENT_BRIDGE_CLAUDE_CLI_PATH` | No | `claude` | Claude (path to the Claude Code CLI executable) |
-| `AGENT_BRIDGE_PROFILES_PATH` | No | — (disabled) | App (TOML file with named Claude profiles + Slack channel→profile map; see `profiles.example.toml`) |
+| `AGENT_BRIDGE_PROFILES_PATH` | No | — (disabled) | App (TOML file with named agent profiles + Slack channel→profile map; see `profiles.example.toml`) |
+| `AGENT_BRIDGE_PI_WORK_DIR` | No | `.` | Pi (base for `[pi.profiles.*]`; pi has no env-built default controller) |
+| `AGENT_BRIDGE_PI_PROVIDER` | No | — (pi's default) | Pi (passed to `pi --provider`) |
+| `AGENT_BRIDGE_PI_MODEL` | No | — (pi's default) | Pi (passed to `pi --model`) |
+| `AGENT_BRIDGE_PI_THINKING` | No | — (pi's default) | Pi (one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) |
+| `AGENT_BRIDGE_PI_TIMEOUT_SECONDS` | No | `600` | Pi |
+| `AGENT_BRIDGE_PI_CLI_PATH` | No | `pi` | Pi (path to the pi CLI executable) |
+| `AGENT_BRIDGE_PI_TOOLS` | No | — (all tools) | Pi (comma-separated tool allowlist — pi's permission model; see `docs/agents/pi.md`) |
+| `AGENT_BRIDGE_PI_EXCLUDE_TOOLS` | No | — | Pi (comma-separated tool denylist) |
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Bridge |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Bridge |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Bridge |

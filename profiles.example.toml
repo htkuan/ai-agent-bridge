@@ -1,21 +1,24 @@
-# Named Claude profiles + per-channel routing.
+# Named agent profiles + per-channel routing.
 #
 # Point AGENT_BRIDGE_PROFILES_PATH at a copy of this file to give different
-# Slack channels differently-configured Claude controllers. Environment
-# variables keep holding the flat, global config (tokens, the default
-# AGENT_BRIDGE_CLAUDE_* settings); this file holds the structured part.
+# Slack channels differently-configured controllers. Environment variables
+# keep holding the flat, global config (tokens, the default
+# AGENT_BRIDGE_CLAUDE_* / AGENT_BRIDGE_PI_* settings); this file holds the
+# structured part.
 #
-# Only two sections are recognised — [claude.profiles.*] and
-# [slack.channel_profiles] — anything else fails startup, as does any
+# Only three sections are recognised — [claude.profiles.*], [pi.profiles.*]
+# and [slack.channel_profiles] — anything else fails startup, as does any
 # unknown field inside a profile.
 
 # --- Named profiles -------------------------------------------------------
-# Each [claude.profiles.<name>] table defines one named controller. Names
-# must match [a-z0-9_-]+ ("default" is reserved for the env-built config).
-# Any field left out inherits the value from the global AGENT_BRIDGE_CLAUDE_*
-# environment variables. Available fields (same meaning as their env
-# counterparts): work_dir, permission_mode, timeout_seconds,
-# worktree_enabled, effort, model, cli_path.
+# Each [<agent>.profiles.<name>] table defines one named controller. Names
+# must match [a-z0-9_-]+ ("default" is reserved for the env-built config)
+# and are ONE global routing namespace: the same name can't be defined by
+# two agent types. Any field left out inherits the value from that agent's
+# global environment variables.
+#
+# Claude fields (same meaning as their env counterparts): work_dir,
+# permission_mode, timeout_seconds, worktree_enabled, effort, model, cli_path.
 
 [claude.profiles.backend]
 work_dir = "/repos/backend"
@@ -25,6 +28,15 @@ work_dir = "/repos/infra"
 permission_mode = "plan"
 model = "claude-opus-5"
 timeout_seconds = 900
+
+# Pi fields: work_dir, provider, model, thinking, timeout_seconds, cli_path,
+# tools, exclude_tools. Pi has no sandbox — the tools allowlist is its
+# permission model (docs/agents/pi.md).
+
+[pi.profiles.quick]
+work_dir = "/repos/backend"
+thinking = "low"
+tools = ["read", "grep", "find", "ls"]
 
 # --- Slack channel routing ------------------------------------------------
 # Channel NAME (not ID) → profile name. Names are matched like
@@ -40,3 +52,4 @@ timeout_seconds = 900
 [slack.channel_profiles]
 backend-team = "backend"
 infra-ops = "infra"
+quick-qa = "quick"

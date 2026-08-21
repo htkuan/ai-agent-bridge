@@ -10,6 +10,7 @@ Scenario schema (JSON)::
 
     {
       "record_args": "<path>",   # optional: append one JSON line of argv per run
+      "record_stdin": "<path>",  # optional: append one JSON line of stdin per run
       "steps": [
         {"emit": {...}},         # dump one stream-json line to stdout
         {"raw": "text"},         # write a raw (e.g. malformed) line to stdout
@@ -260,6 +261,12 @@ def _run(scenario_path: str, argv: list[str]) -> int:
     if record_args:
         with Path(record_args).open("a") as fh:
             fh.write(json.dumps(argv) + "\n")
+    record_stdin = scenario.get("record_stdin")
+    if record_stdin:
+        # Reads to EOF before any step runs: the controller either pipes the
+        # prompt and closes, or hands us /dev/null — never an open TTY.
+        with Path(record_stdin).open("a") as fh:
+            fh.write(json.dumps(sys.stdin.read()) + "\n")
     for step in scenario.get("steps", []):
         code = _execute_step(step, Path(scenario_path).parent)
         if code is not None:

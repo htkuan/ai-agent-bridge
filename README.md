@@ -2,7 +2,7 @@
 
 Modular bridge that connects **chat platforms** to **AI agents**. Each layer is independent — swap platforms or agents without touching the others.
 
-Currently supports: **Slack**, **Heartbeat**, **HTTP Webhook** + **Claude Code**
+Currently supports: **Slack**, **Heartbeat**, **HTTP Webhook** + **Claude Code**, **Pi**
 
 ```
 ┌──────────────┐     ┌──────────┐     ┌──────────────┐
@@ -90,7 +90,7 @@ The system has three independent layers:
 |-------|------|------|
 | **Platform Adapter** | Owns session semantics, per-session locking, UI rendering | [Slack](docs/platforms/slack.md) · [Heartbeat](docs/platforms/heartbeat.md) · [Webhook](docs/platforms/webhook.md) |
 | **Bridge** | Routes messages, maps session keys → IDs, enforces concurrency | Core — see below |
-| **Agent Controller** | Executes prompts, yields generic events | [Claude Agent](docs/agents/claude.md) |
+| **Agent Controller** | Executes prompts, yields generic events | [Claude Agent](docs/agents/claude.md) · [Pi Agent](docs/agents/pi.md) |
 
 ### Event Model
 
@@ -123,7 +123,8 @@ All agent output flows through generic events — the shared language between ag
 | `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Per-invocation timeout (seconds) |
 | `AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED` | No | `false` | Run each session in an isolated git worktree (requires `origin/HEAD`) |
 | `AGENT_BRIDGE_CLAUDE_MODEL` | No | — (CLI default) | Model passed to `claude --model` |
-| `AGENT_BRIDGE_PROFILES_PATH` | No | — (disabled) | TOML file with named Claude profiles + Slack channel→profile routing (see `profiles.example.toml`) |
+| `AGENT_BRIDGE_PROFILES_PATH` | No | — (disabled) | TOML file with named agent profiles (`[claude.profiles.*]`, `[pi.profiles.*]`) + Slack channel→profile routing (see `profiles.example.toml`) |
+| `AGENT_BRIDGE_PI_*` | No | — | Base config for named [Pi agent](docs/agents/pi.md) profiles (work dir, provider, model, thinking, tool allowlist) |
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Session mapping file path |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Session TTL (hours) |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Max concurrent agent processes |

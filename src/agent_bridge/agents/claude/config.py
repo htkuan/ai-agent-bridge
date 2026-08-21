@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import re
 import subprocess
 from collections.abc import Mapping
@@ -15,6 +14,13 @@ from agent_bridge.env import (
     env_float,
     env_path,
     env_str,
+)
+from agent_bridge.profile_fields import (
+    field_bool,
+    field_number,
+    field_opt_str,
+    field_path,
+    field_str,
 )
 
 VALID_PERMISSION_MODES = {
@@ -190,80 +196,19 @@ def _profile_from_table(name: str, fields: object, base: ClaudeConfig) -> Claude
             f"{', '.join(sorted(unknown))}. "
             f"Valid fields: {', '.join(sorted(PROFILE_FIELDS))}"
         )
+    where = f"claude.profiles.{name}"
     return ClaudeConfig(
-        work_dir=_field_path(name, table, "work_dir", base.work_dir),
-        permission_mode=_field_str(
-            name, table, "permission_mode", base.permission_mode
+        work_dir=field_path(where, table, "work_dir", base.work_dir),
+        permission_mode=field_str(
+            where, table, "permission_mode", base.permission_mode
         ),
-        timeout_seconds=_field_number(
-            name, table, "timeout_seconds", base.timeout_seconds
+        timeout_seconds=field_number(
+            where, table, "timeout_seconds", base.timeout_seconds
         ),
-        worktree_enabled=_field_bool(
-            name, table, "worktree_enabled", base.worktree_enabled
+        worktree_enabled=field_bool(
+            where, table, "worktree_enabled", base.worktree_enabled
         ),
-        effort=_field_str(name, table, "effort", base.effort),
-        cli_path=_field_str(name, table, "cli_path", base.cli_path),
-        model=_field_model(name, table, base.model),
+        effort=field_str(where, table, "effort", base.effort),
+        cli_path=field_str(where, table, "cli_path", base.cli_path),
+        model=field_opt_str(where, table, "model", base.model),
     )
-
-
-def _field_str(name: str, table: Mapping[str, object], key: str, default: str) -> str:
-    if key not in table:
-        return default
-    value = table[key]
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(
-            f"claude.profiles.{name}.{key} must be a non-empty string, got {value!r}"
-        )
-    return value
-
-
-def _field_model(
-    name: str, table: Mapping[str, object], default: str | None
-) -> str | None:
-    # No TOML spelling for "reset to the CLI default" — absent means inherit.
-    if "model" not in table:
-        return default
-    return _field_str(name, table, "model", "")
-
-
-def _field_path(
-    name: str, table: Mapping[str, object], key: str, default: Path
-) -> Path:
-    if key not in table:
-        return default
-    # An empty path would resolve to the process cwd — the exact dangerous
-    # fallback work_dir exists to avoid — so _field_str's non-empty check
-    # is load-bearing here.
-    return Path(_field_str(name, table, key, "")).resolve()
-
-
-def _field_number(
-    name: str, table: Mapping[str, object], key: str, default: float
-) -> float:
-    if key not in table:
-        return default
-    value = table[key]
-    # bool is an int subclass — reject it explicitly.
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise ValueError(
-            f"claude.profiles.{name}.{key} must be a number, got {value!r}"
-        )
-    if not math.isfinite(value):
-        raise ValueError(
-            f"claude.profiles.{name}.{key} must be a finite number, got {value!r}"
-        )
-    return float(value)
-
-
-def _field_bool(
-    name: str, table: Mapping[str, object], key: str, default: bool
-) -> bool:
-    if key not in table:
-        return default
-    value = table[key]
-    if not isinstance(value, bool):
-        raise ValueError(
-            f"claude.profiles.{name}.{key} must be a boolean, got {value!r}"
-        )
-    return value

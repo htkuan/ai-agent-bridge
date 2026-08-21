@@ -66,6 +66,15 @@ class CliAgentController[RunStateT: RunState]:
 
     # --- hooks with working defaults ---
 
+    def stdin_payload(self, prompt: str) -> bytes | None:
+        """What to write to the CLI's stdin (None ⇒ an immediate EOF).
+
+        Agents whose CLI takes the prompt as a positional argument return it
+        here and leave it out of ``build_command`` — user-controlled text
+        never reaches argv, where a leading ``-`` would parse as a flag.
+        """
+        return None
+
     def on_stream_end(
         self, state: RunStateT, return_code: int | None, stderr: str
     ) -> Completion | None:
@@ -104,12 +113,15 @@ class CliAgentController[RunStateT: RunState]:
             "Running %s: %s (cwd=%s, timeout=%ss)", self.agent_name, cmd, cwd, timeout
         )
 
+        payload = self.stdin_payload(prompt)
         process = await asyncio.create_subprocess_exec(
             *cmd,
-            # Some CLIs read (or announce reading) stdin whenever it isn't a
-            # TTY; an explicit EOF keeps the stream pure and the process
-            # unblocked.
-            stdin=asyncio.subprocess.DEVNULL,
+            # A pipe only when the agent feeds the prompt through stdin;
+            # otherwise an explicit EOF, since some CLIs read (or announce
+            # reading) stdin whenever it isn't a TTY.
+            stdin=asyncio.subprocess.PIPE
+            if payload is not None
+            else asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(cwd),
@@ -117,7 +129,12 @@ class CliAgentController[RunStateT: RunState]:
             start_new_session=True,  # isolate process group for clean tree cleanup
         )
 
-        # Drain stderr in background to prevent buffer deadlock
+        # Feed stdin and drain stderr in background to prevent pipe deadlock
+        feed_task = (
+            asyncio.create_task(self._feed_stdin(process, payload))
+            if payload is not None
+            else None
+        )
         stderr_task = asyncio.create_task(self._drain_stderr(process))
 
         state = self.new_run_state()
@@ -146,6 +163,11 @@ class CliAgentController[RunStateT: RunState]:
             except TimeoutError:
                 self._kill_process_tree(process, graceful=False)
                 await process.wait()
+
+            if feed_task is not None:
+                # Normally done long ago; after a kill the broken pipe ends it.
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(feed_task, timeout=5.0)
 
             try:
                 stderr_text = await asyncio.wait_for(stderr_task, timeout=5.0)
@@ -230,6 +252,19 @@ class CliAgentController[RunStateT: RunState]:
             logger.warning("killpg failed for pid=%d, falling back to direct kill", pid)
             with contextlib.suppress(ProcessLookupError):
                 process.terminate() if graceful else process.kill()
+
+    @staticmethod
+    async def _feed_stdin(process: asyncio.subprocess.Process, payload: bytes) -> None:
+        """Write the payload, then close stdin — the CLI's EOF signal."""
+        # Narrowing only: stdin=PIPE is set whenever a payload exists.
+        assert process.stdin is not None  # noqa: S101
+        try:
+            process.stdin.write(payload)
+            await process.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # process died before reading; its exit is reported elsewhere
+        finally:
+            process.stdin.close()
 
     @staticmethod
     async def _drain_stderr(process: asyncio.subprocess.Process) -> str:

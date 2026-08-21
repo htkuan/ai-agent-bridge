@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v0.9.0 (2026-08-21)
+
+### Documentation
+
+- Fix stale coverage gate value in tech stack table
+  ([`aa5b52e`](https://github.com/htkuan/ai-agent-bridge/commit/aa5b52ef7037cbb566d358c9b1d994fc824c832e))
+
+### Features
+
+- **agents**: Add pi agent controller with named profiles
+  ([`acf52c7`](https://github.com/htkuan/ai-agent-bridge/commit/acf52c7ed51b2dc23f22f0ffc14971d48c8a5b87))
+
+### Refactoring
+
+- **agents**: Extract shared CliAgentController subprocess engine
+  ([`fd745bd`](https://github.com/htkuan/ai-agent-bridge/commit/fd745bd6a1cd85da98b81025a57bab5fbcef0628))
+
+
 ## v0.8.0 (2026-08-19)
 
 ### Features

@@ -83,7 +83,7 @@ Defined in `src/agent_bridge/bridge/protocols.py`. New agents/platforms implemen
 | HTTP client | **httpx** (optional dep, `[http]`) | Webhook callback delivery; ASGI transport in tests |
 | Env config | **python-dotenv** | `.env` file loading |
 | Testing | **pytest + pytest-asyncio** | `asyncio_mode = "auto"` |
-| Coverage | **pytest-cov** | `fail_under = 75` ratchet; `[tool.coverage.report]` in pyproject.toml |
+| Coverage | **pytest-cov** | `fail_under = 98` ratchet; `[tool.coverage.report]` in pyproject.toml |
 | Dependency audit | **pip-audit** | PR gate + weekly schedule; `.github/workflows/audit.yml` |
 | Secrets scanning | **gitleaks** | pre-commit hook (staged diff) + CI (commit history); same workflow |
 | Lint / format | **ruff** | one tool for both; `[tool.ruff]` in pyproject.toml |

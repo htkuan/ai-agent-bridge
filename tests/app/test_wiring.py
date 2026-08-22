@@ -12,6 +12,11 @@ import pytest
 
 from agent_bridge import app
 from agent_bridge.agents.claude.config import ClaudeConfig
+from agent_bridge.agents.claude.controller import ClaudeController
+from agent_bridge.agents.codex.config import CodexConfig
+from agent_bridge.agents.codex.controller import CodexController
+from agent_bridge.agents.pi.config import PiConfig
+from agent_bridge.agents.pi.controller import PiController
 from agent_bridge.bridge.config import DedupeConfig, RouterConfig, SessionConfig
 from agent_bridge.bridge.dedupe import PromptDedupeCache
 from agent_bridge.bridge.router import Bridge
@@ -99,6 +104,35 @@ def test_slack_and_heartbeat(wiring: tuple[Bridge, SessionManager], tmp_path: Pa
     assert len(adapters) == 2
     assert isinstance(adapters[0], SlackAdapter)
     assert isinstance(adapters[1], HeartbeatAdapter)
+
+
+# --- named controllers + startup logging: one entry per profile ---
+
+
+def _profiled_config(tmp_path: Path) -> AppConfig:
+    return AppConfig(
+        claude=ClaudeConfig(work_dir=tmp_path),
+        claude_profiles={"backend": ClaudeConfig(work_dir=tmp_path)},
+        pi_profiles={"fast": PiConfig(work_dir=tmp_path)},
+        codex_profiles={"reviewer": CodexConfig(work_dir=tmp_path)},
+    )
+
+
+def test_build_named_controllers_covers_every_agent_type(tmp_path: Path):
+    named = app._build_named_controllers(_profiled_config(tmp_path))
+    assert isinstance(named["backend"], ClaudeController)
+    assert isinstance(named["fast"], PiController)
+    assert isinstance(named["reviewer"], CodexController)
+
+
+def test_log_startup_config_names_every_profile(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+):
+    with caplog.at_level("INFO", logger="agent_bridge.app"):
+        app._log_startup_config(_profiled_config(tmp_path))
+    assert "Claude profile backend" in caplog.text
+    assert "Pi profile fast" in caplog.text
+    assert "Codex profile reviewer" in caplog.text
 
 
 # --- the HTTP server and the webhook platform ---

@@ -8,6 +8,7 @@ import pytest
 
 from agent_bridge import config as app_config
 from agent_bridge.agents.claude.config import ClaudeConfig
+from agent_bridge.agents.codex.config import CodexConfig
 from agent_bridge.agents.pi.config import PiConfig
 from agent_bridge.bridge.config import BridgeConfig
 from agent_bridge.config import DEFAULT_CLEANUP_INTERVAL_SECONDS, AppConfig
@@ -371,6 +372,107 @@ def test_channel_mapping_to_pi_profile_is_valid(tmp_path: Path):
 def test_profiles_file_unknown_key_under_pi_raises(tmp_path: Path):
     with pytest.raises(ValueError, match=r"Unknown key.*\[pi\]"):
         AppConfig.from_env(_profiles_env(tmp_path, "[pi]\nprofile = 1"))
+
+
+# --- [codex.profiles]: the third agent type in the routing namespace ---
+
+
+def test_profiles_path_unset_means_no_codex_profiles(tmp_path: Path):
+    config = AppConfig.from_env(_env(tmp_path))
+    assert config.codex_profiles == {}
+
+
+def test_codex_profiles_inherit_base_built_from_env(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        """
+        [codex.profiles.reviewer]
+        sandbox_mode = "read-only"
+        """,
+        AGENT_BRIDGE_CODEX_MODEL="gpt-5.3-codex",
+        AGENT_BRIDGE_CODEX_WORK_DIR=str(tmp_path),
+    )
+    config = AppConfig.from_env(env)
+    reviewer = config.codex_profiles["reviewer"]
+    assert reviewer.sandbox_mode == "read-only"
+    assert reviewer.model == "gpt-5.3-codex"
+    assert reviewer.work_dir == tmp_path.resolve()
+
+
+def test_all_three_agent_types_coexist(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        """
+        [claude.profiles.backend]
+
+        [pi.profiles.fast]
+
+        [codex.profiles.reviewer]
+        """,
+        AGENT_BRIDGE_PI_WORK_DIR=str(tmp_path),
+        AGENT_BRIDGE_CODEX_WORK_DIR=str(tmp_path),
+    )
+    config = AppConfig.from_env(env)
+    assert set(config.claude_profiles) == {"backend"}
+    assert set(config.pi_profiles) == {"fast"}
+    assert set(config.codex_profiles) == {"reviewer"}
+
+
+@pytest.mark.parametrize("other_agent", ["claude", "pi"])
+def test_profile_name_collision_with_codex_raises(tmp_path: Path, other_agent: str):
+    env = _profiles_env(
+        tmp_path,
+        f"""
+        [{other_agent}.profiles.bot]
+
+        [codex.profiles.bot]
+        """,
+        AGENT_BRIDGE_PI_WORK_DIR=str(tmp_path),
+        AGENT_BRIDGE_CODEX_WORK_DIR=str(tmp_path),
+    )
+    with pytest.raises(ValueError, match=r"more than one agent.*bot"):
+        AppConfig.from_env(env)
+
+
+def test_codex_profile_name_collision_raises_on_construction(tmp_path: Path):
+    with pytest.raises(ValueError, match="more than one agent"):
+        AppConfig(
+            claude=ClaudeConfig(work_dir=tmp_path),
+            pi_profiles={"bot": PiConfig(work_dir=tmp_path)},
+            codex_profiles={"bot": CodexConfig(work_dir=tmp_path)},
+        )
+
+
+def test_channel_mapping_to_codex_profile_is_valid(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        """
+        [codex.profiles.reviewer]
+
+        [slack.channel_profiles]
+        code-review = "reviewer"
+        """,
+        AGENT_BRIDGE_CODEX_WORK_DIR=str(tmp_path),
+        **_SLACK_TOKENS,
+    )
+    config = AppConfig.from_env(env)
+    assert config.slack is not None
+    assert config.slack.profile_for_channel("code-review") == "reviewer"
+
+
+def test_default_agent_may_reference_a_codex_profile(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        "[codex.profiles.reviewer]",
+        AGENT_BRIDGE_DEFAULT_AGENT="reviewer",
+        AGENT_BRIDGE_CODEX_WORK_DIR=str(tmp_path),
+    )
+    assert AppConfig.from_env(env).default_agent == "reviewer"
+
+
+def test_profiles_file_unknown_key_under_codex_raises(tmp_path: Path):
+    with pytest.raises(ValueError, match=r"Unknown key.*\[codex\]"):
+        AppConfig.from_env(_profiles_env(tmp_path, "[codex]\nprofile = 1"))
 
 
 # --- default_agent: where agent=None routes ---

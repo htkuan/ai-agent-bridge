@@ -43,6 +43,8 @@ def test_build_command_prompt_never_in_argv(tmp_path: Path):
 def test_stdin_payload_carries_the_prompt(tmp_path: Path):
     controller = PiController(PiConfig(work_dir=tmp_path))
     assert controller.stdin_payload("[alice]: hi") == b"[alice]: hi"
+    # The system prompt rides on --append-system-prompt, never the payload.
+    assert controller.stdin_payload("[alice]: hi", "directives") == b"[alice]: hi"
 
 
 def test_build_command_includes_optional_flags(tmp_path: Path):

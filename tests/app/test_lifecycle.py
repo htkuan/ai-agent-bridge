@@ -13,6 +13,7 @@ import pytest
 
 from agent_bridge import app
 from agent_bridge.agents.claude.config import ClaudeConfig
+from agent_bridge.agents.codex.config import CodexConfig
 from agent_bridge.agents.pi.config import PiConfig
 from agent_bridge.bridge.config import BridgeConfig, RouterConfig, SessionConfig
 from agent_bridge.bridge.events import Usage
@@ -124,6 +125,15 @@ async def test_run_fails_fast_on_bad_pi_profile_prereqs(tmp_path: Path):
         pi_profiles={"fast": PiConfig(work_dir=tmp_path / "nope")},
     )
     with pytest.raises(ValueError, match=r"pi\.profiles\.fast"):
+        await app.run(config)
+
+
+async def test_run_fails_fast_on_bad_codex_profile_prereqs(tmp_path: Path):
+    config = AppConfig(
+        claude=ClaudeConfig(work_dir=tmp_path),
+        codex_profiles={"reviewer": CodexConfig(work_dir=tmp_path / "nope")},
+    )
+    with pytest.raises(ValueError, match=r"codex\.profiles\.reviewer"):
         await app.run(config)
 
 

@@ -257,12 +257,15 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 - Every test carries a layer marker (`unit` / `integration` / `e2e`) — mostly
   auto-applied; see `docs/testing.md`. CI runs `-m "not e2e"` across the
   version matrix and `-m "e2e and not live"` in a separate 3.12-only job.
-- The `live` marker (`tests/e2e/test_live_claude.py`) spawns the **real**
-  `claude` CLI and spends tokens. Gated behind the `--live` flag (declared in
-  `tests/conftest.py`, with `--live-cli` / `--live-timeout`), never run by CI:
-  `uv run pytest -m live --live --no-cov -v`. Add a live scenario only for
-  something the scripted CLI cannot prove (the real stream-json shape,
-  session resume, actual tool use).
+- The `live` marker (`tests/e2e/test_live_claude.py`,
+  `tests/e2e/test_live_webhook.py`) spawns the **real** agent CLIs (`claude`
+  and `pi`) and spends tokens. Gated behind the `--live` flag (declared in
+  `tests/conftest.py`, with `--live-cli` / `--live-pi-cli` /
+  `--live-timeout`), never run by CI:
+  `uv run pytest -m live --live --no-cov -v`. A missing CLI skips just that
+  agent's scenarios. Add a live scenario only for something the scripted CLI
+  cannot prove (the real stream shapes, session resume, actual tool use, a
+  real tool restriction).
 - Coverage runs on every pytest invocation (`addopts` in pyproject.toml) and
   gates at `fail_under = 98` — a ratchet floor at the measured baseline, raised
   as coverage improves, never lowered. A partial run (single file, `-k`, `-m`)

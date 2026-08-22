@@ -61,7 +61,7 @@ markers = [
     "unit: fast in-process tests against a single layer (auto-applied default)",
     "integration: crosses a process boundary, e.g. spawns the scripted claude CLI",
     "e2e: full-stack scenario from tests/e2e (real components, faked edges)",
-    "live: spawns the real claude CLI and spends tokens; needs the --live flag",
+    "live: spawns a real agent CLI (claude/pi) and spends tokens; needs the --live flag",
 ]
 
 [tool.coverage.report]

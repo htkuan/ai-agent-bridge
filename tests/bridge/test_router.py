@@ -710,6 +710,78 @@ async def test_agent_none_routes_to_default_controller(session_mgr):
 
 
 @pytest.mark.asyncio
+async def test_default_agent_resolves_none_to_named_controller(session_mgr):
+    default = FakeController()
+    fast = FakeController()
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5),
+        session_mgr,
+        default,
+        named_controllers={"fast": fast},
+        default_agent="fast",
+    )
+
+    async for _ in bridge.handle_message("slack:C1:t1", "hi"):
+        pass
+
+    assert fast.calls == ["hi"]
+    assert default.calls == []
+
+
+@pytest.mark.asyncio
+async def test_default_agent_sticks_sessions_to_the_resolved_name(session_mgr):
+    """``agent=None`` resolves before the session lookup, so the session
+    records the actual profile: an explicit ``agent="fast"`` resumes it, and
+    a deployment that drops the default abandons it like any remap."""
+    fast = FakeController()
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5),
+        session_mgr,
+        FakeController(),
+        named_controllers={"fast": fast},
+        default_agent="fast",
+    )
+    async for _ in bridge.handle_message("slack:C1:t1", "hi"):
+        pass
+    first_id = session_mgr.get("slack:C1:t1")
+    assert first_id is not None
+
+    async for _ in bridge.handle_message("slack:C1:t1", "again", agent="fast"):
+        pass
+    assert session_mgr.get("slack:C1:t1") == first_id
+
+    # Same key through a bridge whose default reverted to the env-built
+    # controller: recorded agent "fast" ≠ None → fresh session.
+    reverted = Bridge(
+        RouterConfig(max_concurrent_sessions=5),
+        session_mgr,
+        FakeController(),
+        named_controllers={"fast": fast},
+    )
+    async for _ in reverted.handle_message("slack:C1:t1", "back"):
+        pass
+    assert session_mgr.get("slack:C1:t1") != first_id
+
+
+@pytest.mark.asyncio
+async def test_unknown_default_agent_yields_error_completion(session_mgr):
+    # Startup validation makes this unreachable for env-built configs; the
+    # guard covers programmatically assembled ones.
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5),
+        session_mgr,
+        FakeController(),
+        default_agent="ghost",
+    )
+    events = [e async for e in bridge.handle_message("slack:C1:t1", "hi")]
+    assert len(events) == 1
+    completion = events[0]
+    assert isinstance(completion, Completion)
+    assert completion.is_error is True
+    assert completion.metadata["error_code"] == "unknown_agent"
+
+
+@pytest.mark.asyncio
 async def test_unknown_agent_rejects_before_any_side_effect(session_mgr):
     """The rejection must precede the dedupe claim, session mint, and
     semaphore — a misconfigured channel must not poison any shared state."""

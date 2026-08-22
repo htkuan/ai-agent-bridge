@@ -76,6 +76,7 @@ If you see the `Heartbeat adapter enabled` line but no `Heartbeat tick:` line wi
 | `AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES` | Yes (if enabled) | — | Must be `> 0`. The smallest sensible value is whatever ensures the agent can finish well under one interval |
 | `AGENT_BRIDGE_HEARTBEAT_PROMPT` | Yes (if enabled) | — | Fixed string sent each tick. No templating |
 | `AGENT_BRIDGE_HEARTBEAT_STATE_PATH` | No | `./heartbeat.json` | Path to the JSON file that stores `last_run` |
+| `AGENT_BRIDGE_HEARTBEAT_AGENT` | No | — (bridge default) | Named agent profile the ticks route to. Must exist in the profiles file — validated at startup |
 
 `HeartbeatConfig` exists only when the platform is on: `AppConfig.heartbeat` is `None`
 when disabled, so a constructed config is always a runnable one (`interval_minutes` and

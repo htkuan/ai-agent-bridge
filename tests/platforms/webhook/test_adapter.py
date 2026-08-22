@@ -213,6 +213,43 @@ async def test_no_callback_url_is_fire_and_forget():
     assert len(bridge.calls) == 1
 
 
+# --- named agent routing ---
+
+
+async def test_agent_field_is_forwarded_to_bridge():
+    fake = FakeBridge(known_agents=frozenset({"fast"}))
+    async with webhook_harness(fake) as h:
+        response = await h.post(agent="fast")
+        assert response.status_code == 202
+        await h.adapter.drain()
+    call = fake.calls[0]
+    assert call.agent == "fast"
+    assert call.context is not None
+    assert call.context["agent"] == "fast"
+
+
+async def test_agent_omitted_routes_to_default():
+    async with webhook_harness(bridge := FakeBridge()) as h:
+        await h.post()
+        await h.adapter.drain()
+    call = bridge.calls[0]
+    assert call.agent is None
+    assert call.context is not None
+    assert "agent" not in call.context
+
+
+async def test_unknown_agent_error_arrives_via_callback():
+    # Decision: no allowlist, no 4xx — the caller learns about a bad agent
+    # name the same way it learns about every other turn outcome.
+    async with webhook_harness(FakeBridge(known_agents=frozenset())) as h:
+        response = await h.post(agent="ghost")
+        assert response.status_code == 202
+        await h.adapter.drain()
+        (payload,) = h.payloads()
+    assert payload["is_error"] is True
+    assert payload["error_code"] == "unknown_agent"
+
+
 # --- request validation ---
 
 
@@ -225,6 +262,13 @@ async def test_invalid_conversation_id_rejected():
 async def test_empty_text_rejected():
     async with webhook_harness() as h:
         response = await h.post(text="")
+    assert response.status_code == 422
+
+
+async def test_invalid_agent_name_rejected():
+    # Profile names are [a-z0-9_-]+; anything else can't exist in the registry.
+    async with webhook_harness() as h:
+        response = await h.post(agent="Bad Name!")
     assert response.status_code == 422
 
 

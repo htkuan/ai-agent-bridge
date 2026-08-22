@@ -67,11 +67,13 @@ def make_adapter(tmp_path: Path):
         interval_minutes: int = 60,
         prompt: str = "ping",
         events: list[BridgeEvent] | None = None,
+        agent: str | None = None,
     ) -> tuple[HeartbeatAdapter, _StubBridge, HeartbeatConfig]:
         config = HeartbeatConfig(
             interval_minutes=interval_minutes,
             prompt=prompt,
             state_path=tmp_path / "heartbeat.json",
+            agent=agent,
         )
         bridge = _StubBridge(events=events)
         adapter = HeartbeatAdapter(config, bridge)  # type: ignore[arg-type]
@@ -124,6 +126,18 @@ async def test_fire_once_marks_session_non_resumable(make_adapter):
 
     # Heartbeat ticks are one-shot — same key must never resume the same session
     assert bridge.calls[0]["resumable"] is False
+
+
+async def test_fire_once_routes_to_configured_agent(make_adapter):
+    adapter, bridge, _ = make_adapter(agent="night-shift")
+    await adapter._fire_once()
+    assert bridge.calls[0]["agent"] == "night-shift"
+
+
+async def test_fire_once_defaults_to_no_agent(make_adapter):
+    adapter, bridge, _ = make_adapter()
+    await adapter._fire_once()
+    assert bridge.calls[0]["agent"] is None
 
 
 async def test_fire_once_passes_heartbeat_flavored_system_prompt(make_adapter):

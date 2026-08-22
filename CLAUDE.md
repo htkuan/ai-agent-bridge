@@ -39,7 +39,7 @@ Events are defined in `src/agent_bridge/bridge/events.py`. Agent-internal events
 
 - `AgentController` — `run(session_id, prompt, is_new, context, system_prompt) → AsyncIterator[BridgeEvent]`, plus `cleanup_session(session_id)` (releases per-session resources — worktrees, id mappings; the app's cleanup loop calls it on every controller for every purged session, so unknown ids must be cheap no-ops). The platform adapter builds `prompt` (already pre-tagged with sender identity if needed) and `system_prompt` (platform-flavored directives); the agent forwards them as-is. The agent must not interpret platform-specific keys out of `context`. `agents/base.py` provides `CliAgentController`, the reusable subprocess engine CLI-driven agents subclass (spawn → stream-parse → teardown, with the exactly-one-`Completion` guarantee).
 - `PlatformAdapter` — `start()`, `stop()`, `cleanup()` (periodic housekeeping; returns entries removed — the app's cleanup loop calls it on every adapter). `platforms/base.py` provides `BasePlatformAdapter`, the reusable implementation skeleton adapters subclass
-- `MessageRouter` — `handle_message(session_key, text, context, system_prompt, resumable, agent) → AsyncIterator[BridgeEvent]`. The interface adapters send messages through; `Bridge` is the production implementation. Adapters depend on this protocol, not the concrete class, so tests can substitute fakes. `agent` selects a named controller registered with the bridge (`None` = the default one); the platform picks the name, the bridge resolves it — an unknown name is a single error `Completion` (`error_code="unknown_agent"`) before any shared state is touched.
+- `MessageRouter` — `handle_message(session_key, text, context, system_prompt, resumable, agent) → AsyncIterator[BridgeEvent]`. The interface adapters send messages through; `Bridge` is the production implementation. Adapters depend on this protocol, not the concrete class, so tests can substitute fakes. `agent` selects a named controller registered with the bridge (`None` = the default: the configured `default_agent` name when set — resolved *before* the session lookup so sessions stick to the actual profile — otherwise the env-built default controller); the platform picks the name, the bridge resolves it — an unknown name is a single error `Completion` (`error_code="unknown_agent"`) before any shared state is touched.
 
 Defined in `src/agent_bridge/bridge/protocols.py`. New agents/platforms implement these.
 
@@ -61,7 +61,7 @@ Defined in `src/agent_bridge/bridge/protocols.py`. New agents/platforms implemen
 2. Adapter constructs session_key, acquires per-session lock
 3. Adapter pre-processes its native event into a `BridgeRequest` (`text` pre-tagged with sender identity, `system_prompt` platform directives, `agent` the named profile the platform picked — the agent stays platform-agnostic) and calls `BasePlatformAdapter.process()`
 4. process() → Bridge.handle_message(session_key, text, context, system_prompt, resumable, agent)
-   → Bridge resolves `agent` → controller (None = default; unknown name = error Completion, nothing touched)
+   → Bridge resolves `agent` → controller (None = AGENT_BRIDGE_DEFAULT_AGENT's profile if set, else the env-built default; unknown name = error Completion, nothing touched)
    → If `resumable=True`: SessionManager resolves key → (session_id, is_new), persisted on disk
    → If `resumable=False`: bridge mints a fresh ephemeral UUID, SessionManager untouched
    → Semaphore check (reject if capacity full)
@@ -186,6 +186,7 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 ├── ClaudeConfig                                   → ClaudeController (the default agent)
 ├── claude_profiles  dict[str, ClaudeConfig]       → one named ClaudeController per profile
 ├── pi_profiles      dict[str, PiConfig]           → one named PiController per profile (no env-built default; names are one global namespace with claude_profiles)
+├── default_agent    str | None                    → where agent=None routes: a profile name, or None for the env-built Claude controller (validated against the registry at boot)
 ├── SlackConfig     | None                         → SlackAdapter    (None ⇒ not configured)
 ├── HeartbeatConfig | None                         → HeartbeatAdapter (None ⇒ disabled)
 ├── WebhookConfig   | None                         → WebhookAdapter  (None ⇒ disabled; requires http)
@@ -376,6 +377,7 @@ unparseable numbers. See `.env.example` for the full list.
 | `AGENT_BRIDGE_CLAUDE_MODEL` | No | — (CLI default) | Claude (passed to `claude --model`; opaque, unvalidated) |
 | `AGENT_BRIDGE_CLAUDE_CLI_PATH` | No | `claude` | Claude (path to the Claude Code CLI executable) |
 | `AGENT_BRIDGE_PROFILES_PATH` | No | — (disabled) | App (TOML file with named agent profiles + Slack channel→profile map; see `profiles.example.toml`) |
+| `AGENT_BRIDGE_DEFAULT_AGENT` | No | — (env-built claude) | App (profile name that `agent=None` routes to; must exist in the profiles file) |
 | `AGENT_BRIDGE_PI_WORK_DIR` | No | `.` | Pi (base for `[pi.profiles.*]`; pi has no env-built default controller) |
 | `AGENT_BRIDGE_PI_PROVIDER` | No | — (pi's default) | Pi (passed to `pi --provider`) |
 | `AGENT_BRIDGE_PI_MODEL` | No | — (pi's default) | Pi (passed to `pi --model`) |
@@ -394,6 +396,7 @@ unparseable numbers. See `.env.example` for the full list.
 | `AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES` | Yes (if heartbeat enabled) | — | Heartbeat |
 | `AGENT_BRIDGE_HEARTBEAT_PROMPT` | Yes (if heartbeat enabled) | — | Heartbeat |
 | `AGENT_BRIDGE_HEARTBEAT_STATE_PATH` | No | `./heartbeat.json` | Heartbeat |
+| `AGENT_BRIDGE_HEARTBEAT_AGENT` | No | — (bridge default) | Heartbeat (named profile the ticks route to; must exist in the profiles file) |
 | `AGENT_BRIDGE_HTTP_ENABLED` | No | `false` | HTTP server (console + HTTP platforms) |
 | `AGENT_BRIDGE_HTTP_HOST` | No | `127.0.0.1` | HTTP server (loopback by default) |
 | `AGENT_BRIDGE_HTTP_PORT` | No | `8080` | HTTP server |

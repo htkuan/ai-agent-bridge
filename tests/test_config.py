@@ -371,3 +371,68 @@ def test_channel_mapping_to_pi_profile_is_valid(tmp_path: Path):
 def test_profiles_file_unknown_key_under_pi_raises(tmp_path: Path):
     with pytest.raises(ValueError, match=r"Unknown key.*\[pi\]"):
         AppConfig.from_env(_profiles_env(tmp_path, "[pi]\nprofile = 1"))
+
+
+# --- default_agent: where agent=None routes ---
+
+
+def test_default_agent_unset_by_default(tmp_path: Path):
+    assert AppConfig.from_env(_env(tmp_path)).default_agent is None
+
+
+def test_default_agent_from_env(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        "[claude.profiles.backend]",
+        AGENT_BRIDGE_DEFAULT_AGENT="backend",
+    )
+    assert AppConfig.from_env(env).default_agent == "backend"
+
+
+def test_default_agent_may_reference_a_pi_profile(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        "[pi.profiles.fast]",
+        AGENT_BRIDGE_DEFAULT_AGENT="fast",
+        AGENT_BRIDGE_PI_WORK_DIR=str(tmp_path),
+    )
+    assert AppConfig.from_env(env).default_agent == "fast"
+
+
+def test_default_agent_unknown_raises(tmp_path: Path):
+    with pytest.raises(ValueError, match=r"AGENT_BRIDGE_DEFAULT_AGENT.*ghost"):
+        AppConfig.from_env(_env(tmp_path, AGENT_BRIDGE_DEFAULT_AGENT="ghost"))
+
+
+def test_default_agent_unknown_raises_on_construction(tmp_path: Path):
+    with pytest.raises(ValueError, match="AGENT_BRIDGE_DEFAULT_AGENT"):
+        AppConfig(claude=ClaudeConfig(work_dir=tmp_path), default_agent="ghost")
+
+
+# --- heartbeat.agent: validated against the registry at boot ---
+
+
+def test_heartbeat_agent_must_reference_defined_profile(tmp_path: Path):
+    env = _env(
+        tmp_path,
+        AGENT_BRIDGE_HEARTBEAT_ENABLED="true",
+        AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES="5",
+        AGENT_BRIDGE_HEARTBEAT_PROMPT="tick",
+        AGENT_BRIDGE_HEARTBEAT_AGENT="ghost",
+    )
+    with pytest.raises(ValueError, match=r"AGENT_BRIDGE_HEARTBEAT_AGENT.*ghost"):
+        AppConfig.from_env(env)
+
+
+def test_heartbeat_agent_referencing_defined_profile_passes(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        "[claude.profiles.night]",
+        AGENT_BRIDGE_HEARTBEAT_ENABLED="true",
+        AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES="5",
+        AGENT_BRIDGE_HEARTBEAT_PROMPT="tick",
+        AGENT_BRIDGE_HEARTBEAT_AGENT="night",
+    )
+    config = AppConfig.from_env(env)
+    assert config.heartbeat is not None
+    assert config.heartbeat.agent == "night"

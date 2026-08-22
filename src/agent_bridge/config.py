@@ -39,6 +39,10 @@ class AppConfig:
         default_factory=dict[str, ClaudeConfig]
     )
     pi_profiles: dict[str, PiConfig] = field(default_factory=dict[str, PiConfig])
+    # Where ``agent=None`` routes: a profile name, or None for the env-built
+    # Claude controller. Resolved early by the bridge so sessions stick to the
+    # actual profile.
+    default_agent: str | None = None
     bridge: BridgeConfig = field(default_factory=BridgeConfig)
     # None ⇒ that platform is not configured; app.py skips building it.
     slack: SlackConfig | None = None
@@ -97,6 +101,7 @@ class AppConfig:
             claude=claude,
             claude_profiles=claude_profiles,
             pi_profiles=pi_profiles,
+            default_agent=env_str(env, "AGENT_BRIDGE_DEFAULT_AGENT", "") or None,
             bridge=BridgeConfig.from_env(env),
             slack=slack,
             heartbeat=HeartbeatConfig.from_env_optional(env),
@@ -131,8 +136,27 @@ class AppConfig:
                 f"{', '.join(sorted(overlap))}. Profile names are global "
                 "across [claude.profiles] and [pi.profiles]"
             )
+        # Every name a config references must exist in the registry — fail at
+        # boot, not on the first message that routes there.
+        defined = set(self.claude_profiles) | set(self.pi_profiles)
+        if self.default_agent is not None and self.default_agent not in defined:
+            raise ValueError(
+                "AGENT_BRIDGE_DEFAULT_AGENT references unknown profile "
+                f"{self.default_agent!r}. Defined: "
+                f"{', '.join(sorted(defined)) or '(none)'} "
+                "(unset it to use the env-built Claude controller)"
+            )
+        if (
+            self.heartbeat is not None
+            and self.heartbeat.agent is not None
+            and self.heartbeat.agent not in defined
+        ):
+            raise ValueError(
+                "AGENT_BRIDGE_HEARTBEAT_AGENT references unknown profile "
+                f"{self.heartbeat.agent!r}. Defined: "
+                f"{', '.join(sorted(defined)) or '(none)'}"
+            )
         if self.slack is not None:
-            defined = set(self.claude_profiles) | set(self.pi_profiles)
             unknown = set(self.slack.channel_profiles.values()) - defined
             if unknown:
                 raise ValueError(

@@ -3,12 +3,12 @@
 # Point AGENT_BRIDGE_PROFILES_PATH at a copy of this file to give different
 # Slack channels differently-configured controllers. Environment variables
 # keep holding the flat, global config (tokens, the default
-# AGENT_BRIDGE_CLAUDE_* / AGENT_BRIDGE_PI_* settings); this file holds the
-# structured part.
+# AGENT_BRIDGE_CLAUDE_* / AGENT_BRIDGE_PI_* / AGENT_BRIDGE_CODEX_* settings);
+# this file holds the structured part.
 #
-# Only three sections are recognised — [claude.profiles.*], [pi.profiles.*]
-# and [slack.channel_profiles] — anything else fails startup, as does any
-# unknown field inside a profile.
+# Only four sections are recognised — [claude.profiles.*], [pi.profiles.*],
+# [codex.profiles.*] and [slack.channel_profiles] — anything else fails
+# startup, as does any unknown field inside a profile.
 
 # --- Named profiles -------------------------------------------------------
 # Each [<agent>.profiles.<name>] table defines one named controller. Names
@@ -38,6 +38,15 @@ work_dir = "/repos/backend"
 thinking = "low"
 tools = ["read", "grep", "find", "ls"]
 
+# Codex fields: work_dir, sandbox_mode, model, effort, timeout_seconds,
+# cli_path, skip_git_repo_check, session_map_path. Codex's sandbox is its
+# permission model (docs/agents/codex.md).
+
+[codex.profiles.readonly]
+work_dir = "/repos/backend"
+sandbox_mode = "read-only"
+model = "gpt-5.1-codex"
+
 # --- Slack channel routing ------------------------------------------------
 # Channel NAME (not ID) → profile name. Names are matched like
 # AGENT_BRIDGE_SLACK_ALLOW_CHANNELS: '#', whitespace, and case are ignored.
@@ -53,3 +62,4 @@ tools = ["read", "grep", "find", "ls"]
 backend-team = "backend"
 infra-ops = "infra"
 quick-qa = "quick"
+safe-qa = "readonly"

@@ -13,6 +13,8 @@ import pytest
 
 from agent_bridge import app
 from agent_bridge.agents.claude.config import ClaudeConfig
+from agent_bridge.agents.codex.config import CodexConfig
+from agent_bridge.agents.codex.controller import CodexController
 from agent_bridge.agents.pi.config import PiConfig
 from agent_bridge.bridge.config import BridgeConfig, RouterConfig, SessionConfig
 from agent_bridge.bridge.events import Usage
@@ -125,6 +127,28 @@ async def test_run_fails_fast_on_bad_pi_profile_prereqs(tmp_path: Path):
     )
     with pytest.raises(ValueError, match=r"pi\.profiles\.fast"):
         await app.run(config)
+
+
+async def test_run_fails_fast_on_bad_codex_profile_prereqs(tmp_path: Path):
+    config = AppConfig(
+        claude=ClaudeConfig(work_dir=tmp_path),
+        codex_profiles={"safe": CodexConfig(work_dir=tmp_path / "nope")},
+    )
+    with pytest.raises(ValueError, match=r"codex\.profiles\.safe"):
+        await app.run(config)
+
+
+def test_build_named_controllers_includes_codex_profile(tmp_path: Path):
+    config = AppConfig(
+        claude=ClaudeConfig(work_dir=tmp_path),
+        codex_profiles={
+            "safe": CodexConfig(work_dir=tmp_path, skip_git_repo_check=True)
+        },
+    )
+
+    controllers = app._build_named_controllers(config)
+
+    assert isinstance(controllers["safe"], CodexController)
 
 
 # --- run(): startup, signal handling, shutdown ---

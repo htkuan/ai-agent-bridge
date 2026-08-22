@@ -8,6 +8,7 @@ import pytest
 
 from agent_bridge import config as app_config
 from agent_bridge.agents.claude.config import ClaudeConfig
+from agent_bridge.agents.codex.config import CodexConfig
 from agent_bridge.agents.pi.config import PiConfig
 from agent_bridge.bridge.config import BridgeConfig
 from agent_bridge.config import DEFAULT_CLEANUP_INTERVAL_SECONDS, AppConfig
@@ -28,6 +29,9 @@ def test_from_env_defaults(tmp_path: Path):
     config = AppConfig.from_env(_env(tmp_path))
     assert config.bridge == BridgeConfig()
     assert config.claude == ClaudeConfig(work_dir=tmp_path.resolve())
+    assert config.claude_profiles == {}
+    assert config.pi_profiles == {}
+    assert config.codex_profiles == {}
     assert config.slack is None
     assert config.heartbeat is None
     assert config.webhook is None
@@ -373,6 +377,109 @@ def test_profiles_file_unknown_key_under_pi_raises(tmp_path: Path):
         AppConfig.from_env(_profiles_env(tmp_path, "[pi]\nprofile = 1"))
 
 
+# --- [codex.profiles]: the third agent type in the routing namespace ---
+
+
+def test_profiles_path_unset_means_no_codex_profiles(tmp_path: Path):
+    config = AppConfig.from_env(_env(tmp_path))
+    assert config.codex_profiles == {}
+
+
+def test_codex_profiles_inherit_base_built_from_env(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        """
+        [codex.profiles.safe]
+        sandbox_mode = "read-only"
+        """,
+        AGENT_BRIDGE_CODEX_MODEL="gpt-5.1-codex",
+        AGENT_BRIDGE_CODEX_WORK_DIR=str(tmp_path),
+        AGENT_BRIDGE_CODEX_SKIP_GIT_REPO_CHECK="true",
+    )
+    config = AppConfig.from_env(env)
+    safe = config.codex_profiles["safe"]
+    assert safe.sandbox_mode == "read-only"
+    assert safe.model == "gpt-5.1-codex"
+    assert safe.work_dir == tmp_path.resolve()
+    assert safe.skip_git_repo_check is True
+
+
+def test_claude_pi_and_codex_profiles_coexist(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        """
+        [claude.profiles.backend]
+
+        [pi.profiles.fast]
+
+        [codex.profiles.safe]
+        """,
+        AGENT_BRIDGE_PI_WORK_DIR=str(tmp_path),
+        AGENT_BRIDGE_CODEX_WORK_DIR=str(tmp_path),
+    )
+    config = AppConfig.from_env(env)
+    assert set(config.claude_profiles) == {"backend"}
+    assert set(config.pi_profiles) == {"fast"}
+    assert set(config.codex_profiles) == {"safe"}
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        """
+        [claude.profiles.bot]
+
+        [codex.profiles.bot]
+        """,
+        """
+        [pi.profiles.bot]
+
+        [codex.profiles.bot]
+        """,
+    ],
+)
+def test_profile_name_collision_with_codex_raises(tmp_path: Path, content: str):
+    env = _profiles_env(
+        tmp_path,
+        content,
+        AGENT_BRIDGE_PI_WORK_DIR=str(tmp_path),
+        AGENT_BRIDGE_CODEX_WORK_DIR=str(tmp_path),
+    )
+    with pytest.raises(ValueError, match=r"more than one agent.*bot"):
+        AppConfig.from_env(env)
+
+
+def test_profile_name_collision_with_codex_raises_on_construction(tmp_path: Path):
+    with pytest.raises(ValueError, match="more than one agent"):
+        AppConfig(
+            claude=ClaudeConfig(work_dir=tmp_path),
+            pi_profiles={"bot": PiConfig(work_dir=tmp_path)},
+            codex_profiles={"bot": CodexConfig(work_dir=tmp_path)},
+        )
+
+
+def test_channel_mapping_to_codex_profile_is_valid(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        """
+        [codex.profiles.safe]
+
+        [slack.channel_profiles]
+        read-only = "safe"
+        """,
+        AGENT_BRIDGE_CODEX_WORK_DIR=str(tmp_path),
+        **_SLACK_TOKENS,
+    )
+    config = AppConfig.from_env(env)
+    assert config.slack is not None
+    assert config.slack.profile_for_channel("read-only") == "safe"
+
+
+def test_profiles_file_unknown_key_under_codex_raises(tmp_path: Path):
+    with pytest.raises(ValueError, match=r"Unknown key.*\[codex\]"):
+        AppConfig.from_env(_profiles_env(tmp_path, "[codex]\nprofile = 1"))
+
+
 # --- default_agent: where agent=None routes ---
 
 
@@ -397,6 +504,16 @@ def test_default_agent_may_reference_a_pi_profile(tmp_path: Path):
         AGENT_BRIDGE_PI_WORK_DIR=str(tmp_path),
     )
     assert AppConfig.from_env(env).default_agent == "fast"
+
+
+def test_default_agent_may_reference_a_codex_profile(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        "[codex.profiles.safe]",
+        AGENT_BRIDGE_DEFAULT_AGENT="safe",
+        AGENT_BRIDGE_CODEX_WORK_DIR=str(tmp_path),
+    )
+    assert AppConfig.from_env(env).default_agent == "safe"
 
 
 def test_default_agent_unknown_raises(tmp_path: Path):
@@ -436,3 +553,18 @@ def test_heartbeat_agent_referencing_defined_profile_passes(tmp_path: Path):
     config = AppConfig.from_env(env)
     assert config.heartbeat is not None
     assert config.heartbeat.agent == "night"
+
+
+def test_heartbeat_agent_may_reference_a_codex_profile(tmp_path: Path):
+    env = _profiles_env(
+        tmp_path,
+        "[codex.profiles.safe]",
+        AGENT_BRIDGE_HEARTBEAT_ENABLED="true",
+        AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES="5",
+        AGENT_BRIDGE_HEARTBEAT_PROMPT="tick",
+        AGENT_BRIDGE_HEARTBEAT_AGENT="safe",
+        AGENT_BRIDGE_CODEX_WORK_DIR=str(tmp_path),
+    )
+    config = AppConfig.from_env(env)
+    assert config.heartbeat is not None
+    assert config.heartbeat.agent == "safe"

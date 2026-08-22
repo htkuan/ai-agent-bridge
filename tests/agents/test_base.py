@@ -89,7 +89,7 @@ class _StdinFeedingController(CliAgentController[RunState]):
     def parse_line(self, line: str, state: RunState) -> list[BridgeEvent]:
         return []
 
-    def stdin_payload(self, prompt: str) -> bytes | None:
+    def stdin_payload(self, prompt: str, system_prompt: str | None) -> bytes | None:
         # Far beyond the pipe buffer, so the write can't finish before the
         # process exits without reading.
         return b"x" * (2 * 1024 * 1024)
@@ -134,6 +134,23 @@ async def test_unread_stdin_payload_does_not_break_the_run(tmp_path: Path):
 async def test_default_cleanup_session_is_a_noop(tmp_path: Path):
     controller = _EchoController(tmp_path, [])
     await controller.cleanup_session("never-seen")
+
+
+async def test_run_state_gets_session_id(tmp_path: Path):
+    controller = _EchoController(tmp_path, ["hello"])
+    states: list[str] = []
+
+    original_parse_line = controller.parse_line
+
+    def capture_session_id(line: str, state: _EchoState) -> list[BridgeEvent]:
+        states.append(state.session_id)
+        return original_parse_line(line, state)
+
+    controller.parse_line = capture_session_id  # pyright: ignore[reportAttributeAccessIssue]
+
+    [e async for e in controller.run("bridge-session", "hi", is_new=True)]
+
+    assert states == ["bridge-session"]
 
 
 def test_required_hooks_raise_not_implemented(tmp_path: Path):

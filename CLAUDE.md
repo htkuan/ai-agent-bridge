@@ -114,14 +114,19 @@ src/agent_bridge/
 │   └── config.py        # SessionConfig + RouterConfig + DedupeConfig, aggregated by BridgeConfig
 ├── agents/
 │   ├── base.py          # CliAgentController — shared subprocess engine (spawn → stream-parse → teardown) + RunState
+│   ├── handles.py       # Persistent bridge session id → agent-native handle store
 │   ├── claude/
 │   │   ├── config.py    # ClaudeConfig (work_dir, permission_mode, timeout, effort, cli_path)
 │   │   ├── controller.py # CliAgentController subclass: command builder + stream-json line parser
 │   │   └── events.py    # Claude stream-json parser → BridgeEvent converter
-│   └── pi/
-│       ├── config.py    # PiConfig (work_dir, provider, model, thinking, tools allow/denylist)
-│       ├── controller.py # CliAgentController subclass: prompt via stdin, --session-id create-or-resume
-│       └── events.py    # pi --mode json parser + PiRunState fold (Completion synthesized at agent_end)
+│   ├── pi/
+│   │   ├── config.py    # PiConfig (work_dir, provider, model, thinking, tools allow/denylist)
+│   │   ├── controller.py # CliAgentController subclass: prompt via stdin, --session-id create-or-resume
+│   │   └── events.py    # pi --mode json parser + PiRunState fold (Completion synthesized at agent_end)
+│   └── codex/
+│       ├── config.py    # CodexConfig (work_dir, sandbox, model, effort, session map path)
+│       ├── controller.py # CliAgentController subclass: prompt via stdin, Codex thread-id resume mapping
+│       └── events.py    # codex exec --json parser + CodexRunState fold (Completion at turn.completed/failed)
 ├── server/              # Shared HTTP infra (FastAPI + uvicorn) — hosts routers, knows no layer
 │   ├── config.py        # HttpConfig (host, port)
 │   ├── http_server.py   # HttpServer: FastAPI app + embedded uvicorn lifecycle + include_router()
@@ -185,7 +190,8 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 ├── BridgeConfig     .session / .router / .dedupe  → SessionManager / Bridge / PromptDedupeCache
 ├── ClaudeConfig                                   → ClaudeController (the default agent)
 ├── claude_profiles  dict[str, ClaudeConfig]       → one named ClaudeController per profile
-├── pi_profiles      dict[str, PiConfig]           → one named PiController per profile (no env-built default; names are one global namespace with claude_profiles)
+├── pi_profiles      dict[str, PiConfig]           → one named PiController per profile (no env-built default; names share the same global namespace)
+├── codex_profiles   dict[str, CodexConfig]        → one named CodexController per profile (no env-built default; names share the same global namespace)
 ├── default_agent    str | None                    → where agent=None routes: a profile name, or None for the env-built Claude controller (validated against the registry at boot)
 ├── SlackConfig     | None                         → SlackAdapter    (None ⇒ not configured)
 ├── HeartbeatConfig | None                         → HeartbeatAdapter (None ⇒ disabled)
@@ -212,13 +218,15 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
   memory stay cheap and side-effect free.
 - **The profiles file**: `AGENT_BRIDGE_PROFILES_PATH` points at a TOML file holding the
   *structured* part of the config — named agent profiles (`[claude.profiles.<name>]`,
-  `[pi.profiles.<name>]`; unset fields inherit that agent's env-built base) and the
-  Slack channel→profile map (`[slack.channel_profiles]`). Profile names are one global
-  routing namespace across agent types — a name defined by two agents fails startup,
-  and channel mappings may reference any of them. Env stays the home of flat/global
-  settings and secrets. Read once by `AppConfig.from_env` (same rank as the `.env`
-  overlay); unknown sections/keys/fields fail fast. See `profiles.example.toml`,
-  `docs/agents/claude.md#named-profiles` and `docs/agents/pi.md`.
+  `[pi.profiles.<name>]`, `[codex.profiles.<name>]`; unset fields inherit that
+  agent's env-built base) and the Slack channel→profile map
+  (`[slack.channel_profiles]`). Profile names are one global routing namespace across
+  agent types — a name defined by two agents fails startup, and channel mappings may
+  reference any of them. Env stays the home of flat/global settings and secrets. Read
+  once by `AppConfig.from_env` (same rank as the `.env` overlay); unknown
+  sections/keys/fields fail fast. See `profiles.example.toml`,
+  `docs/agents/claude.md#named-profiles`, `docs/agents/pi.md` and
+  `docs/agents/codex.md`.
 - **No default for a dangerous field**: `ClaudeConfig.work_dir` (and therefore
   `AppConfig.claude`) is required. A config that must be set is better than one that
   silently falls back to the process's cwd.
@@ -386,6 +394,14 @@ unparseable numbers. See `.env.example` for the full list.
 | `AGENT_BRIDGE_PI_CLI_PATH` | No | `pi` | Pi (path to the pi CLI executable) |
 | `AGENT_BRIDGE_PI_TOOLS` | No | — (all tools) | Pi (comma-separated tool allowlist — pi's permission model; see `docs/agents/pi.md`) |
 | `AGENT_BRIDGE_PI_EXCLUDE_TOOLS` | No | — | Pi (comma-separated tool denylist) |
+| `AGENT_BRIDGE_CODEX_WORK_DIR` | No | `.` | Codex (base for `[codex.profiles.*]`; codex has no env-built default controller) |
+| `AGENT_BRIDGE_CODEX_SANDBOX_MODE` | No | `workspace-write` | Codex (one of `read-only`, `workspace-write`, `danger-full-access`) |
+| `AGENT_BRIDGE_CODEX_MODEL` | No | — (codex's default) | Codex (passed to `codex -m`) |
+| `AGENT_BRIDGE_CODEX_EFFORT` | No | — (codex's default) | Codex (passed as `-c model_reasoning_effort="..."`) |
+| `AGENT_BRIDGE_CODEX_TIMEOUT_SECONDS` | No | `600` | Codex |
+| `AGENT_BRIDGE_CODEX_CLI_PATH` | No | `codex` | Codex (path to the Codex CLI executable) |
+| `AGENT_BRIDGE_CODEX_SKIP_GIT_REPO_CHECK` | No | `false` | Codex (passes `--skip-git-repo-check` and skips the startup `.git` prerequisite) |
+| `AGENT_BRIDGE_CODEX_SESSION_MAP_PATH` | No | `<work_dir>/.agent-bridge/codex-sessions.json` | Codex (bridge session id → Codex thread id map) |
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Bridge |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Bridge |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Bridge |

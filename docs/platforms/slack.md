@@ -89,11 +89,12 @@ AGENT_BRIDGE_SLACK_ALLOW_CHANNELS=ops-alerts,team-eng,incidents
 
 The gate runs first in `_process_message`, resolving the channel name via the cached `conversations:info` lookup, so it costs at most one API call per distinct channel. That lookup needs `channels:read` (see [Bot Token Scopes](#3-bot-token-scopes)) — without it the name resolution fails and **every** channel is rejected, allow-listed or not. See [Troubleshooting](#troubleshooting).
 
-### Optional: Per-Channel Claude Profiles
+### Optional: Per-Channel Agent Profiles
 
-Route different channels to differently-configured Claude controllers — a different
-`work_dir`, permission mode, model, etc. per channel. Point `AGENT_BRIDGE_PROFILES_PATH`
-at a TOML file (template: `profiles.example.toml`):
+Route different channels to differently-configured agent controllers — a
+different `work_dir`, permission mode, sandbox, model, etc. per channel. Point
+`AGENT_BRIDGE_PROFILES_PATH` at a TOML file (template:
+`profiles.example.toml`):
 
 ```toml
 [claude.profiles.backend]
@@ -104,15 +105,21 @@ work_dir = "/repos/infra"
 permission_mode = "plan"
 model = "claude-opus-5"
 
+[codex.profiles.readonly]
+work_dir = "/repos/backend"
+sandbox_mode = "read-only"
+
 [slack.channel_profiles]
 backend-team = "backend"
 infra-ops = "infra"
+safe-qa = "readonly"
 ```
 
 - Keys under `[slack.channel_profiles]` are **channel names**, normalized like the
   allow-list (`#`, whitespace, and case ignored). Values are profile names defined under
-  `[claude.profiles.*]` — see [the Claude agent docs](../agents/claude.md#named-profiles)
-  for what a profile can set.
+  `[claude.profiles.*]`, `[pi.profiles.*]`, or `[codex.profiles.*]` — see the
+  [Claude](../agents/claude.md#named-profiles), [Pi](../agents/pi.md), and
+  [Codex](../agents/codex.md) agent docs for what each profile can set.
 - **Unmapped channels (and DMs, which have no name) use the default env-built controller.**
 - Startup fails fast on dead config: a mapping to an undefined profile, or — when
   `AGENT_BRIDGE_SLACK_ALLOW_CHANNELS` is set — a mapped channel missing from the

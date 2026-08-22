@@ -9,11 +9,13 @@ import pytest
 
 from agent_bridge.bridge.config import SessionConfig
 from agent_bridge.bridge.session import SessionManager
-from tests.fakes import claude_cli, pi_cli
+from tests.fakes import claude_cli, codex_cli, pi_cli
 from tests.fakes.claude_cli import FakeClaudeCLI, Step
+from tests.fakes.codex_cli import FakeCodexCLI
 from tests.fakes.pi_cli import FakePiCLI
 
 type FakeClaudeFactory = Callable[..., FakeClaudeCLI]
+type FakeCodexFactory = Callable[..., FakeCodexCLI]
 type FakePiFactory = Callable[..., FakePiCLI]
 
 _E2E_DIR = Path(__file__).parent / "e2e"
@@ -127,6 +129,27 @@ def fake_pi(tmp_path: Path) -> FakePiFactory:
     ) -> FakePiCLI:
         return pi_cli.install(
             tmp_path / f"fake-pi-{next(counter)}",
+            steps,
+            work_dir=work_dir,
+            timeout_seconds=timeout_seconds,
+        )
+
+    return factory
+
+
+@pytest.fixture
+def fake_codex(tmp_path: Path) -> FakeCodexFactory:
+    """Factory: materialise a scripted codex CLI and get its CodexConfig."""
+    counter = itertools.count()
+
+    def factory(
+        steps: list[Step],
+        *,
+        work_dir: Path | None = None,
+        timeout_seconds: float = 600.0,
+    ) -> FakeCodexCLI:
+        return codex_cli.install(
+            tmp_path / f"fake-codex-{next(counter)}",
             steps,
             work_dir=work_dir,
             timeout_seconds=timeout_seconds,

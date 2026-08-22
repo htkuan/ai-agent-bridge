@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from agent_bridge.agents.claude.controller import ClaudeController
+from agent_bridge.agents.codex.controller import CodexController
 from agent_bridge.agents.pi.controller import PiController
 from agent_bridge.bridge.config import DedupeConfig
 from agent_bridge.bridge.dedupe import PromptDedupeCache
@@ -154,6 +155,11 @@ def _check_agent_prerequisites(config: AppConfig) -> None:
             pi_profile.check_prerequisites()
         except ValueError as e:
             raise ValueError(f"pi.profiles.{name}: {e}") from e
+    for name, codex_profile in config.codex_profiles.items():
+        try:
+            codex_profile.check_prerequisites()
+        except ValueError as e:
+            raise ValueError(f"codex.profiles.{name}: {e}") from e
 
 
 def _log_startup_config(config: AppConfig) -> None:
@@ -176,6 +182,14 @@ def _log_startup_config(config: AppConfig) -> None:
             pi_profile.model or "(default)",
             ",".join(pi_profile.tools) or "(all)",
         )
+    for name, codex_profile in config.codex_profiles.items():
+        logger.info(
+            "Codex profile %s: work_dir=%s, sandbox_mode=%s, model=%s",
+            name,
+            codex_profile.work_dir,
+            codex_profile.sandbox_mode,
+            codex_profile.model or "(default)",
+        )
     logger.info("Default agent: %s", config.default_agent or "(env-built claude)")
     logger.info("Session TTL: %s hours", config.bridge.session.ttl_hours)
     logger.info("Claude timeout: %s seconds", config.claude.timeout_seconds)
@@ -193,6 +207,12 @@ def _build_named_controllers(config: AppConfig) -> dict[str, AgentController]:
     }
     named.update(
         {name: PiController(profile) for name, profile in config.pi_profiles.items()}
+    )
+    named.update(
+        {
+            name: CodexController(profile)
+            for name, profile in config.codex_profiles.items()
+        }
     )
     return named
 

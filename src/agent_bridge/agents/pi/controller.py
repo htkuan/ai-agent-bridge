@@ -61,7 +61,7 @@ class PiController(CliAgentController[PiRunState]):
         # argument, where user text starting with "-" would parse as flags.
         return cmd
 
-    def stdin_payload(self, prompt: str) -> bytes | None:
+    def stdin_payload(self, prompt: str, system_prompt: str | None) -> bytes | None:
         # Print mode reads piped stdin as the message, keeping user text out
         # of argv entirely.
         return prompt.encode()

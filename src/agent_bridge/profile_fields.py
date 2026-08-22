@@ -44,6 +44,14 @@ def field_path(
     return Path(field_str(where, table, key, "")).resolve()
 
 
+def field_opt_path(
+    where: str, table: Mapping[str, object], key: str, default: Path | None
+) -> Path | None:
+    if key not in table:
+        return default
+    return Path(field_str(where, table, key, "")).resolve()
+
+
 def field_number(
     where: str, table: Mapping[str, object], key: str, default: float
 ) -> float:

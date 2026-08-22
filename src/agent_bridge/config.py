@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import cast
 
 from agent_bridge.agents.claude.config import ClaudeConfig
+from agent_bridge.agents.codex.config import CodexConfig
 from agent_bridge.agents.pi.config import PiConfig
 from agent_bridge.bridge.config import BridgeConfig
 from agent_bridge.env import PROCESS_ENV, Env, env_str, load_env_file
@@ -39,6 +40,9 @@ class AppConfig:
         default_factory=dict[str, ClaudeConfig]
     )
     pi_profiles: dict[str, PiConfig] = field(default_factory=dict[str, PiConfig])
+    codex_profiles: dict[str, CodexConfig] = field(
+        default_factory=dict[str, CodexConfig]
+    )
     # Where ``agent=None`` routes: a profile name, or None for the env-built
     # Claude controller. Resolved early by the bridge so sessions stick to the
     # actual profile.
@@ -64,7 +68,7 @@ class AppConfig:
         that gets a ``.env`` overlay, and it gets it exactly once, here.
 
         ``AGENT_BRIDGE_PROFILES_PATH``, when set, points at a TOML file that
-        holds the structured part of the config: named Claude profiles and
+        holds the structured part of the config: named agent profiles and
         the Slack channel → profile mapping. Reading it is config parsing
         (same rank as the ``.env`` overlay), not a prerequisite probe.
         """
@@ -75,10 +79,11 @@ class AppConfig:
         slack = SlackConfig.from_env_optional(env)
         claude_profiles: dict[str, ClaudeConfig] = {}
         pi_profiles: dict[str, PiConfig] = {}
+        codex_profiles: dict[str, CodexConfig] = {}
         profiles_path = env_str(env, "AGENT_BRIDGE_PROFILES_PATH", "")
         if profiles_path:
-            claude_section, pi_section, slack_section = _load_profiles_file(
-                Path(profiles_path)
+            claude_section, pi_section, codex_section, slack_section = (
+                _load_profiles_file(Path(profiles_path))
             )
             claude_profiles = ClaudeConfig.profiles_from_data(claude_section, claude)
             # The env-built PiConfig is the inheritance base only — pi has no
@@ -86,6 +91,9 @@ class AppConfig:
             # to it (there is no AppConfig.pi field).
             pi_profiles = PiConfig.profiles_from_data(
                 pi_section, PiConfig.from_env(env)
+            )
+            codex_profiles = CodexConfig.profiles_from_data(
+                codex_section, CodexConfig.from_env(env)
             )
             channel_profiles = SlackConfig.channel_profiles_from_data(slack_section)
             if channel_profiles:
@@ -101,6 +109,7 @@ class AppConfig:
             claude=claude,
             claude_profiles=claude_profiles,
             pi_profiles=pi_profiles,
+            codex_profiles=codex_profiles,
             default_agent=env_str(env, "AGENT_BRIDGE_DEFAULT_AGENT", "") or None,
             bridge=BridgeConfig.from_env(env),
             slack=slack,
@@ -129,16 +138,20 @@ class AppConfig:
             )
         # Profile names form one routing namespace — the bridge resolves a
         # bare name with no notion of which agent type owns it.
-        overlap = set(self.claude_profiles) & set(self.pi_profiles)
+        overlap = _duplicate_profile_names(
+            self.claude_profiles, self.pi_profiles, self.codex_profiles
+        )
         if overlap:
             raise ValueError(
                 "Profile name(s) defined by more than one agent: "
                 f"{', '.join(sorted(overlap))}. Profile names are global "
-                "across [claude.profiles] and [pi.profiles]"
+                "across [claude.profiles], [pi.profiles] and [codex.profiles]"
             )
         # Every name a config references must exist in the registry — fail at
         # boot, not on the first message that routes there.
-        defined = set(self.claude_profiles) | set(self.pi_profiles)
+        defined = (
+            set(self.claude_profiles) | set(self.pi_profiles) | set(self.codex_profiles)
+        )
         if self.default_agent is not None and self.default_agent not in defined:
             raise ValueError(
                 "AGENT_BRIDGE_DEFAULT_AGENT references unknown profile "
@@ -168,12 +181,17 @@ class AppConfig:
 
 def _load_profiles_file(
     path: Path,
-) -> tuple[Mapping[str, object], Mapping[str, object], Mapping[str, object]]:
+) -> tuple[
+    Mapping[str, object],
+    Mapping[str, object],
+    Mapping[str, object],
+    Mapping[str, object],
+]:
     """Read the profiles file → the raw ``[claude.profiles]``,
-    ``[pi.profiles]`` and ``[slack.channel_profiles]`` sections (each ``{}``
-    when absent). Shape errors — unparseable TOML, unknown sections/keys —
-    fail fast here; each section's semantics are parsed by its own layer's
-    config class.
+    ``[pi.profiles]``, ``[codex.profiles]`` and
+    ``[slack.channel_profiles]`` sections (each ``{}`` when absent). Shape
+    errors — unparseable TOML, unknown sections/keys — fail fast here; each
+    section's semantics are parsed by its own layer's config class.
     """
     if not path.is_file():
         raise ValueError(
@@ -183,17 +201,30 @@ def _load_profiles_file(
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as e:
         raise ValueError(f"Invalid TOML in {path}: {e}") from e
-    unknown = set(data) - {"claude", "pi", "slack"}
+    unknown = set(data) - {"claude", "pi", "codex", "slack"}
     if unknown:
         raise ValueError(
             f"Unknown section(s) in {path}: {', '.join(sorted(unknown))}. "
-            "Valid sections: claude, pi, slack"
+            "Valid sections: claude, pi, codex, slack"
         )
     return (
         _file_section(data, "claude", "profiles", path),
         _file_section(data, "pi", "profiles", path),
+        _file_section(data, "codex", "profiles", path),
         _file_section(data, "slack", "channel_profiles", path),
     )
+
+
+def _duplicate_profile_names(
+    *profile_maps: Mapping[str, object],
+) -> set[str]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for profiles in profile_maps:
+        names = set(profiles)
+        duplicates |= seen & names
+        seen |= names
+    return duplicates
 
 
 def _file_section(

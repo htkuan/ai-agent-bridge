@@ -12,23 +12,25 @@ from collections.abc import Callable
 import pytest
 
 from agent_bridge.agents.claude.controller import ClaudeController
+from agent_bridge.agents.codex.controller import CodexController
 from agent_bridge.agents.pi.controller import PiController
 from agent_bridge.bridge.events import Completion, TextDelta
 from agent_bridge.bridge.protocols import AgentController
-from tests.conftest import FakeClaudeFactory, FakePiFactory
-from tests.fakes import FakeAgentController, claude_cli, pi_cli
+from tests.conftest import FakeClaudeFactory, FakeCodexFactory, FakePiFactory
+from tests.fakes import FakeAgentController, claude_cli, codex_cli, pi_cli
 
 type ControllerFactory = Callable[..., AgentController]
 
-# The "claude"/"pi" parametrizations drive a real CLI subprocess.
+# The "claude"/"pi"/"codex" parametrizations drive a real CLI subprocess.
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture(params=["claude", "pi", "fake"])
+@pytest.fixture(params=["claude", "pi", "codex", "fake"])
 def make_controller(
     request: pytest.FixtureRequest,
     fake_claude: FakeClaudeFactory,
     fake_pi: FakePiFactory,
+    fake_codex: FakeCodexFactory,
 ) -> ControllerFactory:
     def make(*, text: str = "hello", error: bool = False) -> AgentController:
         if request.param == "claude":
@@ -47,6 +49,13 @@ def make_controller(
                 else pi_cli.reply_steps(text)
             )
             return PiController(fake_pi(steps).config)
+        if request.param == "codex":
+            steps = (
+                [codex_cli.thread_started(), codex_cli.turn_failed("boom")]
+                if error
+                else codex_cli.reply_steps(text)
+            )
+            return CodexController(fake_codex(steps).config)
         if error:
             return FakeAgentController([[Completion(text="boom", is_error=True)]])
         return FakeAgentController(

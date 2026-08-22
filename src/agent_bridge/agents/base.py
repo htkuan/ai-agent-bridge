@@ -24,6 +24,11 @@ class RunState:
     """
 
     terminal: bool = False
+    # Stamped by the engine right after ``new_run_state()``, so a parser/fold
+    # can associate stream data (e.g. an agent-minted thread id) with the
+    # bridge session — instance state on the controller would race across
+    # concurrent runs.
+    session_id: str = ""
 
 
 class CliAgentController[RunStateT: RunState]:
@@ -66,12 +71,17 @@ class CliAgentController[RunStateT: RunState]:
 
     # --- hooks with working defaults ---
 
-    def stdin_payload(self, prompt: str) -> bytes | None:
+    def stdin_payload(
+        self, prompt: str, system_prompt: str | None = None
+    ) -> bytes | None:
         """What to write to the CLI's stdin (None ⇒ an immediate EOF).
 
         Agents whose CLI takes the prompt as a positional argument return it
         here and leave it out of ``build_command`` — user-controlled text
         never reaches argv, where a leading ``-`` would parse as a flag.
+        ``system_prompt`` is offered for CLIs without a system-prompt flag,
+        which must fold it into the payload; agents with a native flag
+        ignore it here.
         """
         return None
 
@@ -113,7 +123,7 @@ class CliAgentController[RunStateT: RunState]:
             "Running %s: %s (cwd=%s, timeout=%ss)", self.agent_name, cmd, cwd, timeout
         )
 
-        payload = self.stdin_payload(prompt)
+        payload = self.stdin_payload(prompt, system_prompt)
         process = await asyncio.create_subprocess_exec(
             *cmd,
             # A pipe only when the agent feeds the prompt through stdin;
@@ -138,6 +148,7 @@ class CliAgentController[RunStateT: RunState]:
         stderr_task = asyncio.create_task(self._drain_stderr(process))
 
         state = self.new_run_state()
+        state.session_id = session_id
         timed_out = False
         result_seen = False
         try:

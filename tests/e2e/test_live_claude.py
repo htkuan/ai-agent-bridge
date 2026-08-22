@@ -31,12 +31,12 @@ def _streamed_text(events: list[BridgeEvent]) -> str:
 
 
 async def test_live_controller_streams_a_real_completion(
-    live_controller: ClaudeController,
+    live_claude_controller: ClaudeController,
 ):
     """The stream-json contract, checked against the CLI that emits it."""
     events = [
         e
-        async for e in live_controller.run(
+        async for e in live_claude_controller.run(
             str(uuid.uuid4()),
             "Reply with exactly the word PONG and nothing else.",
             is_new=True,

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import itertools
-import shutil
 from collections.abc import Callable
 from pathlib import Path
 
@@ -21,23 +20,29 @@ _LAYER_MARKERS = ("unit", "integration", "e2e")
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    """Flags for the ``live`` scenarios (tests/e2e/test_live_claude.py).
+    """Flags for the ``live`` scenarios (tests/e2e/test_live_*.py).
 
-    They spawn the real claude CLI, so they need a switch — a flag rather than
+    They spawn the real agent CLIs, so they need a switch — a flag rather than
     an env var, which keeps the rule that no test reads the environment.
     """
-    group = parser.getgroup("live", "live claude e2e")
+    group = parser.getgroup("live", "live agent e2e")
     group.addoption(
         "--live",
         action="store_true",
         default=False,
-        help="run the `live` scenarios: spawns the real claude CLI, spends tokens",
+        help="run the `live` scenarios: spawns the real agent CLIs, spends tokens",
     )
     group.addoption(
         "--live-cli",
         default="claude",
         metavar="PATH",
         help="claude CLI --live spawns (default: `claude`, resolved on PATH)",
+    )
+    group.addoption(
+        "--live-pi-cli",
+        default="pi",
+        metavar="PATH",
+        help="pi CLI --live spawns (default: `pi`, resolved on PATH)",
     )
     group.addoption(
         "--live-timeout",
@@ -51,14 +56,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 def _live_skip(config: pytest.Config) -> pytest.MarkDecorator | None:
     """Why ``live`` tests can't run this session — None when they can.
 
-    A missing CLI skips rather than fails: `pytest --live` runs the whole
-    suite, and the rest of it is still worth reporting on.
+    Only the flag is gated here: each agent's CLI presence is probed by its
+    ``live_*_config`` fixture (tests/e2e/conftest.py), so a missing claude
+    CLI skips only the claude scenarios, not pi's — and vice versa.
     """
     if not config.getoption("live"):
-        return pytest.mark.skip(reason="needs --live (spawns the real claude CLI)")
-    cli: str = config.getoption("live_cli")
-    if shutil.which(cli) is None:
-        return pytest.mark.skip(reason=f"--live-cli {cli!r} not found on PATH")
+        return pytest.mark.skip(reason="needs --live (spawns a real agent CLI)")
     return None
 
 

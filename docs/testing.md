@@ -50,9 +50,10 @@ tests/
 ├── platforms/slack/         # adapter behaviour, one concern per file
 ├── platforms/heartbeat/
 └── e2e/                     # full-stack scenarios (real components + fake CLI)
-    ├── stack.py             # the rig: Slack adapter → Bridge → controller
-    ├── conftest.py          # live_* fixtures: same rig, real claude CLI
-    └── test_live_claude.py  # the live scenarios (opt-in, --live)
+    ├── stack.py             # the rigs: Slack/webhook adapter → Bridge → controller
+    ├── conftest.py          # live_* fixtures: same rigs, real claude + pi CLIs
+    ├── test_live_claude.py  # live Slack/controller scenarios (opt-in, --live)
+    └── test_live_webhook.py # live webhook scenarios, claude + pi (opt-in, --live)
 ```
 
 ## The seams and their doubles
@@ -112,13 +113,14 @@ results, non-zero exits, malformed JSON lines, mid-stream cuts (`exit` before
 step schema is documented in the module docstring — keep the builders in
 sync with what `agents/claude/events.py` parses.
 
-## The live e2e (real claude CLI)
+## The live e2e (real agent CLIs)
 
-The scripted CLI can only prove we handle the stream-json shape *we wrote
-down*. `tests/e2e/test_live_claude.py` spawns the real Claude Code CLI, so
-the argv we build, the stream we parse and the session ids we resume are
-checked against the thing itself. It costs money and is not deterministic,
-so it is opt-in and excluded from CI:
+The scripted CLIs can only prove we handle the stream shapes *we wrote
+down*. `tests/e2e/test_live_claude.py` and `tests/e2e/test_live_webhook.py`
+spawn the real agent CLIs (Claude Code and pi), so the argv we build, the
+streams we parse and the session ids we resume are checked against the thing
+itself. It costs money and is not deterministic, so it is opt-in and
+excluded from CI:
 
 ```bash
 uv run pytest -m live --live --no-cov -v
@@ -126,12 +128,15 @@ uv run pytest -m live --live --no-cov -v
 
 `--live` switches the scenarios on, `-m live` narrows the run to just them
 (`pytest --live` alone runs them alongside everything else). Requirements:
-`claude` on PATH and authenticated (`claude login` or `ANTHROPIC_API_KEY`).
+`claude` on PATH and authenticated (`claude login` or `ANTHROPIC_API_KEY`)
+for the claude scenarios; `pi` on PATH with its provider authenticated
+(`pi auth`) for the pi ones.
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--live` | off | run the `live` scenarios |
-| `--live-cli PATH` | `claude` | which binary to spawn |
+| `--live-cli PATH` | `claude` | which claude binary to spawn |
+| `--live-pi-cli PATH` | `pi` | which pi binary to spawn |
 | `--live-timeout SECONDS` | `300` | per-turn budget |
 
 **A flag, not an env var.** The switch has to come from outside the test —
@@ -141,23 +146,41 @@ spending tokens. The flags are declared in `tests/conftest.py`
 (`pytest_addoption`) and the gate lives in one place: the same
 `pytest_collection_modifyitems` that applies layer markers skips anything
 marked `live` unless `--live` is set, with the reason spelled out (`-rs`
-prints it). A missing `--live-cli` binary skips too, rather than failing,
-because `pytest --live` runs the whole suite and the rest is still worth
-reporting on. CI's e2e job runs `-m "e2e and not live"`, so the gate is
-belt-and-braces.
+prints it). A missing CLI binary skips too, rather than failing — probed by
+that agent's `live_*_config` fixture, so a missing `claude` doesn't take
+down the pi scenarios or vice versa — because `pytest --live` runs the whole
+suite and the rest is still worth reporting on. CI's e2e job runs
+`-m "e2e and not live"`, so the gate is belt-and-braces.
 
-The flags feed the `live_claude_config` / `live_controller` / `live_stack`
-fixtures in `tests/e2e/conftest.py`. The config pins `effort=low` (cheap:
-these assert plumbing, not reasoning) and a throwaway `tmp_path` work dir,
-so an agent running with `acceptEdits` can never touch the repo.
+The flags feed the `live_claude_*` / `live_pi_*` / `live_stack` /
+`live_webhook_stack` fixtures in `tests/e2e/conftest.py`. Both agents are
+sandboxed in throwaway `tmp_path` work dirs, so an agent running with
+`acceptEdits` (claude) or unrestricted tools (pi) can never touch the repo;
+the claude config pins `effort=low` (cheap: these assert plumbing, not
+reasoning) and the pi config leaves provider/model to pi's own settings.
 
-Three scenarios, one per thing the fake cannot prove:
+`test_live_claude.py` — the Slack rig and the bare controller, one scenario
+per thing the fake cannot prove:
 
 | Scenario | Pins |
 |---|---|
 | `..._controller_streams_a_real_completion` | the real stream-json shape parses, and `result` carries the usage/cost fields the Slack footer reads |
 | `..._thread_resumes_the_same_claude_session` | `--session-id` then `--resume` really reattaches — turn 2 recalls turn 1's code word |
 | `..._tool_use_reaches_slack` | a real tool call runs in the sandbox and renders as a status update mid-stream |
+
+`test_live_webhook.py` — the webhook rig (`WebhookStack`: in-process ASGI
+POST in, `MockTransport`-captured callback out, everything between real).
+The webhook adapter always routes to the bridge's default controller, so the
+shared scenarios are parametrized to run once per agent:
+
+| Scenario | Agents | Pins |
+|---|---|---|
+| `..._delivers_a_real_completion` | both | 202-then-callback carries a real completion with real cost/duration, and the conversation is persisted |
+| `..._conversation_resumes_the_agent_session` | both | two POSTs of one `conversation_id` land in one agent session (claude `--resume`; pi `--session-id` reattach) |
+| `..._sender_reaches_the_agent` | both | the `[sender]:` pre-tag is part of what the model reads |
+| `..._tool_use_writes_in_the_work_dir` | both | a real tool call runs, confined to the sandboxed work dir |
+| `..._non_resumable_turn_leaves_no_session` | both | `resumable=false` mints an ephemeral id the store never sees, and the real CLI accepts it |
+| `..._pi_tool_allowlist_blocks_writes` | pi | `--tools` read-only really restricts: no file can appear, CLI-enforced |
 
 Prompts force a token to assert on (`PONG`, `BANANA47`, `DONE`); never
 assert on the model's prose.

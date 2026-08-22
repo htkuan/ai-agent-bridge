@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.10.0 (2026-08-22)
+
+### Features
+
+- **bridge**: Route agent=None via DEFAULT_AGENT; agent fields for webhook and heartbeat
+  ([`c864a67`](https://github.com/htkuan/ai-agent-bridge/commit/c864a67d2f24e7fa8f30d7b96f08225c05a8708a))
+
+
 ## v0.9.0 (2026-08-21)
 
 ### Documentation

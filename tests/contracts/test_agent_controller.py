@@ -13,24 +13,38 @@ import pytest
 
 from agent_bridge.agents.claude.controller import ClaudeController
 from agent_bridge.agents.codex.controller import CodexController
+from agent_bridge.agents.opencode.controller import OpencodeController
 from agent_bridge.agents.pi.controller import PiController
 from agent_bridge.bridge.events import Completion, TextDelta
 from agent_bridge.bridge.protocols import AgentController
-from tests.conftest import FakeClaudeFactory, FakeCodexFactory, FakePiFactory
-from tests.fakes import FakeAgentController, claude_cli, codex_cli, pi_cli
+from tests.conftest import (
+    FakeClaudeFactory,
+    FakeCodexFactory,
+    FakeOpencodeFactory,
+    FakePiFactory,
+)
+from tests.fakes import (
+    FakeAgentController,
+    claude_cli,
+    codex_cli,
+    opencode_cli,
+    pi_cli,
+)
 
 type ControllerFactory = Callable[..., AgentController]
 
-# The "claude"/"pi"/"codex" parametrizations drive a real CLI subprocess.
+# The "claude"/"pi"/"codex"/"opencode" parametrizations drive a real CLI
+# subprocess.
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture(params=["claude", "pi", "codex", "fake"])
+@pytest.fixture(params=["claude", "pi", "codex", "opencode", "fake"])
 def make_controller(
     request: pytest.FixtureRequest,
     fake_claude: FakeClaudeFactory,
     fake_pi: FakePiFactory,
     fake_codex: FakeCodexFactory,
+    fake_opencode: FakeOpencodeFactory,
 ) -> ControllerFactory:
     def make(*, text: str = "hello", error: bool = False) -> AgentController:
         if request.param == "claude":
@@ -56,6 +70,15 @@ def make_controller(
                 else codex_cli.reply_steps(text)
             )
             return CodexController(fake_codex(steps).config)
+        if request.param == "opencode":
+            # Opencode has no terminal event: failures are an `error` event
+            # plus a non-zero exit; success is synthesized at EOF.
+            steps = (
+                [opencode_cli.stream_error("boom"), opencode_cli.exit_code(1)]
+                if error
+                else opencode_cli.reply_steps(text)
+            )
+            return OpencodeController(fake_opencode(steps).config)
         if error:
             return FakeAgentController([[Completion(text="boom", is_error=True)]])
         return FakeAgentController(

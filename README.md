@@ -89,7 +89,7 @@ The system has three independent layers:
 | Layer | Role | Docs |
 |-------|------|------|
 | **Platform Adapter** | Owns session semantics, per-session locking, UI rendering | [Slack](docs/platforms/slack.md) · [Heartbeat](docs/platforms/heartbeat.md) · [Webhook](docs/platforms/webhook.md) |
-| **Bridge** | Routes messages, maps session keys → IDs, enforces concurrency | Core — see below |
+| **Bridge** | Middleware pipeline: routing at the core; dedupe, session resolution, usage and capacity as stages over swappable ports | [Bridge](docs/bridge.md) · [Design](docs/design/bridge-pipeline.md) |
 | **Agent Controller** | Executes prompts, yields generic events | [Claude Agent](docs/agents/claude.md) · [Pi Agent](docs/agents/pi.md) · [Codex Agent](docs/agents/codex.md) · [Opencode Agent](docs/agents/opencode.md) |
 
 ### Event Model

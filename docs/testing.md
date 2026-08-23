@@ -25,6 +25,11 @@ implemented across the `tests/` tree.
    assertions against both. If the real `Bridge` changes behaviour, the
    contract fails for the fake until it is updated — behavioural drift is
    caught, not discovered in production.
+5. **Contract suites also pin the ports.** The bridge's storage/strategy
+   ports (`SessionStore`, `DedupeCache`, `CapacityLimiter`) each have a
+   contract suite; every implementation — built-in, fake, or a future one
+   (RDBMS store, Redis cache) — joins by adding a fixture param and runs the
+   same spec.
 
 ## Layout
 
@@ -40,11 +45,16 @@ tests/
 ├── contracts/               # real implementation and its fake run the same suite
 │   ├── test_agent_controller.py
 │   ├── test_message_router.py
-│   └── test_platform_adapter.py
+│   ├── test_platform_adapter.py
+│   ├── test_session_store.py    # SessionStore port: JsonSessionStore + InMemorySessionStore
+│   ├── test_dedupe_cache.py     # DedupeCache port: claim lifecycle spec
+│   └── test_capacity_limiter.py # CapacityLimiter port: lease semantics spec
 ├── test_env.py              # the typed env readers
 ├── test_config.py           # AppConfig — the aggregate app.py builds from
 ├── app/                     # app.py wiring + lifecycle
-├── bridge/                  # router.py, session.py, dedupe.py, config.py (core layer)
+├── bridge/                  # core layer: test_router.py = bridge input→output spec,
+│   │                        # test_pipeline.py = compose/core, session/dedupe/stores/config
+│   └── middleware/          # each pipeline stage in isolation vs scripted downstreams
 ├── agents/claude/           # controller + stream-json parser
 ├── platforms/               # test_base.py: BasePlatformAdapter's shared dispatch flow
 ├── platforms/slack/         # adapter behaviour, one concern per file
@@ -67,9 +77,13 @@ tests/
 | controller → claude CLI | argv + stream-json contract (parsed by `agents/claude/events.py`) | `tests/fakes/claude_cli.py` via `ClaudeConfig.cli_path` |
 | adapter → Slack Web API | the method subset the adapter calls | `FakeSlackClient` (records calls, mints `ts`, tracks visible message state, injectable `SlackApiError`) |
 | adapter → bolt `AsyncApp` | `@app.event(...)` registration | `FakeBoltApp` (captures handlers for direct invocation) |
+| session policy → storage | `SessionStore` port | `InMemorySessionStore` |
 
 Real, cheap components are used directly instead of doubled: `SessionManager`
-(against `tmp_path`), `PromptDedupeCache`, and the event dataclasses.
+(against `tmp_path`), `PromptDedupeCache`, and the event dataclasses. The
+pipeline stage tests keep small scripted doubles (recording dedupe cache,
+recording limiter/lease) local to their test modules — they instrument one
+stage's obligations, not a cross-layer seam.
 
 ## Configuration in tests
 

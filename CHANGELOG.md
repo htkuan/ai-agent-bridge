@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.11.0 (2026-08-23)
+
+### Features
+
+- **agents**: Add codex agent controller with session handle store
+  ([`a2e6e2f`](https://github.com/htkuan/ai-agent-bridge/commit/a2e6e2f1433ee850e932d16bfc672ede28ed6ed6))
+
+### Testing
+
+- **e2e**: Add live webhook e2e covering claude and pi agents
+  ([`920ba45`](https://github.com/htkuan/ai-agent-bridge/commit/920ba45d89d3a998e209b98ab05321f3fd958107))
+
+
 ## v0.10.0 (2026-08-22)
 
 ### Features

@@ -29,7 +29,7 @@ class _FakeBridge:
     def __init__(self, events: list) -> None:
         self._events = events
 
-    def handle_message(self, **_kwargs):
+    def handle_message(self, _request):
         async def gen():
             for e in self._events:
                 yield e

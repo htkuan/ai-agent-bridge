@@ -10,6 +10,7 @@ from agent_bridge.bridge.config import RouterConfig
 from agent_bridge.bridge.dedupe import PromptDedupeCache
 from agent_bridge.bridge.events import BridgeEvent, Completion, Processing, Usage
 from agent_bridge.bridge.protocols import AgentController
+from agent_bridge.bridge.request import BridgeRequest
 from agent_bridge.bridge.session import SessionManager
 
 logger = logging.getLogger(__name__)
@@ -163,33 +164,31 @@ class Bridge:
             self._dedupe.mark_completed(claim.scope, claim.canonical)
 
     async def handle_message(
-        self,
-        session_key: str,
-        text: str,
-        context: dict[str, str] | None = None,
-        system_prompt: str | None = None,
-        resumable: bool = True,
-        agent: str | None = None,
+        self, request: BridgeRequest
     ) -> AsyncIterator[BridgeEvent]:
         """Resolve session, acquire a processing slot, call agent, forward events.
 
         If no slot is available the call yields a single error
         ``Completion`` and returns immediately — no queuing.
 
-        ``system_prompt`` is opaque pass-through: built by the calling
-        platform adapter, forwarded to the agent unchanged.
+        ``request.system_prompt`` is opaque pass-through: built by the
+        calling platform adapter, forwarded to the agent unchanged.
 
-        ``resumable`` controls whether passing the same ``session_key`` later
-        can resume the same session. When False, the bridge mints a fresh
-        ephemeral UUID and skips the SessionManager entirely — the session
-        leaves no trace on disk. Use this for one-shot, proactive triggers
-        (e.g. heartbeat ticks) where each call is conceptually independent.
+        ``request.resumable`` controls whether passing the same
+        ``session_key`` later can resume the same session. When False, the
+        bridge mints a fresh ephemeral UUID and skips the SessionManager
+        entirely — the session leaves no trace on disk. Use this for
+        one-shot, proactive triggers (e.g. heartbeat ticks) where each call
+        is conceptually independent.
 
-        ``agent`` picks a named controller; ``None`` means the default —
-        the configured ``default_agent`` name when one is set, otherwise the
-        env-built default ``controller``.
+        ``request.agent`` picks a named controller; ``None`` means the
+        default — the configured ``default_agent`` name when one is set,
+        otherwise the env-built default ``controller``.
         """
-        agent = self._effective_agent(agent)
+        session_key = request.session_key
+        text = request.text
+        resumable = request.resumable
+        agent = self._effective_agent(request.agent)
         controller = self._resolve_controller(agent)
         if isinstance(controller, Completion):
             logger.warning("Unknown agent %r for session key %s", agent, session_key)
@@ -248,8 +247,8 @@ class Bridge:
                 session_id,
                 text,
                 is_new,
-                context=context,
-                system_prompt=system_prompt,
+                context=request.context,
+                system_prompt=request.system_prompt,
             ):
                 if isinstance(event, Completion):
                     last_completion_error = event.is_error

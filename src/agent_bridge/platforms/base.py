@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from agent_bridge.bridge.events import (
     BridgeEvent,
     Completion,
@@ -12,30 +10,18 @@ from agent_bridge.bridge.events import (
 )
 from agent_bridge.bridge.protocols import MessageRouter
 
+# Re-exported for platform authors: pre-processing produces a BridgeRequest,
+# but the type itself is bridge contract and lives with the other contract
+# modules (bridge/request.py).
+from agent_bridge.bridge.request import BridgeRequest
+
+__all__ = ["BasePlatformAdapter", "BridgeRequest", "make_session_key"]
+
 
 def make_session_key(platform: str, scope: str, identifier: str) -> str:
     # Canonical `{platform}:{scope}:{identifier}` — the bridge's dedupe
-    # scoping (router.py rpartition on ":") relies on this shape.
+    # scoping (rpartition on ":") relies on this shape.
     return f"{platform}:{scope}:{identifier}"
-
-
-@dataclass(frozen=True)
-class BridgeRequest:
-    """What pre-processing must produce before a turn is forwarded.
-
-    Mirrors ``MessageRouter.handle_message`` parameter-for-parameter: the
-    platform builds ``text`` (pre-tagged with sender identity if it has one)
-    and ``system_prompt`` (platform-flavored directives), decides whether
-    the same ``session_key`` may resume the session later (``resumable``),
-    and picks the named agent to route to (``agent``; None = default).
-    """
-
-    session_key: str
-    text: str
-    context: dict[str, str] | None = None
-    system_prompt: str | None = None
-    resumable: bool = True
-    agent: str | None = None
 
 
 class BasePlatformAdapter[RunStateT]:
@@ -79,14 +65,7 @@ class BasePlatformAdapter[RunStateT]:
         without one (``on_stream_end`` has then run as the safety net).
         """
         final: Completion | None = None
-        async for event in self._bridge.handle_message(
-            session_key=request.session_key,
-            text=request.text,
-            context=request.context,
-            system_prompt=request.system_prompt,
-            resumable=request.resumable,
-            agent=request.agent,
-        ):
+        async for event in self._bridge.handle_message(request):
             match event:
                 case Processing():
                     await self.on_processing(state, event)

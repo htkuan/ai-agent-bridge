@@ -16,6 +16,7 @@ from agent_bridge.bridge.events import (
     TextDelta,
     UserQuestion,
 )
+from agent_bridge.bridge.request import BridgeRequest
 from agent_bridge.platforms.heartbeat.adapter import HeartbeatAdapter
 from agent_bridge.platforms.heartbeat.config import HeartbeatConfig
 
@@ -30,22 +31,16 @@ class _StubBridge:
         )
 
     async def handle_message(
-        self,
-        session_key: str,
-        text: str,
-        context: dict[str, str] | None = None,
-        system_prompt: str | None = None,
-        resumable: bool = True,
-        agent: str | None = None,
+        self, request: BridgeRequest
     ) -> AsyncIterator[BridgeEvent]:
         self.calls.append(
             {
-                "session_key": session_key,
-                "text": text,
-                "context": context,
-                "system_prompt": system_prompt,
-                "resumable": resumable,
-                "agent": agent,
+                "session_key": request.session_key,
+                "text": request.text,
+                "context": request.context,
+                "system_prompt": request.system_prompt,
+                "resumable": request.resumable,
+                "agent": request.agent,
             }
         )
         for event in self._events:
@@ -53,7 +48,9 @@ class _StubBridge:
 
 
 class _BoomBridge:
-    async def handle_message(self, *args, **kwargs) -> AsyncIterator[BridgeEvent]:
+    async def handle_message(
+        self, request: BridgeRequest
+    ) -> AsyncIterator[BridgeEvent]:
         raise RuntimeError("boom")
         yield  # unreachable; makes this an async generator
 

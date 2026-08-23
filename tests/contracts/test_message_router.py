@@ -1,9 +1,10 @@
 """Contract suite for the ``MessageRouter`` protocol.
 
 The real ``Bridge`` and ``FakeBridge`` must satisfy the same expectations:
-a normal run opens with ``Processing`` and ends with exactly one terminal
-``Completion``; a saturated router rejects with a single error ``Completion``
-carrying ``error_code == "capacity_full"``; an unknown ``agent`` rejects with
+``handle_message`` takes exactly one ``BridgeRequest``; a normal run opens
+with ``Processing`` and ends with exactly one terminal ``Completion``; a
+saturated router rejects with a single error ``Completion`` carrying
+``error_code == "capacity_full"``; an unknown ``request.agent`` rejects with
 a single error ``Completion`` carrying ``error_code == "unknown_agent"``,
 while a registered one routes normally.
 """
@@ -18,6 +19,7 @@ import pytest
 from agent_bridge.bridge.config import RouterConfig
 from agent_bridge.bridge.events import BridgeEvent, Completion, Processing, TextDelta
 from agent_bridge.bridge.protocols import MessageRouter
+from agent_bridge.bridge.request import BridgeRequest
 from agent_bridge.bridge.router import Bridge
 from agent_bridge.bridge.session import SessionManager
 from tests.fakes import FakeAgentController, FakeBridge
@@ -52,7 +54,9 @@ async def saturated_router(
     # Occupy the only slot: advance a stream past Processing; the controller
     # holds its terminal event until ``release`` is set, so the semaphore
     # stays taken while the suspended generator is alive.
-    holder = bridge.handle_message("slack:c1:hold", "occupy")
+    holder = bridge.handle_message(
+        BridgeRequest(session_key="slack:c1:hold", text="occupy")
+    )
     async for event in holder:
         if isinstance(event, Processing):
             break
@@ -65,7 +69,12 @@ async def saturated_router(
 async def test_normal_flow_opens_processing_ends_completion(
     router: MessageRouter,
 ) -> None:
-    events = [e async for e in router.handle_message("slack:c1:t1", "hi")]
+    events = [
+        e
+        async for e in router.handle_message(
+            BridgeRequest(session_key="slack:c1:t1", text="hi")
+        )
+    ]
     assert isinstance(events[0], Processing)
     completions = [e for e in events if isinstance(e, Completion)]
     assert len(completions) == 1
@@ -76,7 +85,12 @@ async def test_normal_flow_opens_processing_ends_completion(
 async def test_capacity_rejection_is_a_single_error_completion(
     saturated_router: MessageRouter,
 ) -> None:
-    events = [e async for e in saturated_router.handle_message("slack:c1:t2", "hi")]
+    events = [
+        e
+        async for e in saturated_router.handle_message(
+            BridgeRequest(session_key="slack:c1:t2", text="hi")
+        )
+    ]
     assert len(events) == 1
     only = events[0]
     assert isinstance(only, Completion)
@@ -103,7 +117,10 @@ async def test_unknown_agent_is_a_single_error_completion(
     named_router: MessageRouter,
 ) -> None:
     events = [
-        e async for e in named_router.handle_message("slack:c1:t3", "hi", agent="nope")
+        e
+        async for e in named_router.handle_message(
+            BridgeRequest(session_key="slack:c1:t3", text="hi", agent="nope")
+        )
     ]
     assert len(events) == 1
     only = events[0]
@@ -116,7 +133,7 @@ async def test_known_agent_routes_normally(named_router: MessageRouter) -> None:
     events = [
         e
         async for e in named_router.handle_message(
-            "slack:c1:t4", "hi", agent="research"
+            BridgeRequest(session_key="slack:c1:t4", text="hi", agent="research")
         )
     ]
     assert isinstance(events[0], Processing)

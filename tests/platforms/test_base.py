@@ -15,7 +15,7 @@ from agent_bridge.platforms.base import (
     BridgeRequest,
     make_session_key,
 )
-from tests.fakes import FakeBridge, RouterCall
+from tests.fakes import FakeBridge
 
 type _Log = list[tuple[str, BridgeEvent | None]]
 
@@ -104,7 +104,7 @@ async def test_default_on_event_noops():
     assert isinstance(final, Completion)
 
 
-async def test_request_fields_forwarded_verbatim():
+async def test_request_forwarded_verbatim():
     bridge = FakeBridge(known_agents=frozenset({"researcher"}))
     request = BridgeRequest(
         session_key="tg:chat1:2",
@@ -115,19 +115,11 @@ async def test_request_fields_forwarded_verbatim():
         agent="researcher",
     )
     await BasePlatformAdapter[None](bridge).process(request, None)
-    assert bridge.calls == [
-        RouterCall(
-            "tg:chat1:2",
-            "[alice]: hi",
-            {"user": "alice"},
-            "be brief",
-            False,
-            "researcher",
-        )
-    ]
+    # The router receives the request object itself — no lossy re-packing.
+    assert bridge.calls == [request]
 
 
-async def test_request_defaults_match_handle_message_defaults():
+async def test_request_defaults():
     bridge = FakeBridge()
     await BasePlatformAdapter[None](bridge).process(_request(), None)
     call = bridge.calls[0]

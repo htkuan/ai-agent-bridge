@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from typing import Protocol
 
 from agent_bridge.bridge.events import BridgeEvent
+from agent_bridge.bridge.request import BridgeRequest
 
 
 class AgentController(Protocol):
@@ -44,21 +45,15 @@ class MessageRouter(Protocol):
     protocol — not the concrete class — so tests can substitute a fake
     that replays a scripted event stream.
 
-    ``agent`` selects a named agent controller registered with the router;
-    ``None`` routes to the default one. The platform decides which name a
-    session uses (e.g. Slack's per-channel profiles); the router only
-    resolves it.
+    The whole turn arrives as one ``BridgeRequest``: ``request.agent``
+    selects a named agent controller registered with the router (``None``
+    routes to the default one — the platform decides which name a session
+    uses, e.g. Slack's per-channel profiles; the router only resolves it),
+    and ``request.resumable`` decides whether the ``session_key`` maps to a
+    persistent session or a one-shot ephemeral one.
     """
 
-    def handle_message(
-        self,
-        session_key: str,
-        text: str,
-        context: dict[str, str] | None = None,
-        system_prompt: str | None = None,
-        resumable: bool = True,
-        agent: str | None = None,
-    ) -> AsyncIterator[BridgeEvent]: ...
+    def handle_message(self, request: BridgeRequest) -> AsyncIterator[BridgeEvent]: ...
 
 
 class PlatformAdapter(Protocol):

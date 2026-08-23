@@ -89,10 +89,44 @@ class _StdinFeedingController(CliAgentController[RunState]):
     def parse_line(self, line: str, state: RunState) -> list[BridgeEvent]:
         return []
 
-    def stdin_payload(self, prompt: str) -> bytes | None:
+    def stdin_payload(
+        self, prompt: str, system_prompt: str | None = None
+    ) -> bytes | None:
         # Far beyond the pipe buffer, so the write can't finish before the
         # process exits without reading.
         return b"x" * (2 * 1024 * 1024)
+
+
+class _SessionIdEchoController(CliAgentController[RunState]):
+    """Echoes ``state.session_id`` — pins that the engine stamps the bridge
+    session id onto the run state before any line is parsed."""
+
+    agent_name = "SessionEcho"
+
+    def __init__(self, work_dir: Path) -> None:
+        super().__init__(work_dir=work_dir, timeout_seconds=5.0)
+
+    def build_command(
+        self,
+        session_id: str,
+        prompt: str,
+        is_new: bool,
+        system_prompt: str | None = None,
+    ) -> list[str]:
+        return [sys.executable, "-c", "print('line')"]
+
+    def new_run_state(self) -> RunState:
+        return RunState()
+
+    def parse_line(self, line: str, state: RunState) -> list[BridgeEvent]:
+        if not line.strip():
+            return []
+        return [TextDelta(text=state.session_id)]
+
+    def on_stream_end(
+        self, state: RunState, return_code: int | None, stderr: str
+    ) -> Completion | None:
+        return Completion(text="done", is_error=False)
 
 
 class _BareController(CliAgentController[RunState]):
@@ -129,6 +163,13 @@ async def test_unread_stdin_payload_does_not_break_the_run(tmp_path: Path):
     assert isinstance(completion, Completion)
     assert completion.is_error is True
     assert "Mute process exited" in completion.text
+
+
+async def test_engine_stamps_session_id_on_run_state(tmp_path: Path):
+    controller = _SessionIdEchoController(tmp_path)
+    events = [e async for e in controller.run("s-42", "hi", is_new=True)]
+    deltas = [e.text for e in events if isinstance(e, TextDelta)]
+    assert deltas == ["s-42"]
 
 
 async def test_default_cleanup_session_is_a_noop(tmp_path: Path):

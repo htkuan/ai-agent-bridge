@@ -30,9 +30,9 @@ async def test_thread_resume_across_turns(tmp_path: Path):
     assert "--session-id" not in argv2
 
     # One persisted session, keyed by the thread.
-    sessions = stack.session_manager.list_sessions()
+    sessions = await stack.session_manager.list_sessions()
     assert set(sessions) == {"slack:C123:1.0"}
-    assert sessions["slack:C123:1.0"]["session_id"] == session_id
+    assert sessions["slack:C123:1.0"].session_id == session_id
 
 
 async def test_ask_user_question_waits_then_resumes(tmp_path: Path):

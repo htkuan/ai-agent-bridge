@@ -86,105 +86,105 @@ def test_hamming_basic():
 # --- cache: exact / canonical match ---
 
 
-def test_lookup_or_claim_miss_then_hit():
+async def test_lookup_or_claim_miss_then_hit():
     cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
-    r1 = cache.lookup_or_claim("slack:C1", "alert", "slack:C1:t1")
+    r1 = await cache.lookup_or_claim("slack:C1", "alert", "slack:C1:t1")
     assert r1.hit is None
-    r2 = cache.lookup_or_claim("slack:C1", "alert", "slack:C1:t2")
+    r2 = await cache.lookup_or_claim("slack:C1", "alert", "slack:C1:t2")
     assert r2.hit is not None
     assert r2.hit.first_session_key == "slack:C1:t1"
-    assert r2.hamming == 0
+    assert r2.hit.hamming == 0
 
 
-def test_canonical_match_collapses_url_variants():
+async def test_canonical_match_collapses_url_variants():
     cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
-    cache.lookup_or_claim("s", "Error at https://a.com/1", "s:t1")
-    r = cache.lookup_or_claim("s", "Error at https://b.com/9999", "s:t2")
+    await cache.lookup_or_claim("s", "Error at https://a.com/1", "s:t1")
+    r = await cache.lookup_or_claim("s", "Error at https://b.com/9999", "s:t2")
     assert r.hit is not None
     assert r.hit.first_session_key == "s:t1"
 
 
-def test_different_scope_does_not_collide():
+async def test_different_scope_does_not_collide():
     cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
-    cache.lookup_or_claim("slack:C1", "alert", "k1")
-    r = cache.lookup_or_claim("slack:C2", "alert", "k2")
+    await cache.lookup_or_claim("slack:C1", "alert", "k1")
+    r = await cache.lookup_or_claim("slack:C2", "alert", "k2")
     assert r.hit is None
 
 
-def test_mark_completed_transitions_entry():
+async def test_mark_completed_transitions_entry():
     cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
-    r = cache.lookup_or_claim("s", "alert", "k1")
-    cache.mark_completed("s", r.canonical)
-    r2 = cache.lookup_or_claim("s", "alert", "k2")
+    r = await cache.lookup_or_claim("s", "alert", "k1")
+    await cache.mark_completed("s", r.claim_token)
+    r2 = await cache.lookup_or_claim("s", "alert", "k2")
     assert r2.hit is not None
-    assert r2.hit.completed_at is not None
+    assert r2.hit.in_flight is False
 
 
-def test_mark_failed_removes_entry_so_retry_proceeds():
+async def test_mark_failed_removes_entry_so_retry_proceeds():
     cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0))
-    r = cache.lookup_or_claim("s", "alert", "k1")
-    cache.mark_failed("s", r.canonical)
-    r2 = cache.lookup_or_claim("s", "alert", "k2")
+    r = await cache.lookup_or_claim("s", "alert", "k1")
+    await cache.mark_failed("s", r.claim_token)
+    r2 = await cache.lookup_or_claim("s", "alert", "k2")
     assert r2.hit is None
 
 
-def test_expired_entry_treated_as_miss(monkeypatch):
+async def test_expired_entry_treated_as_miss(monkeypatch):
     cache = PromptDedupeCache(DedupeConfig(ttl_seconds=1.0))
     fake_now = [1000.0]
     monkeypatch.setattr(time, "monotonic", lambda: fake_now[0])
 
-    cache.lookup_or_claim("s", "alert", "k1")
+    await cache.lookup_or_claim("s", "alert", "k1")
     fake_now[0] = 1000.5  # still within TTL
-    assert cache.lookup_or_claim("s", "alert", "k2").hit is not None
+    assert (await cache.lookup_or_claim("s", "alert", "k2")).hit is not None
     fake_now[0] = 1002.0  # past TTL
-    assert cache.lookup_or_claim("s", "alert", "k3").hit is None
+    assert (await cache.lookup_or_claim("s", "alert", "k3")).hit is None
 
 
-def test_lru_eviction_at_capacity():
+async def test_lru_eviction_at_capacity():
     cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0, max_entries=3))
-    cache.lookup_or_claim("s", "a", "ka")
-    cache.lookup_or_claim("s", "b", "kb")
-    cache.lookup_or_claim("s", "c", "kc")
+    await cache.lookup_or_claim("s", "a", "ka")
+    await cache.lookup_or_claim("s", "b", "kb")
+    await cache.lookup_or_claim("s", "c", "kc")
     # Touch "a" → "b" is now the oldest
-    cache.lookup_or_claim("s", "a", "ka2")
+    await cache.lookup_or_claim("s", "a", "ka2")
     # Insert pushes past capacity → "b" gets evicted
-    cache.lookup_or_claim("s", "d", "kd")
-    assert cache.lookup_or_claim("s", "b", "kb2").hit is None
-    assert cache.lookup_or_claim("s", "a", "ka3").hit is not None
+    await cache.lookup_or_claim("s", "d", "kd")
+    assert (await cache.lookup_or_claim("s", "b", "kb2")).hit is None
+    assert (await cache.lookup_or_claim("s", "a", "ka3")).hit is not None
 
 
 # --- cache: SimHash fuzzy match ---
 
 
-def test_simhash_threshold_zero_disables_fuzzy():
+async def test_simhash_threshold_zero_disables_fuzzy():
     cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0, simhash_threshold=0))
-    cache.lookup_or_claim("s", "Zodios endpoint members", "k1")
-    r = cache.lookup_or_claim("s", "Zodios endpoint messages", "k2")
+    await cache.lookup_or_claim("s", "Zodios endpoint members", "k1")
+    r = await cache.lookup_or_claim("s", "Zodios endpoint messages", "k2")
     # Canonical strings differ ("members" vs "messages"); without fuzzy, miss.
     assert r.hit is None
 
 
-def test_simhash_threshold_catches_similar_text():
+async def test_simhash_threshold_catches_similar_text():
     cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0, simhash_threshold=20))
-    cache.lookup_or_claim(
+    await cache.lookup_or_claim(
         "s",
         "Zodios: Invalid response from endpoint 'get api/v1/orgs/members'",
         "k1",
     )
-    r = cache.lookup_or_claim(
+    r = await cache.lookup_or_claim(
         "s",
         "Zodios: Invalid response from endpoint 'get api/v1/orgs/messages'",
         "k2",
     )
     assert r.hit is not None
-    assert r.hamming > 0  # fuzzy match, not exact
+    assert r.hit.hamming > 0  # fuzzy match, not exact
     assert r.hit.first_session_key == "k1"
 
 
-def test_simhash_does_not_cross_scope():
+async def test_simhash_does_not_cross_scope():
     cache = PromptDedupeCache(DedupeConfig(ttl_seconds=60.0, simhash_threshold=30))
-    cache.lookup_or_claim("scope-A", "Zodios endpoint members", "kA")
-    r = cache.lookup_or_claim("scope-B", "Zodios endpoint messages", "kB")
+    await cache.lookup_or_claim("scope-A", "Zodios endpoint members", "kA")
+    r = await cache.lookup_or_claim("scope-B", "Zodios endpoint messages", "kB")
     # Same-shaped text but different scope → still a miss even with threshold.
     assert r.hit is None
 

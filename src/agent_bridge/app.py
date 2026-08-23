@@ -120,7 +120,7 @@ async def _periodic_cleanup(
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(shutdown_event.wait(), timeout=interval_seconds)
         if not shutdown_event.is_set():
-            purged_ids = session_manager.purge_expired()
+            purged_ids = await session_manager.purge_expired()
             stale = 0
             for adapter in adapters:
                 stale += await adapter.cleanup()

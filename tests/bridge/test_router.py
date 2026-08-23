@@ -108,7 +108,7 @@ async def test_resumable_default_writes_to_session_store(session_mgr):
     async for _ in _msg(bridge, "slack:C1:t1", "hi"):
         pass
 
-    assert session_mgr.get("slack:C1:t1") is not None
+    assert await session_mgr.get("slack:C1:t1") is not None
 
 
 @pytest.mark.asyncio
@@ -122,8 +122,8 @@ async def test_resumable_false_does_not_touch_session_store(session_mgr):
         pass
 
     # Key never reaches the store
-    assert session_mgr.get("heartbeat:tick:2026-01-01") is None
-    assert session_mgr.list_sessions() == {}
+    assert await session_mgr.get("heartbeat:tick:2026-01-01") is None
+    assert await session_mgr.list_sessions() == {}
 
 
 @pytest.mark.asyncio
@@ -223,11 +223,16 @@ async def test_semaphore_released_after_error(session_mgr):
     """Semaphore is released even when the controller raises."""
 
     class FailingController:
+        def __init__(self) -> None:
+            self.calls = 0
+
         async def run(
             self, session_id, prompt, is_new, context=None, system_prompt=None
         ):
-            raise RuntimeError("boom")
-            yield
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("boom")
+            yield Completion(text="ok")
 
     bridge = Bridge(
         RouterConfig(max_concurrent_sessions=1), session_mgr, FailingController()
@@ -237,8 +242,10 @@ async def test_semaphore_released_after_error(session_mgr):
         async for _ in _msg(bridge, "key1", "fail"):
             pass
 
-    # The finally block should have released the semaphore
-    assert not bridge._sem.locked()
+    # The finally block released the slot: with max_concurrent=1, the next
+    # turn only succeeds if the crashed one gave its lease back.
+    events = [e async for e in _msg(bridge, "key2", "after")]
+    assert isinstance(events[0], Processing)
 
 
 @pytest.mark.asyncio
@@ -632,7 +639,7 @@ async def test_session_usage_accumulates_across_turns(session_mgr):
 @pytest.mark.asyncio
 async def test_session_usage_none_when_started_mid_session(session_mgr):
     # Pre-create the session so the bridge resumes it without tracking its start.
-    session_mgr.get_or_create("slack:c:t")
+    await session_mgr.get_or_create("slack:c:t")
     bridge = Bridge(
         RouterConfig(max_concurrent_sessions=5), session_mgr, UsageController()
     )
@@ -661,7 +668,7 @@ async def test_forget_session_usage_drops_running_total(session_mgr):
     c1 = await _completion(bridge, "slack:c:t")
     assert c1.session_usage is not None
 
-    sid = session_mgr.get("slack:c:t")
+    sid = await session_mgr.get("slack:c:t")
     bridge.forget_session_usage(sid)
 
     c2 = await _completion(bridge, "slack:c:t")
@@ -741,12 +748,12 @@ async def test_default_agent_sticks_sessions_to_the_resolved_name(session_mgr):
     )
     async for _ in _msg(bridge, "slack:C1:t1", "hi"):
         pass
-    first_id = session_mgr.get("slack:C1:t1")
+    first_id = await session_mgr.get("slack:C1:t1")
     assert first_id is not None
 
     async for _ in _msg(bridge, "slack:C1:t1", "again", agent="fast"):
         pass
-    assert session_mgr.get("slack:C1:t1") == first_id
+    assert await session_mgr.get("slack:C1:t1") == first_id
 
     # Same key through a bridge whose default reverted to the env-built
     # controller: recorded agent "fast" ≠ None → fresh session.
@@ -758,7 +765,7 @@ async def test_default_agent_sticks_sessions_to_the_resolved_name(session_mgr):
     )
     async for _ in _msg(reverted, "slack:C1:t1", "back"):
         pass
-    assert session_mgr.get("slack:C1:t1") != first_id
+    assert await session_mgr.get("slack:C1:t1") != first_id
 
 
 @pytest.mark.asyncio
@@ -795,9 +802,8 @@ async def test_unknown_agent_rejects_before_any_side_effect(session_mgr):
     assert isinstance(events[0], Completion)
     assert events[0].is_error is True
     assert events[0].metadata["error_code"] == "unknown_agent"
-    assert session_mgr.list_sessions() == {}
+    assert await session_mgr.list_sessions() == {}
     assert controller.calls == []
-    assert not bridge._sem.locked()
 
     # No dedupe slot was claimed: the same prompt through a valid route runs.
     async for _ in _msg(bridge, "slack:C1:t2", "alert"):

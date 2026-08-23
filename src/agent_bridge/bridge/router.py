@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 
+from agent_bridge.bridge.capacity import SemaphoreCapacityLimiter
 from agent_bridge.bridge.config import RouterConfig
-from agent_bridge.bridge.dedupe import PromptDedupeCache
 from agent_bridge.bridge.events import BridgeEvent, Completion, Processing, Usage
-from agent_bridge.bridge.protocols import AgentController
+from agent_bridge.bridge.protocols import (
+    AgentController,
+    CapacityLimiter,
+    DedupeCache,
+)
 from agent_bridge.bridge.request import BridgeRequest
 from agent_bridge.bridge.session import SessionManager
 
@@ -22,7 +25,7 @@ class _DedupeClaim:
     or failed) once the run finishes."""
 
     scope: str
-    canonical: str
+    claim_token: str
 
 
 class Bridge:
@@ -31,10 +34,11 @@ class Bridge:
         config: RouterConfig,
         session_manager: SessionManager,
         controller: AgentController,
-        dedupe: PromptDedupeCache | None = None,
+        dedupe: DedupeCache | None = None,
         *,
         named_controllers: Mapping[str, AgentController] | None = None,
         default_agent: str | None = None,
+        limiter: CapacityLimiter | None = None,
     ) -> None:
         self._config = config
         self._session_manager = session_manager
@@ -48,7 +52,11 @@ class Bridge:
         # before the session lookup, so sessions record the actual profile and
         # a redeploy that flips the default abandons them like any remap.
         self._default_agent = default_agent
-        self._sem = asyncio.Semaphore(config.max_concurrent_sessions)
+        self._limiter: CapacityLimiter = (
+            limiter
+            if limiter is not None
+            else SemaphoreCapacityLimiter(config.max_concurrent_sessions)
+        )
         # None ⇒ feature off. Preserves pre-dedupe behaviour for tests/dev.
         self._dedupe = dedupe
         # In-memory per-session usage accumulator. Not persisted — resets on
@@ -77,7 +85,7 @@ class Bridge:
         self._session_usage[session_id] = running
         completion.session_usage = running
 
-    def _try_claim_dedupe(
+    async def _try_claim_dedupe(
         self, session_key: str, text: str, resumable: bool
     ) -> _DedupeClaim | Completion | None:
         """Run the cross-session dedupe gate before any session is minted.
@@ -98,28 +106,29 @@ class Bridge:
         # session_key format is `{platform}:{scope}:{identifier}` — drop
         # the identifier so cross-thread duplicates collapse.
         scope = session_key.rpartition(":")[0]
-        result = self._dedupe.lookup_or_claim(
+        decision = await self._dedupe.lookup_or_claim(
             scope, text, first_session_key=session_key
         )
-        if result.hit is None:
-            return _DedupeClaim(scope=scope, canonical=result.canonical)
-        state = "in_flight" if result.hit.completed_at is None else "recent_hit"
+        if decision.hit is None:
+            return _DedupeClaim(scope=scope, claim_token=decision.claim_token)
+        hit = decision.hit
+        state = "in_flight" if hit.in_flight else "recent_hit"
         logger.info(
             "dedupe_hit scope=%s state=%s match=%s hamming=%d "
-            "first_session=%s canonical=%r",
+            "first_session=%s matched=%r",
             scope,
             state,
-            "exact" if result.hamming == 0 else "simhash",
-            result.hamming,
-            result.hit.first_session_key,
-            result.hit.canonical_text,
+            "exact" if hit.hamming == 0 else "simhash",
+            hit.hamming,
+            hit.first_session_key,
+            hit.matched_text,
         )
         return Completion(
             text=":repeat: Duplicate detected — skipping.",
             is_error=False,
             metadata={
                 "dedupe": state,
-                "first_session_key": result.hit.first_session_key,
+                "first_session_key": hit.first_session_key,
             },
         )
 
@@ -149,7 +158,9 @@ class Bridge:
             metadata={"error_code": "unknown_agent"},
         )
 
-    def _release_dedupe(self, claim: _DedupeClaim | None, *, failed: bool) -> None:
+    async def _release_dedupe(
+        self, claim: _DedupeClaim | None, *, failed: bool
+    ) -> None:
         """Release a claimed dedupe entry once its run finished.
 
         Failed runs (capacity reject, controller error, error Completion) drop
@@ -159,9 +170,9 @@ class Bridge:
         if claim is None or self._dedupe is None:
             return
         if failed:
-            self._dedupe.mark_failed(claim.scope, claim.canonical)
+            await self._dedupe.mark_failed(claim.scope, claim.claim_token)
         else:
-            self._dedupe.mark_completed(claim.scope, claim.canonical)
+            await self._dedupe.mark_completed(claim.scope, claim.claim_token)
 
     async def handle_message(
         self, request: BridgeRequest
@@ -196,13 +207,13 @@ class Bridge:
             return
 
         # Dedupe runs before session mint to avoid wasted work.
-        claim = self._try_claim_dedupe(session_key, text, resumable)
+        claim = await self._try_claim_dedupe(session_key, text, resumable)
         if isinstance(claim, Completion):
             yield claim
             return
 
         if resumable:
-            session_id, is_new = self._session_manager.get_or_create(
+            session_id, is_new = await self._session_manager.get_or_create(
                 session_key, agent=agent
             )
         else:
@@ -223,11 +234,12 @@ class Bridge:
         )
 
         # --- Global capacity gate: no slot → reject immediately ---
-        if self._sem.locked():
+        lease = await self._limiter.try_acquire()
+        if lease is None:
             logger.warning("No available slot for session %s", session_key)
             # Free the dedupe slot so the next attempt isn't blocked by a
             # run that never actually started.
-            self._release_dedupe(claim, failed=True)
+            await self._release_dedupe(claim, failed=True)
             yield Completion(
                 text="Too many requests being processed, please try again later.",
                 is_error=True,
@@ -235,7 +247,6 @@ class Bridge:
             )
             return
 
-        await self._sem.acquire()
         yield Processing()
 
         # Track the last Completion's is_error so we can release the dedupe slot
@@ -257,12 +268,12 @@ class Bridge:
         except BaseException:
             # Controller raised — release the dedupe entry so retries aren't
             # blocked. Re-raise after cleanup.
-            self._release_dedupe(claim, failed=True)
+            await self._release_dedupe(claim, failed=True)
             raise
         else:
             # An error Completion (timeout, non-zero exit, API error, …) also
             # counts as failed, so the same alert can be retried instead of
             # getting a "recent_hit" pointer back to the failed run.
-            self._release_dedupe(claim, failed=last_completion_error)
+            await self._release_dedupe(claim, failed=last_completion_error)
         finally:
-            self._sem.release()
+            await lease.release()

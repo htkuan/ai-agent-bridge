@@ -64,7 +64,7 @@ async def test_cleanup_round_purges_sessions_usage_and_slack_state(tmp_path: Pat
     )
     controller = _RecordingController()
     bridge = Bridge(RouterConfig(), session_manager, FakeAgentController())
-    sid, _ = session_manager.get_or_create("slack:C1:1.0")
+    sid, _ = await session_manager.get_or_create("slack:C1:1.0")
     bridge._session_usage[sid] = Usage(cost_usd=1.0)
     bridge._usage_tracked.add(sid)
     harness = build_harness(session_manager=session_manager)
@@ -82,7 +82,7 @@ async def test_cleanup_round_purges_sessions_usage_and_slack_state(tmp_path: Pat
         shutdown.set()
         await task
 
-    assert session_manager.get("slack:C1:1.0") is None
+    assert await session_manager.get("slack:C1:1.0") is None
     assert sid not in bridge._session_usage
     assert harness.adapter._sessions == {}
 
@@ -91,7 +91,7 @@ async def test_cleanup_loop_survives_controller_errors(tmp_path: Path):
     session_manager = SessionManager(
         SessionConfig(store_path=tmp_path / "s.json", ttl_hours=1e-9)
     )
-    session_manager.get_or_create("slack:C1:1.0")
+    await session_manager.get_or_create("slack:C1:1.0")
     controller = _ExplodingController()
     bridge = Bridge(RouterConfig(), session_manager, FakeAgentController())
 

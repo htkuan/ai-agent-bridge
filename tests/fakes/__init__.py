@@ -21,6 +21,7 @@ from tests.fakes.slack import (
     dm_event,
     mention_event,
 )
+from tests.fakes.stores import InMemorySessionStore
 
 __all__ = [
     "ControllerCall",
@@ -33,6 +34,7 @@ __all__ = [
     "FakePiCLI",
     "FakePlatformAdapter",
     "FakeSlackClient",
+    "InMemorySessionStore",
     "SlackCall",
     "dm_event",
     "mention_event",

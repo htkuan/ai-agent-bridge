@@ -39,7 +39,7 @@ async def test_live_thread_resumes_the_same_claude_session(live_stack: SlackStac
     # session turn 1 opened with --session-id.
     assert "BANANA47" in replies[1].upper(), replies
 
-    assert set(live_stack.session_manager.list_sessions()) == {"slack:C123:1.0"}
+    assert set(await live_stack.session_manager.list_sessions()) == {"slack:C123:1.0"}
 
 
 async def test_live_tool_use_reaches_slack(

@@ -41,7 +41,7 @@ async def test_live_webhook_delivers_a_real_completion(
 
     # The turn was resumable, so the conversation is persisted under the key
     # the adapter derives from conversation_id.
-    assert set(live_webhook_stack.session_manager.list_sessions()) == {
+    assert set(await live_webhook_stack.session_manager.list_sessions()) == {
         "webhook:default:conv-1"
     }
 
@@ -64,7 +64,7 @@ async def test_live_webhook_conversation_resumes_the_agent_session(
     # reattached to the session turn 1 created.
     assert "BANANA47" in str(second["text"]).upper(), second
 
-    assert set(live_webhook_stack.session_manager.list_sessions()) == {
+    assert set(await live_webhook_stack.session_manager.list_sessions()) == {
         "webhook:default:memory"
     }
 
@@ -110,7 +110,7 @@ async def test_live_webhook_non_resumable_turn_leaves_no_session(
     )
     assert payload["is_error"] is False, payload
     assert "PONG" in str(payload["text"]).upper(), payload
-    assert live_webhook_stack.session_manager.list_sessions() == {}
+    assert await live_webhook_stack.session_manager.list_sessions() == {}
 
 
 async def test_live_webhook_pi_tool_allowlist_blocks_writes(

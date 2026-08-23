@@ -23,6 +23,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 
 from agent_bridge.bridge.config import DedupeConfig
+from agent_bridge.bridge.protocols import DedupeDecision, DedupeHit
 
 # Order matters: more specific patterns first so coarser ones (NUM) don't eat
 # parts of structured tokens.
@@ -87,7 +88,9 @@ def hamming(a: int, b: int) -> int:
 
 
 @dataclass
-class DedupeEntry:
+class _Entry:
+    """Internal cache record; the port speaks ``DedupeHit`` instead."""
+
     scope: str
     canonical_text: str
     first_session_key: str
@@ -96,14 +99,13 @@ class DedupeEntry:
     completed_at: float | None = None  # None ⇒ still in-flight
 
 
-@dataclass(frozen=True)
-class DedupeResult:
-    hit: DedupeEntry | None
-    canonical: str
-    hamming: int = 0  # 0 ⇒ exact canonical match; > 0 ⇒ SimHash neighbour
-
-
 class PromptDedupeCache:
+    """In-memory ``DedupeCache``: canonicalize + optional SimHash.
+
+    The claim token it hands out is the canonicalized prompt — an
+    implementation detail; callers just return it to ``mark_*``.
+    """
+
     def __init__(self, config: DedupeConfig) -> None:
         # Range checks live in DedupeConfig; a disabled config reaching here
         # means the caller skipped the `enabled` gate.
@@ -115,7 +117,7 @@ class PromptDedupeCache:
         self._config = config
         # (scope, canonical_text) → entry. Exact lookups stay O(1); SimHash
         # falls back to scanning entries with matching scope.
-        self._entries: OrderedDict[tuple[str, str], DedupeEntry] = OrderedDict()
+        self._entries: OrderedDict[tuple[str, str], _Entry] = OrderedDict()
 
     def _purge_expired(self, now: float) -> None:
         expired = [
@@ -126,12 +128,12 @@ class PromptDedupeCache:
         for k in expired:
             del self._entries[k]
 
-    def lookup_or_claim(
+    async def lookup_or_claim(
         self,
         scope: str,
         text: str,
         first_session_key: str,
-    ) -> DedupeResult:
+    ) -> DedupeDecision:
         now = time.monotonic()
         self._purge_expired(now)
         canonical = canonicalize(text)
@@ -141,7 +143,7 @@ class PromptDedupeCache:
         exact = self._entries.get(key)
         if exact is not None:
             self._entries.move_to_end(key)
-            return DedupeResult(hit=exact, canonical=canonical, hamming=0)
+            return DedupeDecision(hit=_hit(exact, 0), claim_token=canonical)
 
         # 2. SimHash fuzzy match within the same scope (optional).
         fp = simhash(canonical) if self._config.simhash_threshold > 0 else 0
@@ -156,12 +158,12 @@ class PromptDedupeCache:
                     best_dist = d
                     best_key = k
             if best_key is not None:
-                hit = self._entries[best_key]
+                found = self._entries[best_key]
                 self._entries.move_to_end(best_key)
-                return DedupeResult(hit=hit, canonical=canonical, hamming=best_dist)
+                return DedupeDecision(hit=_hit(found, best_dist), claim_token=canonical)
 
         # 3. Miss → claim slot.
-        self._entries[key] = DedupeEntry(
+        self._entries[key] = _Entry(
             scope=scope,
             canonical_text=canonical,
             first_session_key=first_session_key,
@@ -170,13 +172,22 @@ class PromptDedupeCache:
         )
         while len(self._entries) > self._config.max_entries:
             self._entries.popitem(last=False)
-        return DedupeResult(hit=None, canonical=canonical)
+        return DedupeDecision(hit=None, claim_token=canonical)
 
-    def mark_completed(self, scope: str, canonical: str) -> None:
-        entry = self._entries.get((scope, canonical))
+    async def mark_completed(self, scope: str, claim_token: str) -> None:
+        entry = self._entries.get((scope, claim_token))
         if entry is not None:
             entry.completed_at = time.monotonic()
 
-    def mark_failed(self, scope: str, canonical: str) -> None:
+    async def mark_failed(self, scope: str, claim_token: str) -> None:
         # Drop the slot so the next retry isn't blocked for the full TTL.
-        self._entries.pop((scope, canonical), None)
+        self._entries.pop((scope, claim_token), None)
+
+
+def _hit(entry: _Entry, hamming_distance: int) -> DedupeHit:
+    return DedupeHit(
+        first_session_key=entry.first_session_key,
+        in_flight=entry.completed_at is None,
+        matched_text=entry.canonical_text,
+        hamming=hamming_distance,
+    )

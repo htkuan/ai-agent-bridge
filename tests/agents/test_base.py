@@ -129,6 +129,40 @@ class _SessionIdEchoController(CliAgentController[RunState]):
         return Completion(text="done", is_error=False)
 
 
+class _PwdEchoController(CliAgentController[RunState]):
+    """Echoes the subprocess's ``$PWD`` — pins that the engine rewrites it to
+    the work dir (cwd= alone inherits the parent's, and some CLIs trust
+    ``$PWD`` over getcwd(); opencode resolves its project directory from it).
+    """
+
+    agent_name = "PwdEcho"
+
+    def __init__(self, work_dir: Path) -> None:
+        super().__init__(work_dir=work_dir, timeout_seconds=5.0)
+
+    def build_command(
+        self,
+        session_id: str,
+        prompt: str,
+        is_new: bool,
+        system_prompt: str | None = None,
+    ) -> list[str]:
+        return [sys.executable, "-c", "import os; print(os.environ['PWD'])"]
+
+    def new_run_state(self) -> RunState:
+        return RunState()
+
+    def parse_line(self, line: str, state: RunState) -> list[BridgeEvent]:
+        if not line.strip():
+            return []
+        return [TextDelta(text=line.strip())]
+
+    def on_stream_end(
+        self, state: RunState, return_code: int | None, stderr: str
+    ) -> Completion | None:
+        return Completion(text="done", is_error=False)
+
+
 class _BareController(CliAgentController[RunState]):
     """No hooks overridden — pins the required-hook contract."""
 
@@ -163,6 +197,13 @@ async def test_unread_stdin_payload_does_not_break_the_run(tmp_path: Path):
     assert isinstance(completion, Completion)
     assert completion.is_error is True
     assert "Mute process exited" in completion.text
+
+
+async def test_engine_pins_pwd_env_to_the_work_dir(tmp_path: Path):
+    controller = _PwdEchoController(tmp_path)
+    events = [e async for e in controller.run("s1", "hi", is_new=True)]
+    deltas = [e.text for e in events if isinstance(e, TextDelta)]
+    assert deltas == [str(tmp_path)]
 
 
 async def test_engine_stamps_session_id_on_run_state(tmp_path: Path):

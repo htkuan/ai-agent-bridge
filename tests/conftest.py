@@ -8,13 +8,15 @@ import pytest
 
 from agent_bridge.bridge.config import SessionConfig
 from agent_bridge.bridge.session import SessionManager
-from tests.fakes import claude_cli, codex_cli, pi_cli
+from tests.fakes import claude_cli, codex_cli, opencode_cli, pi_cli
 from tests.fakes.claude_cli import FakeClaudeCLI, Step
 from tests.fakes.codex_cli import FakeCodexCLI
+from tests.fakes.opencode_cli import FakeOpencodeCLI
 from tests.fakes.pi_cli import FakePiCLI
 
 type FakeClaudeFactory = Callable[..., FakeClaudeCLI]
 type FakeCodexFactory = Callable[..., FakeCodexCLI]
+type FakeOpencodeFactory = Callable[..., FakeOpencodeCLI]
 type FakePiFactory = Callable[..., FakePiCLI]
 
 _E2E_DIR = Path(__file__).parent / "e2e"
@@ -157,6 +159,31 @@ def fake_codex(tmp_path: Path) -> FakeCodexFactory:
     ) -> FakeCodexCLI:
         return codex_cli.install(
             tmp_path / f"fake-codex-{next(counter)}",
+            steps,
+            work_dir=work_dir,
+            timeout_seconds=timeout_seconds,
+        )
+
+    return factory
+
+
+@pytest.fixture
+def fake_opencode(tmp_path: Path) -> FakeOpencodeFactory:
+    """Factory: materialise a scripted opencode CLI and get its OpencodeConfig.
+
+    cli = fake_opencode(opencode_cli.reply_steps("hi"))
+    controller = OpencodeController(cli.config)
+    """
+    counter = itertools.count()
+
+    def factory(
+        steps: list[Step],
+        *,
+        work_dir: Path | None = None,
+        timeout_seconds: float = 600.0,
+    ) -> FakeOpencodeCLI:
+        return opencode_cli.install(
+            tmp_path / f"fake-opencode-{next(counter)}",
             steps,
             work_dir=work_dir,
             timeout_seconds=timeout_seconds,

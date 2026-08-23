@@ -6,9 +6,9 @@
 # AGENT_BRIDGE_CLAUDE_* / AGENT_BRIDGE_PI_* settings); this file holds the
 # structured part.
 #
-# Only four sections are recognised — [claude.profiles.*], [pi.profiles.*],
-# [codex.profiles.*] and [slack.channel_profiles] — anything else fails
-# startup, as does any unknown field inside a profile.
+# Only five sections are recognised — [claude.profiles.*], [pi.profiles.*],
+# [codex.profiles.*], [opencode.profiles.*] and [slack.channel_profiles] —
+# anything else fails startup, as does any unknown field inside a profile.
 
 # --- Named profiles -------------------------------------------------------
 # Each [<agent>.profiles.<name>] table defines one named controller. Names
@@ -46,6 +46,14 @@ tools = ["read", "grep", "find", "ls"]
 work_dir = "/repos/backend"
 sandbox_mode = "read-only"
 
+# Opencode fields: work_dir, model (a provider/model string), variant,
+# timeout_seconds, cli_path, session_map_path. Opencode has no sandbox —
+# a profile is effectively full-access (docs/agents/opencode.md).
+
+[opencode.profiles.oc]
+work_dir = "/repos/backend"
+model = "anthropic/claude-opus-5"
+
 # --- Slack channel routing ------------------------------------------------
 # Channel NAME (not ID) → profile name. Names are matched like
 # AGENT_BRIDGE_SLACK_ALLOW_CHANNELS: '#', whitespace, and case are ignored.
@@ -62,3 +70,4 @@ backend-team = "backend"
 infra-ops = "infra"
 quick-qa = "quick"
 code-review = "reviewer"
+oc-dev = "oc"

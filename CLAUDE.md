@@ -123,10 +123,14 @@ src/agent_bridge/
 │   │   ├── config.py    # PiConfig (work_dir, provider, model, thinking, tools allow/denylist)
 │   │   ├── controller.py # CliAgentController subclass: prompt via stdin, --session-id create-or-resume
 │   │   └── events.py    # pi --mode json parser + PiRunState fold (Completion synthesized at agent_end)
-│   └── codex/
-│       ├── config.py    # CodexConfig (work_dir, sandbox_mode, model, effort, session_map_path)
-│       ├── controller.py # CliAgentController subclass: prompt via stdin `-`, exec/resume via SessionHandleStore
-│       └── events.py    # codex exec --json parser + CodexRunState fold (turn.completed/failed terminals)
+│   ├── codex/
+│   │   ├── config.py    # CodexConfig (work_dir, sandbox_mode, model, effort, session_map_path)
+│   │   ├── controller.py # CliAgentController subclass: prompt via stdin `-`, exec/resume via SessionHandleStore
+│   │   └── events.py    # codex exec --json parser + CodexRunState fold (turn.completed/failed terminals)
+│   └── opencode/
+│       ├── config.py    # OpencodeConfig (work_dir, model, variant, session_map_path)
+│       ├── controller.py # CliAgentController subclass: prompt via stdin, run/-s resume via SessionHandleStore
+│       └── events.py    # opencode run --format json parser + OpencodeRunState fold (no terminal event; Completion synthesized at EOF)
 ├── server/              # Shared HTTP infra (FastAPI + uvicorn) — hosts routers, knows no layer
 │   ├── config.py        # HttpConfig (host, port)
 │   ├── http_server.py   # HttpServer: FastAPI app + embedded uvicorn lifecycle + include_router()
@@ -192,6 +196,7 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 ├── claude_profiles  dict[str, ClaudeConfig]       → one named ClaudeController per profile
 ├── pi_profiles      dict[str, PiConfig]           → one named PiController per profile (no env-built default; names are one global namespace across all agent types)
 ├── codex_profiles   dict[str, CodexConfig]        → one named CodexController per profile (no env-built default, same namespace)
+├── opencode_profiles dict[str, OpencodeConfig]    → one named OpencodeController per profile (no env-built default, same namespace)
 ├── default_agent    str | None                    → where agent=None routes: a profile name, or None for the env-built Claude controller (validated against the registry at boot)
 ├── SlackConfig     | None                         → SlackAdapter    (None ⇒ not configured)
 ├── HeartbeatConfig | None                         → HeartbeatAdapter (None ⇒ disabled)
@@ -218,14 +223,15 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
   memory stay cheap and side-effect free.
 - **The profiles file**: `AGENT_BRIDGE_PROFILES_PATH` points at a TOML file holding the
   *structured* part of the config — named agent profiles (`[claude.profiles.<name>]`,
-  `[pi.profiles.<name>]`, `[codex.profiles.<name>]`; unset fields inherit that agent's
-  env-built base) and the Slack channel→profile map (`[slack.channel_profiles]`).
-  Profile names are one global routing namespace across agent types — a name defined
-  by two agents fails startup, and channel mappings may reference any of them. Env
-  stays the home of flat/global settings and secrets. Read once by `AppConfig.from_env`
-  (same rank as the `.env` overlay); unknown sections/keys/fields fail fast. See
-  `profiles.example.toml`, `docs/agents/claude.md#named-profiles`, `docs/agents/pi.md`
-  and `docs/agents/codex.md`.
+  `[pi.profiles.<name>]`, `[codex.profiles.<name>]`, `[opencode.profiles.<name>]`;
+  unset fields inherit that agent's env-built base) and the Slack channel→profile map
+  (`[slack.channel_profiles]`). Profile names are one global routing namespace across
+  agent types — a name defined by two agents fails startup, and channel mappings may
+  reference any of them. Env stays the home of flat/global settings and secrets. Read
+  once by `AppConfig.from_env` (same rank as the `.env` overlay); unknown
+  sections/keys/fields fail fast. See `profiles.example.toml`,
+  `docs/agents/claude.md#named-profiles`, `docs/agents/pi.md`, `docs/agents/codex.md`
+  and `docs/agents/opencode.md`.
 - **No default for a dangerous field**: `ClaudeConfig.work_dir` (and therefore
   `AppConfig.claude`) is required. A config that must be set is better than one that
   silently falls back to the process's cwd.
@@ -404,6 +410,12 @@ unparseable numbers. See `.env.example` for the full list.
 | `AGENT_BRIDGE_CODEX_CLI_PATH` | No | `codex` | Codex (path to the codex CLI executable) |
 | `AGENT_BRIDGE_CODEX_SKIP_GIT_REPO_CHECK` | No | `false` | Codex (pass `--skip-git-repo-check`; codex refuses non-git work dirs otherwise) |
 | `AGENT_BRIDGE_CODEX_SESSION_MAP_PATH` | No | `<work_dir>/.agent-bridge/codex-sessions.json` | Codex (bridge-session → codex-thread map; see `docs/agents/codex.md`) |
+| `AGENT_BRIDGE_OPENCODE_WORK_DIR` | No | `.` | Opencode (base for `[opencode.profiles.*]`; opencode has no env-built default controller) |
+| `AGENT_BRIDGE_OPENCODE_MODEL` | No | — (opencode's default) | Opencode (passed to `opencode -m` as `provider/model`; opaque, unvalidated) |
+| `AGENT_BRIDGE_OPENCODE_VARIANT` | No | — (opencode's default) | Opencode (passed to `--variant`; opaque, unvalidated) |
+| `AGENT_BRIDGE_OPENCODE_TIMEOUT_SECONDS` | No | `600` | Opencode |
+| `AGENT_BRIDGE_OPENCODE_CLI_PATH` | No | `opencode` | Opencode (path to the opencode CLI executable) |
+| `AGENT_BRIDGE_OPENCODE_SESSION_MAP_PATH` | No | `<work_dir>/.agent-bridge/opencode-sessions.json` | Opencode (bridge-session → opencode-session map; see `docs/agents/opencode.md`) |
 | `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Bridge |
 | `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Bridge |
 | `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Bridge |

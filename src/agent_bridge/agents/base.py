@@ -135,6 +135,10 @@ class CliAgentController[RunStateT: RunState]:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(cwd),
+            # cwd= changes the directory but inherits the parent's $PWD, and
+            # some CLIs trust $PWD over getcwd() (opencode resolves its
+            # project directory from it) — pin it the way a shell cd would.
+            env={**os.environ, "PWD": str(cwd)},
             limit=10 * 1024 * 1024,  # 10 MB line buffer (default 64 KB is too small)
             start_new_session=True,  # isolate process group for clean tree cleanup
         )

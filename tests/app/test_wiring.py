@@ -15,6 +15,8 @@ from agent_bridge.agents.claude.config import ClaudeConfig
 from agent_bridge.agents.claude.controller import ClaudeController
 from agent_bridge.agents.codex.config import CodexConfig
 from agent_bridge.agents.codex.controller import CodexController
+from agent_bridge.agents.opencode.config import OpencodeConfig
+from agent_bridge.agents.opencode.controller import OpencodeController
 from agent_bridge.agents.pi.config import PiConfig
 from agent_bridge.agents.pi.controller import PiController
 from agent_bridge.bridge.config import DedupeConfig, RouterConfig, SessionConfig
@@ -115,6 +117,7 @@ def _profiled_config(tmp_path: Path) -> AppConfig:
         claude_profiles={"backend": ClaudeConfig(work_dir=tmp_path)},
         pi_profiles={"fast": PiConfig(work_dir=tmp_path)},
         codex_profiles={"reviewer": CodexConfig(work_dir=tmp_path)},
+        opencode_profiles={"oc": OpencodeConfig(work_dir=tmp_path)},
     )
 
 
@@ -123,6 +126,7 @@ def test_build_named_controllers_covers_every_agent_type(tmp_path: Path):
     assert isinstance(named["backend"], ClaudeController)
     assert isinstance(named["fast"], PiController)
     assert isinstance(named["reviewer"], CodexController)
+    assert isinstance(named["oc"], OpencodeController)
 
 
 def test_log_startup_config_names_every_profile(
@@ -133,6 +137,7 @@ def test_log_startup_config_names_every_profile(
     assert "Claude profile backend" in caplog.text
     assert "Pi profile fast" in caplog.text
     assert "Codex profile reviewer" in caplog.text
+    assert "Opencode profile oc" in caplog.text
 
 
 # --- the HTTP server and the webhook platform ---

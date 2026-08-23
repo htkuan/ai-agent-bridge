@@ -51,8 +51,9 @@ tests/
 ├── platforms/heartbeat/
 └── e2e/                     # full-stack scenarios (real components + fake CLI)
     ├── stack.py             # the rigs: Slack/webhook adapter → Bridge → controller
-    ├── conftest.py          # live_* fixtures: same rigs, real claude + pi CLIs
-    ├── test_live_claude.py  # live Slack/controller scenarios (opt-in, --live)
+    ├── conftest.py          # live_* fixtures: real claude/pi/codex/opencode CLIs
+    ├── test_live_controllers.py # bare controller x every agent (opt-in, --live)
+    ├── test_live_claude.py  # live Slack-rig scenarios (opt-in, --live)
     └── test_live_webhook.py # live webhook scenarios, claude + pi (opt-in, --live)
 ```
 
@@ -116,11 +117,11 @@ sync with what `agents/claude/events.py` parses.
 ## The live e2e (real agent CLIs)
 
 The scripted CLIs can only prove we handle the stream shapes *we wrote
-down*. `tests/e2e/test_live_claude.py` and `tests/e2e/test_live_webhook.py`
-spawn the real agent CLIs (Claude Code and pi), so the argv we build, the
-streams we parse and the session ids we resume are checked against the thing
-itself. It costs money and is not deterministic, so it is opt-in and
-excluded from CI:
+down*. `tests/e2e/test_live_controllers.py`, `tests/e2e/test_live_claude.py`
+and `tests/e2e/test_live_webhook.py` spawn the real agent CLIs (claude, pi,
+codex, opencode), so the argv we build, the streams we parse and the session
+ids we resume are checked against the thing itself. It costs money and is
+not deterministic, so it is opt-in and excluded from CI:
 
 ```bash
 uv run pytest -m live --live --no-cov -v
@@ -128,15 +129,17 @@ uv run pytest -m live --live --no-cov -v
 
 `--live` switches the scenarios on, `-m live` narrows the run to just them
 (`pytest --live` alone runs them alongside everything else). Requirements:
-`claude` on PATH and authenticated (`claude login` or `ANTHROPIC_API_KEY`)
-for the claude scenarios; `pi` on PATH with its provider authenticated
-(`pi auth`) for the pi ones.
+each agent's CLI on PATH and authenticated — `claude login` /
+`ANTHROPIC_API_KEY`, `pi auth`, `codex login`, `opencode auth` — for that
+agent's scenarios.
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--live` | off | run the `live` scenarios |
 | `--live-cli PATH` | `claude` | which claude binary to spawn |
 | `--live-pi-cli PATH` | `pi` | which pi binary to spawn |
+| `--live-codex-cli PATH` | `codex` | which codex binary to spawn |
+| `--live-opencode-cli PATH` | `opencode` | which opencode binary to spawn |
 | `--live-timeout SECONDS` | `300` | per-turn budget |
 
 **A flag, not an env var.** The switch has to come from outside the test —
@@ -152,20 +155,55 @@ down the pi scenarios or vice versa — because `pytest --live` runs the whole
 suite and the rest is still worth reporting on. CI's e2e job runs
 `-m "e2e and not live"`, so the gate is belt-and-braces.
 
-The flags feed the `live_claude_*` / `live_pi_*` / `live_stack` /
-`live_webhook_stack` fixtures in `tests/e2e/conftest.py`. Both agents are
+The flags feed the `live_{agent}_config` / `live_{agent}_controller`
+fixtures and the rigs built on them (`live_controller_rig`, `live_stack`,
+`live_webhook_stack`) in `tests/e2e/conftest.py`. All four agents are
 sandboxed in throwaway `tmp_path` work dirs, so an agent running with
-`acceptEdits` (claude) or unrestricted tools (pi) can never touch the repo;
-the claude config pins `effort=low` (cheap: these assert plumbing, not
-reasoning) and the pi config leaves provider/model to pi's own settings.
+`acceptEdits` (claude), unrestricted tools (pi) or a writable sandbox
+(codex, opencode) can never touch the repo; the claude config pins
+`effort=low` (cheap: these assert plumbing, not reasoning), the others leave
+model/effort to the CLI's own settings, and codex/opencode keep their
+session maps *outside* the work dir so "nothing appeared in the work dir"
+assertions see only what the agent wrote.
 
-`test_live_claude.py` — the Slack rig and the bare controller, one scenario
-per thing the fake cannot prove:
+`test_live_controllers.py` — every agent's bare controller (claude, pi,
+codex, opencode: `live_controller_rig` runs each scenario once per agent),
+prompt in → `BridgeEvent`s out, no bridge or platform in between:
+
+| Scenario | Agents | Pins |
+|---|---|---|
+| `..._run_streams_exactly_one_completion_with_usage` | all | the real stream parses, the engine's exactly-one-`Completion` guarantee holds, and real usage numbers reach `Usage.from_completion` (cost asserted where the agent reports it: claude, pi) |
+| `..._run_resumes_the_same_agent_session` | all | resume really reattaches — `--resume` (claude), `--session-id` (pi), the `SessionHandleStore` round-trip (codex `exec resume`, opencode `-s`) |
+| `..._system_prompt_reaches_the_model` | all | the platform-built system prompt is part of what the model reads — native flag (claude, pi) or stdin folding (codex, opencode) |
+| `..._tool_use_writes_in_work_dir_and_streams_status` | all | a real tool call runs, confined to the sandboxed work dir, and surfaces as a `StatusUpdate` mid-stream |
+
+The config-axis scenarios flip one knob each and assert the behaviour the
+real CLI enforces. Knobs pinning a *specific* model/provider/variant are
+deliberately not tested live — they depend on what the local account can
+reach (claude's `model="haiku"` is the exception: a stable CLI alias).
+
+| Scenario | Agents | Pins |
+|---|---|---|
+| `..._timeout_kills_the_run_and_reports_error` | all | `timeout_seconds` against the real CLI: process tree killed at the deadline, stream still ends with exactly one (error) `Completion` |
+| `..._claude_default_permission_mode_blocks_writes` | claude | `permission_mode="default"` in print mode has no one to ask — the write is CLI-denied |
+| `..._claude_model_alias_is_accepted` | claude | `--model` carries a value the real CLI resolves |
+| `..._claude_worktree_mode_isolates_the_session` | claude | `worktree_enabled`: the CLI builds the session worktree off `origin/HEAD`, files land there (not the repo root), `cleanup_session` reclaims it |
+| `..._pi_exclude_tools_blocks_writes` | pi | `--exclude-tools` really restricts (the allowlist's other half; the allowlist itself is pinned through the webhook rig) |
+| `..._pi_thinking_flag_is_accepted` | pi | `--thinking` takes the levels our config validates |
+| `..._codex_readonly_sandbox_blocks_writes` | codex | `sandbox_mode="read-only"` really restricts: the file cannot appear, CLI-enforced |
+| `..._codex_effort_override_is_accepted` | codex | the `-c model_reasoning_effort="…"` spelling is one the real CLI accepts |
+| `..._codex_git_work_dir_needs_no_skip_flag` | codex | the production default (git work dir, no skip flag) passes codex's trusted-directory probe |
+
+The suite has already earned its keep: its first run caught codex dropping
+`--skip-git-repo-check` on the resume branch — sessions could start in a
+non-git work dir but never resume there.
+
+`test_live_claude.py` — the Slack rig on top of the bare controller, one
+scenario per thing the fake cannot prove:
 
 | Scenario | Pins |
 |---|---|
-| `..._controller_streams_a_real_completion` | the real stream-json shape parses, and `result` carries the usage/cost fields the Slack footer reads |
-| `..._thread_resumes_the_same_claude_session` | `--session-id` then `--resume` really reattaches — turn 2 recalls turn 1's code word |
+| `..._thread_resumes_the_same_claude_session` | two turns in one Slack thread land in one Claude session, keyed by thread |
 | `..._tool_use_reaches_slack` | a real tool call runs in the sandbox and renders as a status update mid-stream |
 
 `test_live_webhook.py` — the webhook rig (`WebhookStack`: in-process ASGI

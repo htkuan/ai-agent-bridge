@@ -70,26 +70,6 @@ Defined in `src/agent_bridge/bridge/protocols.py`. New agents/platforms implemen
 6. The base dispatches each event to the adapter's `on_*` hook, which renders it as a platform-native message
 ```
 
-## Tech stack
-
-| Component | Choice | Notes |
-|-----------|--------|-------|
-| Language | **Python 3.12+** | Uses `type X = ...` syntax, `match` statements, `X \| Y` unions |
-| Package manager | **uv** | Fast, pyproject.toml native |
-| Build backend | **hatchling** | |
-| Slack SDK | **slack-bolt** (optional dep) | Async Socket Mode |
-| Async HTTP | **aiohttp** | Required by slack-bolt |
-| HTTP server | **fastapi + uvicorn** (optional dep, `[http]`) | Shared server (`server/`) hosting console + HTTP platforms |
-| HTTP client | **httpx** (optional dep, `[http]`) | Webhook callback delivery; ASGI transport in tests |
-| Env config | **python-dotenv** | `.env` file loading |
-| Testing | **pytest + pytest-asyncio** | `asyncio_mode = "auto"` |
-| Coverage | **pytest-cov** | `fail_under = 98` ratchet; `[tool.coverage.report]` in pyproject.toml |
-| Dependency audit | **pip-audit** | PR gate + weekly schedule; `.github/workflows/audit.yml` |
-| Secrets scanning | **gitleaks** | pre-commit hook (staged diff) + CI (commit history); same workflow |
-| Lint / format | **ruff** | one tool for both; `[tool.ruff]` in pyproject.toml |
-| Type checking | **pyright (strict)** | `src/` only; `[tool.pyright]` in pyproject.toml |
-| Claude CLI | `claude -p` with `--output-format stream-json` | Non-interactive, real-time streaming |
-
 ## Project structure
 
 One package per layer. `agents/` and `platforms/` both depend on `bridge/`;
@@ -97,56 +77,6 @@ One package per layer. `agents/` and `platforms/` both depend on `bridge/`;
 `server/` is shared HTTP infrastructure (not a platform) and imports none of
 the layers: HTTP-based platforms own an `APIRouter` that `app.py` mounts onto
 it. `app.py` is the only module that knows all the pieces.
-
-```
-src/agent_bridge/
-├── __init__.py          # Empty — importing a submodule must not drag in the whole app
-├── app.py               # Entry point: builds everything from an AppConfig, signal handling, cleanup
-├── config.py            # AppConfig — aggregates every layer's config; the only caller of load_dotenv
-├── env.py               # Typed env readers (env_str/int/float/bool/path/csv) — the only module reading os.environ
-├── profile_fields.py    # Typed TOML field readers for [<agent>.profiles.<name>] tables — env.py's counterpart for the profiles file
-├── bridge/
-│   ├── router.py        # Bridge — pure routing + global concurrency (Semaphore)
-│   ├── events.py        # BridgeEvent type union (Processing, TextDelta, StatusUpdate, UserQuestion, Completion)
-│   ├── protocols.py     # AgentController + PlatformAdapter + MessageRouter protocol interfaces
-│   ├── session.py       # SessionManager (key → UUID, TTL, JSON persistence)
-│   ├── dedupe.py        # PromptDedupeCache (optional cross-session prompt dedupe)
-│   └── config.py        # SessionConfig + RouterConfig + DedupeConfig, aggregated by BridgeConfig
-├── agents/
-│   ├── base.py          # CliAgentController — shared subprocess engine (spawn → stream-parse → teardown) + RunState
-│   ├── handles.py       # SessionHandleStore — persistent {bridge session_id: agent-native handle} map (JSON)
-│   ├── claude/
-│   │   ├── config.py    # ClaudeConfig (work_dir, permission_mode, timeout, effort, cli_path)
-│   │   ├── controller.py # CliAgentController subclass: command builder + stream-json line parser
-│   │   └── events.py    # Claude stream-json parser → BridgeEvent converter
-│   ├── pi/
-│   │   ├── config.py    # PiConfig (work_dir, provider, model, thinking, tools allow/denylist)
-│   │   ├── controller.py # CliAgentController subclass: prompt via stdin, --session-id create-or-resume
-│   │   └── events.py    # pi --mode json parser + PiRunState fold (Completion synthesized at agent_end)
-│   ├── codex/
-│   │   ├── config.py    # CodexConfig (work_dir, sandbox_mode, model, effort, session_map_path)
-│   │   ├── controller.py # CliAgentController subclass: prompt via stdin `-`, exec/resume via SessionHandleStore
-│   │   └── events.py    # codex exec --json parser + CodexRunState fold (turn.completed/failed terminals)
-│   └── opencode/
-│       ├── config.py    # OpencodeConfig (work_dir, model, variant, session_map_path)
-│       ├── controller.py # CliAgentController subclass: prompt via stdin, run/-s resume via SessionHandleStore
-│       └── events.py    # opencode run --format json parser + OpencodeRunState fold (no terminal event; Completion synthesized at EOF)
-├── server/              # Shared HTTP infra (FastAPI + uvicorn) — hosts routers, knows no layer
-│   ├── config.py        # HttpConfig (host, port)
-│   ├── http_server.py   # HttpServer: FastAPI app + embedded uvicorn lifecycle + include_router()
-│   └── console.py       # Console routes (GET / placeholder, GET /api/health)
-└── platforms/
-    ├── base.py          # make_session_key + BridgeRequest + BasePlatformAdapter (shared pre-process → forward → post-process flow)
-    ├── slack/
-    │   ├── config.py    # SlackConfig (bot_token, app_token, allow-list, usage report, render knobs)
-    │   └── adapter.py   # Event handlers, per-session state machine, message rendering
-    ├── heartbeat/
-    │   ├── config.py    # HeartbeatConfig (interval, prompt, state path)
-    │   └── adapter.py   # Periodic one-shot triggers (resumable=False)
-    └── webhook/
-        ├── config.py    # WebhookConfig (bearer token, callback/idle knobs)
-        └── adapter.py   # POST endpoint (202) → background turn → callback POST (httpx)
-```
 
 ## Conventions
 
@@ -372,64 +302,5 @@ All config loads from `.env` via python-dotenv — once, in `AppConfig.from_env(
 walks each layer's `{Component}Config.from_env(env)`. `src/agent_bridge/env.py` is the only
 module that reads `os.environ`. Booleans accept `true`/`1`/`yes`/`on` and
 `false`/`0`/`no`/`off` (case-insensitive); anything else is rejected at startup, as are
-unparseable numbers. See `.env.example` for the full list.
-
-| Variable | Required | Default | Component |
-|----------|----------|---------|-----------|
-| `ANTHROPIC_API_KEY` | No | — | Claude CLI (only if not already authenticated via `claude login`) |
-| `AGENT_BRIDGE_SLACK_BOT_TOKEN` | Yes (if using Slack) | — | Slack |
-| `AGENT_BRIDGE_SLACK_APP_TOKEN` | Yes (if using Slack) | — | Slack |
-| `AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_CHANNEL` | No | — | Slack (channel to greet after Socket Mode connects) |
-| `AGENT_BRIDGE_SLACK_STARTUP_NOTIFY_MESSAGE` | No | — | Slack (text of that startup notice) |
-| `AGENT_BRIDGE_SLACK_ALLOW_CHANNELS` | No | — (allow all) | Slack (comma-separated channel-name allow-list; non-empty also blocks DMs) |
-| `AGENT_BRIDGE_SLACK_CHANNEL_NOT_ALLOWED_MESSAGE` | No | (fixed English notice) | Slack (reply sent to non-allowed channels) |
-| `AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED` | No | `false` | Slack (append usage/cost footer to the final reply) |
-| `AGENT_BRIDGE_SLACK_USAGE_REPORT_TEMPLATE` | No | — (built-in default) | Slack (`{placeholder}` template for the usage footer) |
-| `AGENT_BRIDGE_CLAUDE_WORK_DIR` | No | `.` | Claude |
-| `AGENT_BRIDGE_CLAUDE_PERMISSION_MODE` | No | `acceptEdits` | Claude |
-| `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS` | No | `600` | Claude |
-| `AGENT_BRIDGE_CLAUDE_WORKTREE_ENABLED` | No | `false` | Claude |
-| `AGENT_BRIDGE_CLAUDE_EFFORT` | No | `xhigh` | Claude (one of `low`, `medium`, `high`, `xhigh`, `max`) |
-| `AGENT_BRIDGE_CLAUDE_MODEL` | No | — (CLI default) | Claude (passed to `claude --model`; opaque, unvalidated) |
-| `AGENT_BRIDGE_CLAUDE_CLI_PATH` | No | `claude` | Claude (path to the Claude Code CLI executable) |
-| `AGENT_BRIDGE_PROFILES_PATH` | No | — (disabled) | App (TOML file with named agent profiles + Slack channel→profile map; see `profiles.example.toml`) |
-| `AGENT_BRIDGE_DEFAULT_AGENT` | No | — (env-built claude) | App (profile name that `agent=None` routes to; must exist in the profiles file) |
-| `AGENT_BRIDGE_PI_WORK_DIR` | No | `.` | Pi (base for `[pi.profiles.*]`; pi has no env-built default controller) |
-| `AGENT_BRIDGE_PI_PROVIDER` | No | — (pi's default) | Pi (passed to `pi --provider`) |
-| `AGENT_BRIDGE_PI_MODEL` | No | — (pi's default) | Pi (passed to `pi --model`) |
-| `AGENT_BRIDGE_PI_THINKING` | No | — (pi's default) | Pi (one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) |
-| `AGENT_BRIDGE_PI_TIMEOUT_SECONDS` | No | `600` | Pi |
-| `AGENT_BRIDGE_PI_CLI_PATH` | No | `pi` | Pi (path to the pi CLI executable) |
-| `AGENT_BRIDGE_PI_TOOLS` | No | — (all tools) | Pi (comma-separated tool allowlist — pi's permission model; see `docs/agents/pi.md`) |
-| `AGENT_BRIDGE_PI_EXCLUDE_TOOLS` | No | — | Pi (comma-separated tool denylist) |
-| `AGENT_BRIDGE_CODEX_WORK_DIR` | No | `.` | Codex (base for `[codex.profiles.*]`; codex has no env-built default controller) |
-| `AGENT_BRIDGE_CODEX_SANDBOX_MODE` | No | `workspace-write` | Codex (one of `read-only`, `workspace-write`, `danger-full-access` — codex's permission model) |
-| `AGENT_BRIDGE_CODEX_MODEL` | No | — (codex's default) | Codex (passed to `codex -m`; opaque, unvalidated) |
-| `AGENT_BRIDGE_CODEX_EFFORT` | No | — (codex's default) | Codex (passed as `-c model_reasoning_effort="…"`; opaque, unvalidated) |
-| `AGENT_BRIDGE_CODEX_TIMEOUT_SECONDS` | No | `600` | Codex |
-| `AGENT_BRIDGE_CODEX_CLI_PATH` | No | `codex` | Codex (path to the codex CLI executable) |
-| `AGENT_BRIDGE_CODEX_SKIP_GIT_REPO_CHECK` | No | `false` | Codex (pass `--skip-git-repo-check`; codex refuses non-git work dirs otherwise) |
-| `AGENT_BRIDGE_CODEX_SESSION_MAP_PATH` | No | `<work_dir>/.agent-bridge/codex-sessions.json` | Codex (bridge-session → codex-thread map; see `docs/agents/codex.md`) |
-| `AGENT_BRIDGE_OPENCODE_WORK_DIR` | No | `.` | Opencode (base for `[opencode.profiles.*]`; opencode has no env-built default controller) |
-| `AGENT_BRIDGE_OPENCODE_MODEL` | No | — (opencode's default) | Opencode (passed to `opencode -m` as `provider/model`; opaque, unvalidated) |
-| `AGENT_BRIDGE_OPENCODE_VARIANT` | No | — (opencode's default) | Opencode (passed to `--variant`; opaque, unvalidated) |
-| `AGENT_BRIDGE_OPENCODE_TIMEOUT_SECONDS` | No | `600` | Opencode |
-| `AGENT_BRIDGE_OPENCODE_CLI_PATH` | No | `opencode` | Opencode (path to the opencode CLI executable) |
-| `AGENT_BRIDGE_OPENCODE_SESSION_MAP_PATH` | No | `<work_dir>/.agent-bridge/opencode-sessions.json` | Opencode (bridge-session → opencode-session map; see `docs/agents/opencode.md`) |
-| `AGENT_BRIDGE_SESSION_STORE_PATH` | No | `./sessions.json` | Bridge |
-| `AGENT_BRIDGE_SESSION_TTL_HOURS` | No | `72` | Bridge |
-| `AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` | No | `5` | Bridge |
-| `AGENT_BRIDGE_DEDUPE_TTL_SECONDS` | No | `0` | Bridge (cross-session prompt dedupe; 0 disables) |
-| `AGENT_BRIDGE_DEDUPE_MAX_ENTRIES` | No | `512` | Bridge (dedupe LRU cap) |
-| `AGENT_BRIDGE_DEDUPE_SIMHASH_THRESHOLD` | No | `0` | Bridge (Hamming threshold for fuzzy match; 0 = exact canonical only) |
-| `AGENT_BRIDGE_HEARTBEAT_ENABLED` | No | `false` | Heartbeat |
-| `AGENT_BRIDGE_HEARTBEAT_INTERVAL_MINUTES` | Yes (if heartbeat enabled) | — | Heartbeat |
-| `AGENT_BRIDGE_HEARTBEAT_PROMPT` | Yes (if heartbeat enabled) | — | Heartbeat |
-| `AGENT_BRIDGE_HEARTBEAT_STATE_PATH` | No | `./heartbeat.json` | Heartbeat |
-| `AGENT_BRIDGE_HEARTBEAT_AGENT` | No | — (bridge default) | Heartbeat (named profile the ticks route to; must exist in the profiles file) |
-| `AGENT_BRIDGE_HTTP_ENABLED` | No | `false` | HTTP server (console + HTTP platforms) |
-| `AGENT_BRIDGE_HTTP_HOST` | No | `127.0.0.1` | HTTP server (loopback by default) |
-| `AGENT_BRIDGE_HTTP_PORT` | No | `8080` | HTTP server |
-| `AGENT_BRIDGE_WEBHOOK_ENABLED` | No | `false` | Webhook (requires the HTTP server) |
-| `AGENT_BRIDGE_WEBHOOK_TOKEN` | Yes (if webhook enabled) | — | Webhook (bearer token; endpoint never comes up without it) |
-| `AGENT_BRIDGE_LOG_LEVEL` | No | `INFO` | Global |
+unparseable numbers. See `.env.example` for the full list of variables, defaults, and
+per-variable notes.

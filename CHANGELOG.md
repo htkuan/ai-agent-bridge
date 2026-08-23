@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.12.0 (2026-08-23)
+
+### Features
+
+- **agents**: Add opencode agent controller
+  ([`25ccda9`](https://github.com/htkuan/ai-agent-bridge/commit/25ccda9625989a2273b4f35dc52987ef7b1ead09))
+
+
 ## v0.11.0 (2026-08-23)
 
 ### Features

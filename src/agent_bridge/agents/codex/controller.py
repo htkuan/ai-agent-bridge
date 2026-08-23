@@ -67,7 +67,10 @@ class CodexController(CliAgentController[CodexRunState]):
             cmd.extend(["-m", self._config.model])
         if self._config.effort:
             cmd.extend(["-c", f'model_reasoning_effort="{self._config.effort}"'])
-        if thread_id is None and self._config.skip_git_repo_check:
+        # On resume too: codex re-runs the trusted-directory probe there, so
+        # gating this on thread_id would strand every non-git work dir after
+        # its first turn (caught live by test_live_run_resumes_the_same_agent_session).
+        if self._config.skip_git_repo_check:
             cmd.append("--skip-git-repo-check")
         # The prompt is deliberately NOT here — the trailing "-" makes codex
         # read it from stdin, keeping user text out of argv.

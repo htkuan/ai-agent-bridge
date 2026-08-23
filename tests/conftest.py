@@ -49,6 +49,18 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="pi CLI --live spawns (default: `pi`, resolved on PATH)",
     )
     group.addoption(
+        "--live-codex-cli",
+        default="codex",
+        metavar="PATH",
+        help="codex CLI --live spawns (default: `codex`, resolved on PATH)",
+    )
+    group.addoption(
+        "--live-opencode-cli",
+        default="opencode",
+        metavar="PATH",
+        help="opencode CLI --live spawns (default: `opencode`, resolved on PATH)",
+    )
+    group.addoption(
         "--live-timeout",
         type=float,
         default=300.0,

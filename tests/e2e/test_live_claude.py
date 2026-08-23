@@ -1,12 +1,12 @@
-"""E2E against the *real* claude CLI — opt-in, spends real tokens.
+"""E2E against the *real* claude CLI through the Slack rig — opt-in.
 
     uv run pytest -m live --live --no-cov -v
 
 Skipped without ``--live`` (see ``tests/conftest.py`` for the flags and
-``conftest.py`` here for the rig). Each scenario pins one thing the scripted
-CLI cannot prove, because the scripted CLI replays the contract instead of
-implementing it: the stream-json shape, session resume, and real tool use
-surfacing in Slack.
+``conftest.py`` here for the rig). The bare-controller scenarios live in
+``test_live_controllers.py`` (once per agent); what's pinned here is the
+Slack path on top: thread → session-key resume, and real tool use rendered
+into the thread while it happens.
 
 Prompts are written to force a token we can assert on. Everything else about
 the reply is the model's business — never assert on its prose.
@@ -14,47 +14,12 @@ the reply is the model's business — never assert on its prose.
 
 from __future__ import annotations
 
-import uuid
-
 import pytest
 
 from agent_bridge.agents.claude.config import ClaudeConfig
-from agent_bridge.agents.claude.controller import ClaudeController
-from agent_bridge.bridge.events import BridgeEvent, Completion, TextDelta, Usage
 from tests.e2e.stack import SlackStack
 
 pytestmark = pytest.mark.live
-
-
-def _streamed_text(events: list[BridgeEvent]) -> str:
-    return " ".join(e.text for e in events if isinstance(e, TextDelta))
-
-
-async def test_live_controller_streams_a_real_completion(
-    live_claude_controller: ClaudeController,
-):
-    """The stream-json contract, checked against the CLI that emits it."""
-    events = [
-        e
-        async for e in live_claude_controller.run(
-            str(uuid.uuid4()),
-            "Reply with exactly the word PONG and nothing else.",
-            is_new=True,
-        )
-    ]
-
-    completion = events[-1]
-    assert isinstance(completion, Completion), events
-    assert not completion.is_error, completion.text
-    assert "PONG" in f"{_streamed_text(events)} {completion.text}".upper()
-
-    # The result line carried real usage — the fields the Slack usage footer
-    # and everything else downstream of Usage.from_completion depend on.
-    usage = Usage.from_completion(completion)
-    assert usage is not None, completion.metadata
-    assert usage.input_tokens > 0 and usage.output_tokens > 0, usage
-    assert usage.num_turns >= 1, usage
-    assert completion.duration_ms > 0
 
 
 async def test_live_thread_resumes_the_same_claude_session(live_stack: SlackStack):

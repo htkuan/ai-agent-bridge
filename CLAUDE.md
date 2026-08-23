@@ -271,11 +271,15 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 - Every test carries a layer marker (`unit` / `integration` / `e2e`) — mostly
   auto-applied; see `docs/testing.md`. CI runs `-m "not e2e"` across the
   version matrix and `-m "e2e and not live"` in a separate 3.12-only job.
-- The `live` marker (`tests/e2e/test_live_claude.py`,
-  `tests/e2e/test_live_webhook.py`) spawns the **real** agent CLIs (`claude`
-  and `pi`) and spends tokens. Gated behind the `--live` flag (declared in
-  `tests/conftest.py`, with `--live-cli` / `--live-pi-cli` /
-  `--live-timeout`), never run by CI:
+- The `live` marker (`tests/e2e/test_live_controllers.py`,
+  `tests/e2e/test_live_claude.py`, `tests/e2e/test_live_webhook.py`) spawns
+  the **real** agent CLIs (`claude`, `pi`, `codex`, `opencode`) and spends
+  tokens. `test_live_controllers.py` drives every agent's bare
+  `CliAgentController` — prompt in → `BridgeEvent`s out, once per agent — so
+  each parser, resume path and sandbox knob is checked against the actual
+  CLI. Gated behind the `--live` flag (declared in `tests/conftest.py`, with
+  `--live-cli` / `--live-pi-cli` / `--live-codex-cli` /
+  `--live-opencode-cli` / `--live-timeout`), never run by CI:
   `uv run pytest -m live --live --no-cov -v`. A missing CLI skips just that
   agent's scenarios. Add a live scenario only for something the scripted CLI
   cannot prove (the real stream shapes, session resume, actual tool use, a

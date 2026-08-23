@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.12.1 (2026-08-23)
+
+### Bug Fixes
+
+- **agents**: Pass --skip-git-repo-check on codex resume
+  ([`ea6cd66`](https://github.com/htkuan/ai-agent-bridge/commit/ea6cd66ce5015143d779027b28a9eab3b85b8cb8))
+
+### Testing
+
+- **e2e**: Add live bare-controller suite for every agent
+  ([`2659e54`](https://github.com/htkuan/ai-agent-bridge/commit/2659e54a8d3dd1da6868238f8232b03221abcb7f))
+
+
 ## v0.12.0 (2026-08-23)
 
 ### Features

@@ -49,6 +49,22 @@ def test_build_command_resume_uses_config_override_not_sandbox_flag(tmp_path: Pa
     assert "--sandbox" not in cmd
 
 
+def test_build_command_resume_keeps_skip_git_repo_check(tmp_path: Path):
+    """Codex re-runs the trusted-directory probe on resume, so the flag must
+    survive into the resume argv — dropping it there strands every non-git
+    work dir after its first turn (found live, test_live_controllers.py)."""
+    map_path = tmp_path / "codex-sessions.json"
+    map_path.write_text(json.dumps({"s1": "thread-abc"}))
+    controller = CodexController(
+        CodexConfig(
+            work_dir=tmp_path, session_map_path=map_path, skip_git_repo_check=True
+        )
+    )
+    cmd = controller.build_command("s1", "hi", is_new=False)
+    assert "resume" in cmd
+    assert "--skip-git-repo-check" in cmd
+
+
 def test_build_command_resume_map_miss_falls_back_to_new_session(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ):

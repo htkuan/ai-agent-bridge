@@ -22,11 +22,14 @@ A resumed session runs:
 
 ```
 codex exec resume <thread_id> --json -c sandbox_mode="<mode>" \
-  [-m MODEL] [-c model_reasoning_effort="EFFORT"] -
+  [-m MODEL] [-c model_reasoning_effort="EFFORT"] [--skip-git-repo-check] -
 ```
 
 Note the quirk: the `resume` subcommand does **not** accept `--sandbox` — the
 sandbox must go through a `-c sandbox_mode="…"` config override.
+`--skip-git-repo-check`, however, is needed on **both** invocations: codex
+re-runs the trusted-directory probe on resume too, so dropping the flag there
+would strand every non-git work dir after its first turn.
 
 The **prompt is piped through stdin** (the trailing `-` positional), never
 argv, so user text starting with `-` can't parse as flags. Codex has no

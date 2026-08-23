@@ -129,21 +129,18 @@ async def test_resumable_false_does_not_touch_session_store(session_mgr):
 @pytest.mark.asyncio
 async def test_resumable_false_passes_uuid_session_id_to_controller(session_mgr):
     """Even without a stored mapping, the agent still gets a valid session_id."""
-    controller = FakeController()
-    bridge = Bridge(RouterConfig(max_concurrent_sessions=5), session_mgr, controller)
-
     captured: list[str] = []
 
-    async def capturing_run(
-        session_id, prompt, is_new, context=None, system_prompt=None
-    ):
-        captured.append(session_id)
-        async for e in FakeController().run(
-            session_id, prompt, is_new, context=context, system_prompt=system_prompt
+    class CapturingController:
+        async def run(
+            self, session_id, prompt, is_new, context=None, system_prompt=None
         ):
-            yield e
+            captured.append(session_id)
+            yield Completion(text="ok")
 
-    bridge._controller = type("C", (), {"run": staticmethod(capturing_run)})()
+    bridge = Bridge(
+        RouterConfig(max_concurrent_sessions=5), session_mgr, CapturingController()
+    )
 
     async for _ in _msg(bridge, "k", "hi", resumable=False):
         pass
@@ -541,7 +538,7 @@ async def test_dedupe_hit_logs_dedupe_hit_line(session_mgr, caplog):
     async for _ in _msg(bridge, "slack:C1:t1", "alert"):
         pass
 
-    with caplog.at_level(logging.INFO, logger="agent_bridge.bridge.router"):
+    with caplog.at_level(logging.INFO, logger="agent_bridge.bridge.middleware.dedupe"):
         async for _ in _msg(bridge, "slack:C1:t2", "alert"):
             pass
 

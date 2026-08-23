@@ -17,7 +17,6 @@ from agent_bridge.agents.codex.config import CodexConfig
 from agent_bridge.agents.opencode.config import OpencodeConfig
 from agent_bridge.agents.pi.config import PiConfig
 from agent_bridge.bridge.config import BridgeConfig, RouterConfig, SessionConfig
-from agent_bridge.bridge.events import Usage
 from agent_bridge.bridge.router import Bridge
 from agent_bridge.bridge.session import SessionManager
 from agent_bridge.config import AppConfig
@@ -57,16 +56,26 @@ class _ExplodingController:
 # --- _periodic_cleanup ---
 
 
+class _ForgetSpyBridge(Bridge):
+    """Records which session ids the cleanup loop tells the bridge to forget."""
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        self.forgotten: list[str] = []
+
+    def forget_session_usage(self, session_id: str) -> None:
+        self.forgotten.append(session_id)
+        super().forget_session_usage(session_id)
+
+
 async def test_cleanup_round_purges_sessions_usage_and_slack_state(tmp_path: Path):
     # Sessions expire (effectively) immediately.
     session_manager = SessionManager(
         SessionConfig(store_path=tmp_path / "s.json", ttl_hours=1e-9)
     )
     controller = _RecordingController()
-    bridge = Bridge(RouterConfig(), session_manager, FakeAgentController())
+    bridge = _ForgetSpyBridge(RouterConfig(), session_manager, FakeAgentController())
     sid, _ = await session_manager.get_or_create("slack:C1:1.0")
-    bridge._session_usage[sid] = Usage(cost_usd=1.0)
-    bridge._usage_tracked.add(sid)
     harness = build_harness(session_manager=session_manager)
     harness.adapter._get_state("slack:C1:1.0")  # stale once the session purges
 
@@ -83,7 +92,9 @@ async def test_cleanup_round_purges_sessions_usage_and_slack_state(tmp_path: Pat
         await task
 
     assert await session_manager.get("slack:C1:1.0") is None
-    assert sid not in bridge._session_usage
+    # The loop routed the purged id into the bridge's usage forgetter…
+    assert sid in bridge.forgotten
+    # …and cleared the adapter's per-session state.
     assert harness.adapter._sessions == {}
 
 

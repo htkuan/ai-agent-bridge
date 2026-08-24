@@ -2,6 +2,35 @@
 
 <!-- version list -->
 
+## v0.13.0 (2026-08-24)
+
+### Documentation
+
+- Trim derivable content from CLAUDE.md
+  ([`dec001d`](https://github.com/htkuan/ai-agent-bridge/commit/dec001da725a8bf823c93153e4c7301e16b11268))
+
+- **bridge**: Pipeline design document and updated references
+  ([`36a2d55`](https://github.com/htkuan/ai-agent-bridge/commit/36a2d5555fa5789ebf4c75db9d29ba43e067e478))
+
+### Features
+
+- **bridge**: Handle_message takes a single BridgeRequest
+  ([`9661b80`](https://github.com/htkuan/ai-agent-bridge/commit/9661b8085c6a24cd4b28fbd9689898f1f3c17bd1))
+
+### Refactoring
+
+- **bridge**: Decompose the router into a middleware pipeline
+  ([`ee2ec3c`](https://github.com/htkuan/ai-agent-bridge/commit/ee2ec3c385f733be7449b3d56602f2430e828b59))
+
+- **bridge**: Extract SessionStore, DedupeCache and CapacityLimiter ports
+  ([`beff151`](https://github.com/htkuan/ai-agent-bridge/commit/beff1512efc142fc919a6d6165e16d4750b37727))
+
+### Breaking Changes
+
+- **bridge**: MessageRouter.handle_message(session_key, text, ...) becomes handle_message(request:
+  BridgeRequest).
+
+
 ## v0.12.1 (2026-08-23)
 
 ### Bug Fixes

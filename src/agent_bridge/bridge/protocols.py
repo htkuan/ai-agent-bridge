@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Protocol
 
 from agent_bridge.bridge.events import BridgeEvent
+from agent_bridge.bridge.request import BridgeRequest
 
 
 class AgentController(Protocol):
@@ -44,21 +46,15 @@ class MessageRouter(Protocol):
     protocol — not the concrete class — so tests can substitute a fake
     that replays a scripted event stream.
 
-    ``agent`` selects a named agent controller registered with the router;
-    ``None`` routes to the default one. The platform decides which name a
-    session uses (e.g. Slack's per-channel profiles); the router only
-    resolves it.
+    The whole turn arrives as one ``BridgeRequest``: ``request.agent``
+    selects a named agent controller registered with the router (``None``
+    routes to the default one — the platform decides which name a session
+    uses, e.g. Slack's per-channel profiles; the router only resolves it),
+    and ``request.resumable`` decides whether the ``session_key`` maps to a
+    persistent session or a one-shot ephemeral one.
     """
 
-    def handle_message(
-        self,
-        session_key: str,
-        text: str,
-        context: dict[str, str] | None = None,
-        system_prompt: str | None = None,
-        resumable: bool = True,
-        agent: str | None = None,
-    ) -> AsyncIterator[BridgeEvent]: ...
+    def handle_message(self, request: BridgeRequest) -> AsyncIterator[BridgeEvent]: ...
 
 
 class PlatformAdapter(Protocol):
@@ -75,3 +71,114 @@ class PlatformAdapter(Protocol):
     async def cleanup(self) -> int:
         """Periodic housekeeping; returns entries removed (0 if none)."""
         ...
+
+
+# --- Storage / strategy ports ---------------------------------------------
+#
+# The pipeline stages depend on these, never on a concrete implementation:
+# app.py picks the implementation and injects it. All ports are async from
+# day one — the built-in implementations are in-process and trivially so,
+# but a networked one (RDBMS session store, Redis dedupe/capacity) must not
+# force an interface change.
+
+
+@dataclass(frozen=True)
+class SessionEntry:
+    """One session mapping as the store persists it.
+
+    ``agent`` is the named profile the session was created under (None for
+    the env-built default) — the affinity ``SessionManager`` enforces.
+    Timestamps are ISO-8601 strings; the *policy* layer parses them, the
+    store just round-trips them.
+    """
+
+    session_id: str
+    created_at: str
+    last_used: str
+    agent: str | None = None
+
+
+class SessionStoreError(OSError):
+    """A store operation could not be persisted. The operation must not
+    have been partially applied: raising means "nothing changed"."""
+
+
+class SessionStore(Protocol):
+    """Persistence behind ``SessionManager`` (key → ``SessionEntry``).
+
+    Implementations hold *state only* — TTL, agent affinity, and orphan
+    tracking are ``SessionManager`` policy. Mutations are atomic per call:
+    ``put``/``delete`` either fully apply or raise ``SessionStoreError``
+    with nothing changed, which is what lets the policy layer keep its
+    rollback guarantees without compensating writes.
+    """
+
+    async def get(self, key: str) -> SessionEntry | None: ...
+
+    async def put(self, key: str, entry: SessionEntry) -> None: ...
+
+    async def delete(self, key: str) -> None:
+        """Remove ``key`` if present; absence is not an error."""
+        ...
+
+    async def list_all(self) -> dict[str, SessionEntry]: ...
+
+
+@dataclass(frozen=True)
+class DedupeHit:
+    """An earlier prompt this one duplicates."""
+
+    first_session_key: str
+    in_flight: bool  # True while the first run hasn't completed yet
+    matched_text: str  # the matched (algorithm-normalized) form, for logging
+    hamming: int = 0  # 0 ⇒ exact match under the algorithm's normalization
+
+
+@dataclass(frozen=True)
+class DedupeDecision:
+    """Outcome of ``lookup_or_claim``: a hit, or a claimed slot to release.
+
+    ``claim_token`` is opaque to the caller — whatever the algorithm needs
+    to find its own entry again in ``mark_completed``/``mark_failed``.
+    """
+
+    hit: DedupeHit | None
+    claim_token: str
+
+
+class DedupeCache(Protocol):
+    """Cross-session duplicate-prompt suppression.
+
+    How "duplicate" is decided (canonicalization, SimHash, embeddings, …)
+    is entirely the implementation's business: the port receives the raw
+    prompt text. A claim must be released exactly once — ``mark_completed``
+    keeps collapsing duplicates onto the finished run, ``mark_failed``
+    drops the entry so retries aren't blocked.
+    """
+
+    async def lookup_or_claim(
+        self, scope: str, text: str, first_session_key: str
+    ) -> DedupeDecision: ...
+
+    async def mark_completed(self, scope: str, claim_token: str) -> None: ...
+
+    async def mark_failed(self, scope: str, claim_token: str) -> None: ...
+
+
+class CapacityLease(Protocol):
+    """One held processing slot. ``release`` must be idempotent — the
+    holder calls it in a ``finally`` that can run on any exit path."""
+
+    async def release(self) -> None: ...
+
+
+class CapacityLimiter(Protocol):
+    """Global concurrency gate.
+
+    ``try_acquire`` never queues: a full limiter answers ``None`` and the
+    caller rejects the turn. Returning a lease (rather than exposing a bare
+    ``release()``) keeps the interface correct for distributed
+    implementations, where releasing means giving back *this* token.
+    """
+
+    async def try_acquire(self) -> CapacityLease | None: ...

@@ -8,7 +8,7 @@ implementations' behaviour.
 """
 
 from tests.fakes.agents import ControllerCall, FakeAgentController
-from tests.fakes.bridge import FakeBridge, RouterCall
+from tests.fakes.bridge import FakeBridge
 from tests.fakes.claude_cli import FakeClaudeCLI
 from tests.fakes.codex_cli import FakeCodexCLI
 from tests.fakes.opencode_cli import FakeOpencodeCLI
@@ -21,6 +21,7 @@ from tests.fakes.slack import (
     dm_event,
     mention_event,
 )
+from tests.fakes.stores import InMemorySessionStore
 
 __all__ = [
     "ControllerCall",
@@ -33,7 +34,7 @@ __all__ = [
     "FakePiCLI",
     "FakePlatformAdapter",
     "FakeSlackClient",
-    "RouterCall",
+    "InMemorySessionStore",
     "SlackCall",
     "dm_event",
     "mention_event",

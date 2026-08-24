@@ -21,6 +21,7 @@ from agent_bridge.bridge.events import (
     UserQuestion,
 )
 from agent_bridge.bridge.protocols import MessageRouter
+from agent_bridge.bridge.request import BridgeRequest
 from agent_bridge.platforms.webhook.adapter import WebhookAdapter
 from agent_bridge.platforms.webhook.config import WebhookConfig
 from tests.fakes import FakeBridge
@@ -105,13 +106,7 @@ class _BlockingBridge:
         self.started = 0
 
     async def handle_message(
-        self,
-        session_key: str,
-        text: str,
-        context: dict[str, str] | None = None,
-        system_prompt: str | None = None,
-        resumable: bool = True,
-        agent: str | None = None,
+        self, request: BridgeRequest
     ) -> AsyncIterator[BridgeEvent]:
         self.started += 1
         yield Processing()
@@ -121,13 +116,7 @@ class _BlockingBridge:
 
 class _RaisingBridge:
     async def handle_message(
-        self,
-        session_key: str,
-        text: str,
-        context: dict[str, str] | None = None,
-        system_prompt: str | None = None,
-        resumable: bool = True,
-        agent: str | None = None,
+        self, request: BridgeRequest
     ) -> AsyncIterator[BridgeEvent]:
         yield Processing()
         raise RuntimeError("controller exploded")

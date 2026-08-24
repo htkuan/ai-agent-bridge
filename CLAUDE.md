@@ -39,9 +39,23 @@ Events are defined in `src/agent_bridge/bridge/events.py`. Agent-internal events
 
 - `AgentController` — `run(session_id, prompt, is_new, context, system_prompt) → AsyncIterator[BridgeEvent]`, plus `cleanup_session(session_id)` (releases per-session resources — worktrees, id mappings; the app's cleanup loop calls it on every controller for every purged session, so unknown ids must be cheap no-ops). The platform adapter builds `prompt` (already pre-tagged with sender identity if needed) and `system_prompt` (platform-flavored directives); the agent forwards them as-is. The agent must not interpret platform-specific keys out of `context`. `agents/base.py` provides `CliAgentController`, the reusable subprocess engine CLI-driven agents subclass (spawn → stream-parse → teardown, with the exactly-one-`Completion` guarantee).
 - `PlatformAdapter` — `start()`, `stop()`, `cleanup()` (periodic housekeeping; returns entries removed — the app's cleanup loop calls it on every adapter). `platforms/base.py` provides `BasePlatformAdapter`, the reusable implementation skeleton adapters subclass
-- `MessageRouter` — `handle_message(session_key, text, context, system_prompt, resumable, agent) → AsyncIterator[BridgeEvent]`. The interface adapters send messages through; `Bridge` is the production implementation. Adapters depend on this protocol, not the concrete class, so tests can substitute fakes. `agent` selects a named controller registered with the bridge (`None` = the default: the configured `default_agent` name when set — resolved *before* the session lookup so sessions stick to the actual profile — otherwise the env-built default controller); the platform picks the name, the bridge resolves it — an unknown name is a single error `Completion` (`error_code="unknown_agent"`) before any shared state is touched.
+- `MessageRouter` — `handle_message(request: BridgeRequest) → AsyncIterator[BridgeEvent]`. The interface adapters send messages through; `Bridge` is the production implementation. Adapters depend on this protocol, not the concrete class, so tests can substitute fakes. `request.agent` selects a named controller registered with the bridge (`None` = the default: the configured `default_agent` name when set — resolved *before* the session lookup so sessions stick to the actual profile — otherwise the env-built default controller); the platform picks the name, the bridge resolves it — an unknown name is a single error `Completion` (`error_code="unknown_agent"`) before any shared state is touched. `BridgeRequest` lives in `bridge/request.py` (re-exported from `platforms/base.py`).
 
 Defined in `src/agent_bridge/bridge/protocols.py`. New agents/platforms implement these.
+
+### Pipeline and ports
+
+`Bridge` is a thin shell over a **middleware pipeline** (`bridge/pipeline.py` + `bridge/middleware/`): `AgentResolution → Dedupe? → SessionResolution → Usage → Capacity → run_agent` (core). The stage order is **fixed in `Bridge.__init__`** because it encodes invariants (unknown agent touches no shared state; a duplicate mints no session; every failure flowing outward passes DedupeStage's `try/finally` and releases the claim; usage tracks at mint) — never make it configurable. Middleware contract: a short-circuit is exactly one `Completion` without calling `call_next`; forwarding never injects/swallows `Completion`s; cleanup goes in `try/finally` (abandoned streams run `GeneratorExit` through every stage).
+
+What *is* swappable are the async **ports** in `protocols.py`, injected by `app.py`:
+
+| Port | Built-in | Notes |
+|------|----------|-------|
+| `SessionStore` | `JsonSessionStore` (`bridge/stores.py`) | per-entry `get/put/delete/list_all`; mutations atomic-or-raise (`SessionStoreError`). `SessionManager` keeps all policy (TTL, agent affinity, orphans) and is **async** |
+| `DedupeCache` | `PromptDedupeCache` (`bridge/dedupe.py`) | receives raw text, hands out an opaque `claim_token`; canonicalize/SimHash are implementation details |
+| `CapacityLimiter` | `SemaphoreCapacityLimiter` (`bridge/capacity.py`) | `try_acquire() → CapacityLease \| None`, never queues; lease release is idempotent |
+
+Each port has a contract suite in `tests/contracts/`; a new implementation joins by adding a fixture param. Full rationale: `docs/design/bridge-pipeline.md`.
 
 ### Session management
 
@@ -60,12 +74,13 @@ Defined in `src/agent_bridge/bridge/protocols.py`. New agents/platforms implemen
 1. User message arrives at Platform Adapter
 2. Adapter constructs session_key, acquires per-session lock
 3. Adapter pre-processes its native event into a `BridgeRequest` (`text` pre-tagged with sender identity, `system_prompt` platform directives, `agent` the named profile the platform picked — the agent stays platform-agnostic) and calls `BasePlatformAdapter.process()`
-4. process() → Bridge.handle_message(session_key, text, context, system_prompt, resumable, agent)
-   → Bridge resolves `agent` → controller (None = AGENT_BRIDGE_DEFAULT_AGENT's profile if set, else the env-built default; unknown name = error Completion, nothing touched)
-   → If `resumable=True`: SessionManager resolves key → (session_id, is_new), persisted on disk
-   → If `resumable=False`: bridge mints a fresh ephemeral UUID, SessionManager untouched
-   → Semaphore check (reject if capacity full)
-   → AgentController.run(session_id, prompt, is_new, context, system_prompt)
+4. process() → Bridge.handle_message(request) → the request travels inward through the pipeline stages:
+   → AgentResolution: `request.agent` → controller (None = AGENT_BRIDGE_DEFAULT_AGENT's profile if set, else the env-built default; unknown name = error Completion, nothing touched)
+   → Dedupe (when configured): duplicate = short-circuit Completion before any session is minted
+   → SessionResolution: `resumable=True` → SessionManager key → (session_id, is_new), persisted via the SessionStore port; `resumable=False` → fresh ephemeral UUID, store untouched
+   → Usage: marks the session trackable, decorates outbound Completions
+   → Capacity: `limiter.try_acquire()` (reject if full — the reject flows out through Dedupe, releasing its claim)
+   → Core: yields `Processing`, then AgentController.run(session_id, prompt, is_new, context, system_prompt)
 5. Agent yields BridgeEvents
 6. The base dispatches each event to the adapter's `on_*` hook, which renders it as a platform-native message
 ```

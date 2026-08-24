@@ -34,7 +34,7 @@ async def test_cleanup_removes_only_idle_expired_sessions(tmp_path: Path):
     )
     adapter = build_harness(session_manager=manager).adapter
 
-    manager.get_or_create("slack:live:1.0")
+    await manager.get_or_create("slack:live:1.0")
     adapter._get_state("slack:live:1.0")
 
     adapter._get_state("slack:stale:1.0")

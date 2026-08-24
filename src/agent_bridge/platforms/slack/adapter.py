@@ -271,15 +271,16 @@ class SlackAdapter(BasePlatformAdapter[_RenderState]):
         """Remove state for expired sessions. Returns count removed."""
         if self._session_manager is None:
             return 0
-        stale = [
-            key
-            for key, state in self._sessions.items()
-            if not state.processing
-            and not state.waiting_for_answer
-            and state.pending is None
-            and not state.lock.locked()
-            and self._session_manager.get(key) is None
-        ]
+        stale: list[str] = []
+        for key, state in self._sessions.items():
+            idle = (
+                not state.processing
+                and not state.waiting_for_answer
+                and state.pending is None
+                and not state.lock.locked()
+            )
+            if idle and await self._session_manager.get(key) is None:
+                stale.append(key)
         for key in stale:
             del self._sessions[key]
         if stale:

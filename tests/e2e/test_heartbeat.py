@@ -48,7 +48,7 @@ async def test_heartbeat_round_runs_prompt_and_leaves_no_session(tmp_path: Path)
     # and nothing persisted for the tick.
     assert "--session-id" in argv
     assert "--resume" not in argv
-    assert session_manager.list_sessions() == {}
+    assert await session_manager.list_sessions() == {}
 
     # The tick was recorded so a restart doesn't immediately re-fire.
     assert json.loads(config.state_path.read_text())["last_run"]

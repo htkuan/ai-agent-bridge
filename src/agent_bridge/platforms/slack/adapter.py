@@ -36,6 +36,16 @@ from agent_bridge.platforms.slack.config import SlackConfig, normalize_channel
 
 logger = logging.getLogger(__name__)
 
+# Fixed notices the platform speaks in its own voice, for the one failure
+# that has no agent-supplied reason: the bridge's capacity gate.
+CAPACITY_REJECTION = (
+    ":no_entry: Too many requests being processed, please try again later."
+)
+QUEUED_REJECTION = (
+    ":x: Your queued message could not be processed — please try again shortly."
+)
+UNKNOWN_ERROR = ":warning: The agent failed without reporting a reason."
+
 
 def _utf8_len(text: str) -> int:
     return len(text.encode("utf-8"))
@@ -582,9 +592,7 @@ class SlackAdapter(BasePlatformAdapter[_RenderState]):
         state.pending_user_questions = event.questions
 
     async def on_completion(self, state: _RenderState, event: Completion) -> None:
-        await self._render_completion(
-            state, event.text, event.is_error, event.usage, event.session_usage
-        )
+        await self._render_completion(state, event)
 
     async def on_stream_end(self, state: _RenderState) -> None:
         await self._render_incomplete_tail(state)
@@ -635,14 +643,7 @@ class SlackAdapter(BasePlatformAdapter[_RenderState]):
             await self._update_message(st.channel, st.message_ts, display)
             st.last_update_time = now
 
-    async def _render_completion(
-        self,
-        st: _RenderState,
-        final_text: str,
-        is_error: bool,
-        usage: Usage | None,
-        session_usage: Usage | None,
-    ) -> None:
+    async def _render_completion(self, st: _RenderState, event: Completion) -> None:
         """Render the final reply — or the agent's questions, when a
         ``UserQuestion`` preceded this ``Completion``."""
         if st.pending_user_questions:
@@ -652,34 +653,45 @@ class SlackAdapter(BasePlatformAdapter[_RenderState]):
         logger.debug(
             "Session %s: Completion → final message (is_error=%s)",
             st.session_key,
-            is_error,
+            event.is_error,
         )
         # Ensure minimum gap since last Slack update to avoid rate limits
         elapsed = time.monotonic() - st.last_update_time
         if st.last_update_time and elapsed < self._config.update_throttle_seconds:
             await asyncio.sleep(self._config.update_throttle_seconds - elapsed)
 
-        final = st.accumulated_text or final_text
-        if is_error:
-            if st.existing_message_ts is not None:
-                # Pending message rejected by Bridge
-                final = (
-                    ":x: Your queued message could not be "
-                    "processed — please try again shortly."
-                )
-            else:
-                final = (
-                    ":no_entry: Too many requests being "
-                    "processed, please try again later."
-                )
-        if not final:
-            final = "_No response from agent._"
+        if event.is_error:
+            final = self._error_text(st, event)
+        else:
+            final = st.accumulated_text or event.text or "_No response from agent._"
         # The usage footer is metadata about the reply, not part of it. Keep
         # it out of both the upload-size decision and the uploaded file, and
         # always render it inline (it's tiny) so it survives even when the
         # body is truncated to a snippet.
-        footer = "" if is_error else self._build_usage_footer(usage, session_usage)
+        footer = (
+            ""
+            if event.is_error
+            else self._build_usage_footer(event.usage, event.session_usage)
+        )
         await self._post_final(st, final, footer)
+
+    def _error_text(self, st: _RenderState, event: Completion) -> str:
+        """Capacity exhaustion is the only failure the platform words itself —
+        it's about the bridge, not this turn. Every other error (timeout,
+        missing CLI, non-zero exit, unknown agent) carries its own reason in
+        ``text``: show that instead of a blanket notice, or the user misreads
+        a 20s timeout as a concurrency problem. The reason leads so it
+        survives truncation; whatever the agent managed to stream follows.
+        """
+        if event.metadata.get("error_code") == "capacity_full":
+            if st.existing_message_ts is not None:
+                # Pending message rejected by Bridge
+                return QUEUED_REJECTION
+            return CAPACITY_REJECTION
+        reason = event.text.strip()
+        notice = f":warning: {reason}" if reason else UNKNOWN_ERROR
+        partial = st.accumulated_text.strip()
+        return f"{notice}\n\n{partial}" if partial else notice
 
     async def _post_questions(self, st: _RenderState) -> None:
         logger.debug(

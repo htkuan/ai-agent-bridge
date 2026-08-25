@@ -15,6 +15,7 @@ from agent_bridge.bridge.events import (
     Processing,
     StatusUpdate,
     TextDelta,
+    Usage,
     UserQuestion,
 )
 from agent_bridge.platforms.slack.adapter import _RenderState
@@ -151,7 +152,7 @@ async def test_completion_waits_out_throttle_window(monkeypatch: pytest.MonkeyPa
     st = _render_state()
     st.last_update_time = 100.0
 
-    await harness.adapter._render_completion(st, "done", False, None, None)
+    await harness.adapter._render_completion(st, Completion(text="done"))
 
     assert sleeper.calls == [pytest.approx(1.0)]
     assert harness.client.messages[("C1", "5.0")] == "done"
@@ -173,7 +174,7 @@ async def test_completion_waits_out_the_configured_window(
     st = _render_state()
     st.last_update_time = 100.0
 
-    await harness.adapter._render_completion(st, "done", False, None, None)
+    await harness.adapter._render_completion(st, Completion(text="done"))
 
     assert sleeper.calls == [pytest.approx(2.5)]
 
@@ -181,13 +182,84 @@ async def test_completion_waits_out_the_configured_window(
 # --- completion variants ---
 
 
-async def test_error_completion_for_queued_message():
+async def test_capacity_rejection_of_queued_message():
     harness = build_harness()
     st = _render_state()
 
-    await harness.adapter._render_completion(st, "whatever", True, None, None)
+    await harness.adapter._render_completion(
+        st,
+        Completion(
+            text="Too many requests being processed, please try again later.",
+            is_error=True,
+            metadata={"error_code": "capacity_full"},
+        ),
+    )
 
     assert harness.client.messages[("C1", "5.0")] == QUEUED_REJECTION
+
+
+async def test_agent_error_shows_the_reported_reason():
+    """A timeout (or any non-capacity failure) must not be dressed up as a
+    capacity rejection — regression guard for the misleading blanket notice."""
+    harness = build_harness()
+    st = _render_state()
+
+    await harness.adapter._render_completion(
+        st,
+        Completion(text="Claude process timed out after 20.0s", is_error=True),
+    )
+
+    assert (
+        harness.client.messages[("C1", "5.0")]
+        == ":warning: Claude process timed out after 20.0s"
+    )
+
+
+async def test_agent_error_keeps_partial_output_below_the_reason():
+    harness = build_harness()
+    st = _render_state()
+    st.accumulated_text = "got this far"
+
+    await harness.adapter._render_completion(
+        st,
+        Completion(text="Claude process timed out after 20.0s", is_error=True),
+    )
+
+    assert harness.client.messages[("C1", "5.0")] == (
+        ":warning: Claude process timed out after 20.0s\n\ngot this far"
+    )
+
+
+async def test_agent_error_without_text_falls_back_to_a_generic_notice():
+    harness = build_harness()
+    st = _render_state()
+
+    await harness.adapter._render_completion(st, Completion(text="", is_error=True))
+
+    assert harness.client.messages[("C1", "5.0")] == slack_adapter.UNKNOWN_ERROR
+
+
+async def test_error_completion_omits_the_usage_footer():
+    harness = build_harness(
+        config=SlackConfig(
+            bot_token="xoxb-x", app_token="xapp-x", usage_report_enabled=True
+        )
+    )
+    st = _render_state()
+
+    await harness.adapter._render_completion(
+        st,
+        Completion(
+            text="Claude process timed out after 20.0s",
+            is_error=True,
+            usage=Usage(input_tokens=10, output_tokens=20),
+        ),
+    )
+
+    assert (
+        harness.client.messages[("C1", "5.0")]
+        == ":warning: Claude process timed out after 20.0s"
+    )
 
 
 async def test_capacity_rejection_posted_via_say():

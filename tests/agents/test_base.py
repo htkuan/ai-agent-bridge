@@ -163,6 +163,31 @@ class _PwdEchoController(CliAgentController[RunState]):
         return Completion(text="done", is_error=False)
 
 
+class _MissingCliController(CliAgentController[RunState]):
+    """Points at a binary that isn't there — pins that a spawn that never
+    happens still terminates the stream."""
+
+    agent_name = "Ghost"
+
+    def __init__(self, work_dir: Path) -> None:
+        super().__init__(work_dir=work_dir, timeout_seconds=5.0)
+
+    def build_command(
+        self,
+        session_id: str,
+        prompt: str,
+        is_new: bool,
+        system_prompt: str | None = None,
+    ) -> list[str]:
+        return [str(self._work_dir / "nonexistent-cli-xyz"), "-p", prompt]
+
+    def new_run_state(self) -> RunState:
+        return RunState()
+
+    def parse_line(self, line: str, state: RunState) -> list[BridgeEvent]:
+        return []
+
+
 class _BareController(CliAgentController[RunState]):
     """No hooks overridden — pins the required-hook contract."""
 
@@ -226,3 +251,29 @@ def test_required_hooks_raise_not_implemented(tmp_path: Path):
         bare.new_run_state()
     with pytest.raises(NotImplementedError):
         bare.parse_line("line", RunState())
+
+
+async def test_missing_cli_yields_one_error_completion(tmp_path: Path):
+    # A CLI path that doesn't exist made create_subprocess_exec raise
+    # FileNotFoundError straight through run(), so the platform never saw a
+    # terminal event and left its placeholder up forever.
+    controller = _MissingCliController(tmp_path)
+    events = [e async for e in controller.run("s1", "hi", is_new=True)]
+    assert len(events) == 1
+    completion = events[0]
+    assert isinstance(completion, Completion)
+    assert completion.is_error is True
+    assert "Ghost process failed to start" in completion.text
+    # The reason has to reach the operator, not just the log.
+    assert "nonexistent-cli-xyz" in completion.text
+
+
+async def test_missing_work_dir_yields_one_error_completion(tmp_path: Path):
+    # The other spawn-time OSError: cwd gone between startup and this turn.
+    controller = _EchoController(tmp_path / "gone", ["hello"])
+    events = [e async for e in controller.run("s1", "hi", is_new=True)]
+    assert len(events) == 1
+    completion = events[0]
+    assert isinstance(completion, Completion)
+    assert completion.is_error is True
+    assert "Echo process failed to start" in completion.text

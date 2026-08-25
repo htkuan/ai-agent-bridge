@@ -346,3 +346,60 @@ async def test_incomplete_stream_strips_tool_status(monkeypatch: pytest.MonkeyPa
 
     assert status is None
     assert harness.client.messages[("C1", "5.0")] == "partial"
+
+
+# --- turns that raise instead of completing ---
+
+
+class _RaisingBridge:
+    """``MessageRouter`` that blows up mid-stream — the shape of any bug that
+    escapes the pipeline instead of arriving as an error ``Completion``."""
+
+    async def handle_message(self, request: object):
+        yield Processing()
+        raise RuntimeError("boom")
+
+
+async def test_raised_turn_replaces_the_placeholder():
+    harness = build_harness()
+    harness.adapter._bridge = _RaisingBridge()
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await harness.adapter._stream_response(
+            "C1",
+            "1.0",
+            "slack:C1:1.0",
+            "prompt",
+            {},
+            say=None,
+            existing_message_ts="5.0",
+        )
+
+    # A terminal notice, not the Processing placeholder left up forever —
+    # and the error still reaches the caller's error envelope.
+    assert harness.client.messages[("C1", "5.0")] == (
+        ":warning: Something went wrong — please try again."
+    )
+
+
+async def test_raised_turn_reporting_never_masks_the_original_error(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    harness = build_harness()
+    harness.adapter._bridge = _RaisingBridge()
+
+    async def explode(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("slack is down")
+
+    monkeypatch.setattr(harness.adapter, "_post_final", explode)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await harness.adapter._stream_response(
+            "C1",
+            "1.0",
+            "slack:C1:1.0",
+            "prompt",
+            {},
+            say=None,
+            existing_message_ts="5.0",
+        )

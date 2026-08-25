@@ -289,6 +289,7 @@ Updates the message with the final response text. Error cases:
 | Any other error (timeout, missing CLI, non-zero exit, unknown agent) | `:warning: ` + the reason the completion reported, e.g. `:warning: Claude process timed out after 300.0s` — followed by whatever text streamed before the failure |
 | Error with no reported reason | `:warning: The agent failed without reporting a reason.` |
 | No response | `_No response from agent._` |
+| Turn raised instead of completing (a bug escaping the pipeline) | `:warning: Something went wrong — please try again.` — the placeholder is never left hanging; the traceback is logged |
 | Response too long (> ~3900 UTF-8 bytes) | Preview (up to 1000 bytes) + note, full content uploaded as `response.md` file snippet; if upload fails, user sees `(response too long; upload failed — please retry)` |
 
 Only the bridge's capacity gate (`error_code = "capacity_full"`) gets a

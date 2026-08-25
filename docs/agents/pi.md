@@ -94,6 +94,7 @@ tokens and cost included), and `num_turns` counts `turn_end` events.
 
 | Scenario | Result |
 |----------|--------|
+| CLI could not be spawned (`cli_path` missing or not executable, `work_dir` gone) | Error `Completion` naming the OS error — the run ends before any process exists |
 | Process timeout (no output) | Error `Completion` with timeout message, process tree killed |
 | Process exited without `agent_end` (bad model, provider auth failure, crash) | Error `Completion` with the exit code, stderr logged |
 | `agent_end` with `willRetry: true` | Not terminal — the stream continues into the retry |

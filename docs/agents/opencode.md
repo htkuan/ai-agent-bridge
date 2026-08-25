@@ -125,6 +125,7 @@ stays 0.
 
 | Scenario | Result |
 |----------|--------|
+| CLI could not be spawned (`cli_path` missing or not executable, `work_dir` gone) | Error `Completion` naming the OS error — the run ends before any process exists |
 | Process timeout (no output) | Error `Completion` with timeout message, process tree killed (opencode spawns an internal server child per run; the group kill reaps it) |
 | `error` event + non-zero exit | Error `Completion` with the error message |
 | Non-zero exit with no JSON (e.g. unknown session id on resume: exit 1, stderr `Error: Session not found`) | Error `Completion` with the exit code, stderr logged |

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
 import time
@@ -554,18 +555,29 @@ class SlackAdapter(BasePlatformAdapter[_RenderState]):
             message_ts=existing_message_ts,
         )
 
-        final = await self.process(
-            BridgeRequest(
-                session_key=session_key,
-                text=self._tag_prompt(text, context),
-                context=context,
-                system_prompt=self._build_system_prompt(context),
-                # Per-channel agent profile; DMs resolve to the channel id,
-                # never match, and fall through to the default agent.
-                agent=self._config.profile_for_channel(context.get("channel_name", "")),
-            ),
-            st,
-        )
+        try:
+            final = await self.process(
+                BridgeRequest(
+                    session_key=session_key,
+                    text=self._tag_prompt(text, context),
+                    context=context,
+                    system_prompt=self._build_system_prompt(context),
+                    # Per-channel agent profile; DMs resolve to the channel id,
+                    # never match, and fall through to the default agent.
+                    agent=self._config.profile_for_channel(
+                        context.get("channel_name", "")
+                    ),
+                ),
+                st,
+            )
+        except Exception:
+            # Every expected failure arrives as an error Completion, so an
+            # exception means something escaped the pipeline. Close the thread
+            # out here — the placeholder posted on Processing would otherwise
+            # sit there forever — then let _process_message's envelope log it
+            # and reset the session.
+            await self._render_raised_turn(st)
+            raise
         # A cut stream (no Completion) never enters waiting_for_answer, even
         # if a UserQuestion made it through before the cut.
         if final is not None and st.pending_user_questions:
@@ -725,6 +737,20 @@ class SlackAdapter(BasePlatformAdapter[_RenderState]):
             await self._update_message(st.channel, st.message_ts, text)
         elif st.say is not None:
             await st.say(text=text, thread_ts=st.thread_ts)
+
+    async def _render_raised_turn(self, st: _RenderState) -> None:
+        """Safety net: report a turn that raised instead of completing.
+
+        Best-effort — a Slack failure here must not mask the original error.
+        """
+        logger.warning(
+            "Session %s: turn raised before completing — reporting in thread",
+            st.session_key,
+        )
+        with contextlib.suppress(Exception):
+            await self._post_final(
+                st, ":warning: Something went wrong — please try again."
+            )
 
     async def _render_incomplete_tail(self, st: _RenderState) -> None:
         """Safety net: if the stream ended without Completion, strip residual

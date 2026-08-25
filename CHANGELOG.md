@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v0.13.1 (2026-08-25)
+
+### Bug Fixes
+
+- **agents**: Report a failed CLI spawn as an error Completion
+  ([`873a7b9`](https://github.com/htkuan/ai-agent-bridge/commit/873a7b95157668e68acb437b6ad4d79ef71d3b68))
+
+- **slack**: Surface the agent's error reason instead of a blanket notice
+  ([`1f19554`](https://github.com/htkuan/ai-agent-bridge/commit/1f195543c3f59a3db4058158c8af410da43301cb))
+
+
 ## v0.13.0 (2026-08-24)
 
 ### Documentation

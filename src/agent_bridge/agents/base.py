@@ -124,24 +124,20 @@ class CliAgentController[RunStateT: RunState]:
         )
 
         payload = self.stdin_payload(prompt, system_prompt)
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            # A pipe only when the agent feeds the prompt through stdin;
-            # otherwise an explicit EOF, since some CLIs read (or announce
-            # reading) stdin whenever it isn't a TTY.
-            stdin=asyncio.subprocess.PIPE
-            if payload is not None
-            else asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(cwd),
-            # cwd= changes the directory but inherits the parent's $PWD, and
-            # some CLIs trust $PWD over getcwd() (opencode resolves its
-            # project directory from it) — pin it the way a shell cd would.
-            env={**os.environ, "PWD": str(cwd)},
-            limit=10 * 1024 * 1024,  # 10 MB line buffer (default 64 KB is too small)
-            start_new_session=True,  # isolate process group for clean tree cleanup
-        )
+        try:
+            process = await self._spawn(cmd, payload)
+        except OSError as exc:
+            # The CLI never started (binary missing or not executable, work
+            # dir gone, fd exhaustion), so there is no stream to end. The
+            # exactly-one-Completion guarantee has to be met right here: an
+            # escaping exception leaves the platform rendering a turn that
+            # never terminates.
+            logger.error("Failed to start %s: %s", self.agent_name, exc)
+            yield Completion(
+                text=f"{self.agent_name} process failed to start: {exc}",
+                is_error=True,
+            )
+            return
 
         # Feed stdin and drain stderr in background to prevent pipe deadlock
         feed_task = (
@@ -168,50 +164,87 @@ class CliAgentController[RunStateT: RunState]:
                 is_error=True,
             )
         finally:
-            # Kill the whole process group up front. An orphaned grandchild
-            # (e.g. a nested CLI backgrounded by the agent) inherits the
-            # stdout/stderr pipes and keeps them open, which would wedge both
-            # process.wait() and the stderr drain on the still-open pipes.
-            self._kill_process_tree(process, graceful=True)
-            try:
-                await asyncio.wait_for(process.wait(), timeout=5.0)
-            except TimeoutError:
-                self._kill_process_tree(process, graceful=False)
-                await process.wait()
-
-            if feed_task is not None:
-                # Normally done long ago; after a kill the broken pipe ends it.
-                with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(feed_task, timeout=5.0)
-
-            try:
-                stderr_text = await asyncio.wait_for(stderr_task, timeout=5.0)
-            except TimeoutError:
-                stderr_task.cancel()
-                stderr_text = ""
-            return_code = process.returncode
-
+            return_code, stderr_text = await self._teardown(
+                process, feed_task, stderr_task
+            )
             # Once a result was streamed, the task succeeded — a non-zero exit
             # code is just our own group teardown (signal), not a failure.
             # Without a result the run must still complete the stream, or
-            # consumers hang on a contract violation: the subclass gets first
-            # say (a terminal-event-less CLI synthesizes success here), then
-            # the generic error Completion covers the rest.
+            # consumers hang on a contract violation.
             if not timed_out and not result_seen:
-                completion = self.on_stream_end(state, return_code, stderr_text)
-                if completion is None:
-                    if stderr_text:
-                        logger.error(
-                            "%s stderr: %s", self.agent_name, stderr_text[:500]
-                        )
-                    completion = Completion(
-                        text=(
-                            f"{self.agent_name} process exited with code "
-                            f"{return_code} before emitting a result"
-                        ),
-                        is_error=True,
-                    )
-                yield completion
+                yield self._final_completion(state, return_code, stderr_text)
+
+    async def _spawn(
+        self, cmd: list[str], payload: bytes | None
+    ) -> asyncio.subprocess.Process:
+        cwd = self._work_dir
+        return await asyncio.create_subprocess_exec(
+            *cmd,
+            # A pipe only when the agent feeds the prompt through stdin;
+            # otherwise an explicit EOF, since some CLIs read (or announce
+            # reading) stdin whenever it isn't a TTY.
+            stdin=asyncio.subprocess.PIPE
+            if payload is not None
+            else asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(cwd),
+            # cwd= changes the directory but inherits the parent's $PWD, and
+            # some CLIs trust $PWD over getcwd() (opencode resolves its
+            # project directory from it) — pin it the way a shell cd would.
+            env={**os.environ, "PWD": str(cwd)},
+            limit=10 * 1024 * 1024,  # 10 MB line buffer (default 64 KB is too small)
+            start_new_session=True,  # isolate process group for clean tree cleanup
+        )
+
+    async def _teardown(
+        self,
+        process: asyncio.subprocess.Process,
+        feed_task: asyncio.Task[None] | None,
+        stderr_task: asyncio.Task[str],
+    ) -> tuple[int | None, str]:
+        """Stop the process tree, then collect its exit code and stderr."""
+        # Kill the whole process group up front. An orphaned grandchild
+        # (e.g. a nested CLI backgrounded by the agent) inherits the
+        # stdout/stderr pipes and keeps them open, which would wedge both
+        # process.wait() and the stderr drain on the still-open pipes.
+        self._kill_process_tree(process, graceful=True)
+        try:
+            await asyncio.wait_for(process.wait(), timeout=5.0)
+        except TimeoutError:
+            self._kill_process_tree(process, graceful=False)
+            await process.wait()
+
+        if feed_task is not None:
+            # Normally done long ago; after a kill the broken pipe ends it.
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(feed_task, timeout=5.0)
+
+        try:
+            stderr_text = await asyncio.wait_for(stderr_task, timeout=5.0)
+        except TimeoutError:
+            stderr_task.cancel()
+            stderr_text = ""
+        return process.returncode, stderr_text
+
+    def _final_completion(
+        self, state: RunStateT, return_code: int | None, stderr_text: str
+    ) -> Completion:
+        """Close a stream that carried no result: the subclass gets first say
+        (a terminal-event-less CLI synthesizes success here), then the generic
+        error ``Completion`` covers the rest."""
+        completion = self.on_stream_end(state, return_code, stderr_text)
+        if completion is not None:
+            return completion
+        if stderr_text:
+            logger.error("%s stderr: %s", self.agent_name, stderr_text[:500])
+        return Completion(
+            text=(
+                f"{self.agent_name} process exited with code "
+                f"{return_code} before emitting a result"
+            ),
+            is_error=True,
+        )
 
     async def _read_stream_with_timeout(
         self,

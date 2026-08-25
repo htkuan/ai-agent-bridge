@@ -287,6 +287,7 @@ Updates the message with the final response text. Error cases:
 | Capacity full (new request) | `:no_entry: Too many requests being processed, please try again later.` |
 | Capacity full (pending drained) | `:x: Your queued message could not be processed — please try again shortly.` |
 | No response | `_No response from agent._` |
+| Turn raised instead of completing (a bug escaping the pipeline) | `:warning: Something went wrong — please try again.` — the placeholder is never left hanging; the traceback is logged |
 | Response too long (> ~3900 UTF-8 bytes) | Preview (up to 1000 bytes) + note, full content uploaded as `response.md` file snippet; if upload fails, user sees `(response too long; upload failed — please retry)` |
 
 On a successful (non-error) completion, a usage/cost footer is appended when `AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED=true` (see [Usage / Cost Report](#optional-usage--cost-report)).

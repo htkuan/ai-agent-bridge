@@ -254,6 +254,7 @@ The stdout line buffer is set to **10 MB** (default is 64 KB). Claude Code can p
 
 | Scenario | Result |
 |----------|--------|
+| CLI could not be spawned (`cli_path` missing or not executable, `work_dir` gone) | Error `Completion` naming the OS error — the run ends before any process exists |
 | Process timeout (no output) | Error `Completion` with timeout message, process killed |
 | Process exited *before* a `result` was seen (any exit code, including 0) | Error `Completion` with the exit code, stderr logged |
 | Non-zero exit code *after* a `result` was seen | Suppressed — the task succeeded; the signal exit is just our own group teardown |

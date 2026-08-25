@@ -122,6 +122,7 @@ duration (`duration_api_ms` stays 0).
 
 | Scenario | Result |
 |----------|--------|
+| CLI could not be spawned (`cli_path` missing or not executable, `work_dir` gone) | Error `Completion` naming the OS error — the run ends before any process exists |
 | Process timeout (no output) | Error `Completion` with timeout message, process tree killed |
 | `turn.failed` | Error `Completion` with the error message |
 | Process exited with no terminal event (e.g. unknown thread id on resume: exit 1, stderr `no rollout found…`, no JSON) | Error `Completion` with the exit code, stderr logged |

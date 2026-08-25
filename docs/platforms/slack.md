@@ -286,8 +286,19 @@ Updates the message with the final response text. Error cases:
 | Normal completion | Final agent text |
 | Capacity full (new request) | `:no_entry: Too many requests being processed, please try again later.` |
 | Capacity full (pending drained) | `:x: Your queued message could not be processed — please try again shortly.` |
+| Any other error (timeout, missing CLI, non-zero exit, unknown agent) | `:warning: ` + the reason the completion reported, e.g. `:warning: Claude process timed out after 300.0s` — followed by whatever text streamed before the failure |
+| Error with no reported reason | `:warning: The agent failed without reporting a reason.` |
 | No response | `_No response from agent._` |
 | Response too long (> ~3900 UTF-8 bytes) | Preview (up to 1000 bytes) + note, full content uploaded as `response.md` file snippet; if upload fails, user sees `(response too long; upload failed — please retry)` |
+
+Only the bridge's capacity gate (`error_code = "capacity_full"`) gets a
+platform-worded notice — it is about the bridge, not this turn. Every other
+failure carries its own reason in `Completion.text`, so the adapter surfaces
+that verbatim rather than a blanket notice: a 20s timeout must not read as a
+concurrency problem, since the fix (raise `AGENT_BRIDGE_CLAUDE_TIMEOUT_SECONDS`)
+is nothing like the fix for a full bridge (raise
+`AGENT_BRIDGE_MAX_CONCURRENT_SESSIONS` or retry). The reason leads the message
+so it survives truncation when a long partial reply follows it.
 
 On a successful (non-error) completion, a usage/cost footer is appended when `AGENT_BRIDGE_SLACK_USAGE_REPORT_ENABLED=true` (see [Usage / Cost Report](#optional-usage--cost-report)).
 

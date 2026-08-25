@@ -25,11 +25,12 @@ async def test_hung_cli_killed_after_timeout(tmp_path: Path):
     # pass where the process died early instead of being killed.
     assert 1.0 <= elapsed < 5.0
 
-    # The streamed partial was replaced by the error notice.
+    # The user is told what actually went wrong — the timeout, not a
+    # blanket "too many requests" — and keeps the partial that streamed.
     final = list(stack.client.messages.values())
     assert len(final) == 1
-    assert final[0].startswith(":no_entry:")
-    assert "working on it" not in final[0]
+    assert final[0].startswith(":warning: Claude process timed out after 1.0s")
+    assert "working on it" in final[0]
 
     # The session is idle again — the thread can retry immediately.
     state = stack.adapter._get_state("slack:C123:1.0")

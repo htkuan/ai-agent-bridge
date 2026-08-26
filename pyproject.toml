@@ -62,6 +62,7 @@ markers = [
     "integration: crosses a process boundary, e.g. spawns the scripted claude CLI",
     "e2e: full-stack scenario from tests/e2e (real components, faked edges)",
     "live: spawns a real agent CLI (claude/pi) and spends tokens; needs the --live flag",
+    "live_platform: drives a platform over its real transport (real sockets) with a scripted router behind it — no bridge, no agent, no tokens",
 ]
 
 [tool.coverage.report]

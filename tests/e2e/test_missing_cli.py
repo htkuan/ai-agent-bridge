@@ -34,9 +34,13 @@ async def test_missing_cli_reports_and_keeps_the_bridge_alive(tmp_path: Path):
     # A terminal notice, not the ":hourglass_flowing_sand: Processing..."
     # placeholder the thread used to sit on forever: the spawn's
     # FileNotFoundError escaped the pipeline instead of completing the stream.
+    # ":warning: <reason>", not the blanket ":no_entry:" — that one is the
+    # platform's own voice for capacity exhaustion, and every other failure
+    # shows what actually went wrong (see SlackAdapter._error_text).
     first = stack.replies()
     assert len(first) == 1
-    assert first[0].startswith(":no_entry:")
+    assert first[0].startswith(":warning:")
+    assert "failed to start" in first[0]
 
     # The session is idle again, so the thread can retry immediately.
     state = stack.adapter._get_state("slack:C123:1.0")
@@ -45,4 +49,4 @@ async def test_missing_cli_reports_and_keeps_the_bridge_alive(tmp_path: Path):
 
     # ...and the bridge is still serving other threads.
     await stack.send("second", ts="2.0")
-    assert [m.startswith(":no_entry:") for m in stack.replies()] == [True, True]
+    assert [m.startswith(":warning:") for m in stack.replies()] == [True, True]

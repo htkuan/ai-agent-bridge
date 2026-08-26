@@ -36,9 +36,12 @@ implemented across the `tests/` tree.
 ```
 tests/
 ├── conftest.py              # shared fixtures: fake_claude factory, session_manager
+├── support.py               # tiny shared helpers (wait_until)
 ├── fakes/                   # typed doubles for the protocol seams (pyright strict)
 │   ├── agents.py            # FakeAgentController — scripted event replay, records calls
-│   ├── bridge.py            # FakeBridge — implements MessageRouter, capacity_full mode
+│   ├── bridge.py            # FakeBridge — MessageRouter: capacity_full / unknown agent,
+│   │                        #   plus gate (park a turn in flight) and raises (blow up)
+│   ├── events.py            # ALL_EVENTS / CUT_STREAM — the canonical render stimulus
 │   ├── platforms.py         # FakePlatformAdapter — lifecycle + cleanup recorder
 │   ├── slack.py             # FakeSlackClient / FakeBoltApp / event payload builders
 │   └── claude_cli.py        # scripted claude CLI stand-in + scenario schema
@@ -57,10 +60,12 @@ tests/
 │   └── middleware/          # each pipeline stage in isolation vs scripted downstreams
 ├── agents/claude/           # controller + stream-json parser
 ├── platforms/               # test_base.py: BasePlatformAdapter's shared dispatch flow
+│                            # harness.py: the PlatformHarness shape every platform implements
 ├── platforms/slack/         # adapter behaviour, one concern per file
 ├── platforms/heartbeat/
 └── e2e/                     # full-stack scenarios (real components + fake CLI)
     ├── stack.py             # the rigs: Slack/webhook adapter → Bridge → controller
+    ├── test_live_platforms.py   # platform over its REAL transport, FakeBridge behind it
     ├── conftest.py          # live_* fixtures: real claude/pi/codex/opencode CLIs
     ├── test_live_controllers.py # bare controller x every agent (opt-in, --live)
     ├── test_live_claude.py  # live Slack-rig scenarios (opt-in, --live)
@@ -127,6 +132,75 @@ results, non-zero exits, malformed JSON lines, mid-stream cuts (`exit` before
 `result`), hangs (`sleep`, for timeout-kill tests), and stderr noise. The
 step schema is documented in the module docstring — keep the builders in
 sync with what `agents/claude/events.py` parses.
+
+## The platform harness
+
+Every platform ships one harness (`tests/platforms/{name}/harness.py`) that
+exposes an adapter's three seams, so no test has to reach into the adapter
+for them. The shape is declared as a protocol in
+`tests/platforms/harness.py`:
+
+| Member | Seam | Is |
+|--------|------|----|
+| `adapter` | — | the real adapter, wired to doubles |
+| `await deliver()` | trigger (inbound) | one turn, driven the way production drives it |
+| `requests()` | router | every `BridgeRequest` that reached `MessageRouter` |
+| `output()` | surface (outbound) | what the platform's consumer is left with |
+
+`deliver()` takes no arguments on purpose: what a turn *contains* is decided
+when the harness is built, and each platform adds richer verbs of its own
+(`post(conversation_id=…)`, `send(text, ts=…)`) for its own tests. Builders
+are async context managers — `webhook_harness(...)`,
+`heartbeat_harness(tmp_path, ...)` — taking `events` / `capacity_full` /
+`known_agents` / `raises` / `config`. `output()` is per archetype: Slack
+returns the visible message texts, webhook the callback payloads, heartbeat
+the log lines its recorder captured.
+
+Slack's `build_harness` implements the same three members but is not yet an
+async context manager and still bypasses `SlackAdapter.__init__` — both wait
+on the adapter taking an injectable app factory.
+
+**No test-local router doubles.** `FakeBridge` covers scripted streams,
+capacity rejection, unknown-agent rejection, parking a turn in flight
+(`gate`) and blowing up mid-stream (`raises`). Extend it — and its contract
+suite — rather than writing a one-off in a test module: a local double drifts
+from the protocol silently, and one of them had been passing a test on a
+`TypeError` from a signature the protocol never allowed.
+
+The full design, including the standard for new platforms, is
+[docs/design/platform-adapters.md](design/platform-adapters.md).
+
+## The live-platform tier (real transport, no bridge, no agent)
+
+Between the in-process tests and the e2e stack sits one more tier, in
+`tests/e2e/test_live_platforms.py` (marker `live_platform`):
+
+```
+real transport  →  real Adapter  →  FakeBridge (scripted events)
+```
+
+It is the mirror of `test_live_controllers.py` — that file drives a bare
+controller with no bridge or platform in front; this one drives a bare
+adapter with no bridge or agent behind. The router seam stays the same fake
+used one tier down on purpose: a failure here then has exactly one possible
+cause, which is that reality diverged from what the fakes claim.
+`tests/contracts/` pins *our* fakes to *our* implementations; nothing else
+pins a fake of somebody else's API.
+
+**Webhook** needs no credentials — its external platform is HTTP, so both
+edges are hosted locally: inbound is a real `HttpServer` (embedded uvicorn,
+OS-assigned port) reached by a real `httpx.AsyncClient` over a real socket,
+outbound is the adapter's *production* httpx client (no `callback_transport`)
+POSTing to a second real server. It therefore runs in CI's e2e job, which is
+affordable because `tests/server/test_http_server.py` already boots real
+uvicorn there.
+
+The marker names the tier but gates nothing by itself: each platform's rig
+skips itself when its prerequisite is missing, the same way a missing CLI
+skips one agent's `live` scenarios. Platforms whose transport needs
+third-party credentials (Slack) will read them from a gitignored TOML behind
+a `--live-platform-config PATH` flag — never from flags or `os.environ` — so
+without that flag no test can reach a real workspace.
 
 ## The live e2e (real agent CLIs)
 
@@ -251,7 +325,9 @@ assert on the model's prose.
   `integration` is declared per module (`pytestmark`) where tests cross a
   process boundary, e.g. spawning the scripted CLI. Select layers with `-m`
   (`uv run pytest -m "not e2e"`). `live` is an orthogonal opt-in on top of
-  `e2e`, not a layer, and needs `--live` as well as its marker. Markers are
+  `e2e`, not a layer, and needs `--live` as well as its marker.
+  `live_platform` is also orthogonal to the layers but is *not* flag-gated —
+  each platform's rig skips itself when its prerequisite is absent. Markers are
   registered in `pyproject.toml` and `--strict-markers` rejects typos.
 - **Running**: `uv run pytest -q` (full suite, coverage gate applies);
   single files or `-m` subsets need `--no-cov`. In CI the version matrix runs

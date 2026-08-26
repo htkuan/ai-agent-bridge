@@ -120,7 +120,18 @@ select = [
 "tests/*" = ["S101", "S105", "S106", "S603", "S607", "ASYNC221"]
 
 [tool.pyright]
-include = ["src", "tests/fakes", "tests/contracts"]
+# Test code joins strict typing where the types are the point: the shared
+# doubles, the contract suites, and the platform harnesses (whose whole job
+# is to implement one shape).
+include = [
+    "src",
+    "tests/fakes",
+    "tests/contracts",
+    "tests/support.py",
+    "tests/platforms/harness.py",
+    "tests/platforms/heartbeat/harness.py",
+    "tests/platforms/webhook/harness.py",
+]
 pythonVersion = "3.12"
 venvPath = "."
 venv = ".venv"

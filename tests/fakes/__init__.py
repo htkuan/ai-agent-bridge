@@ -11,6 +11,7 @@ from tests.fakes.agents import ControllerCall, FakeAgentController
 from tests.fakes.bridge import FakeBridge
 from tests.fakes.claude_cli import FakeClaudeCLI
 from tests.fakes.codex_cli import FakeCodexCLI
+from tests.fakes.events import ALL_EVENTS, CUT_STREAM
 from tests.fakes.opencode_cli import FakeOpencodeCLI
 from tests.fakes.pi_cli import FakePiCLI
 from tests.fakes.platforms import FakePlatformAdapter
@@ -24,6 +25,8 @@ from tests.fakes.slack import (
 from tests.fakes.stores import InMemorySessionStore
 
 __all__ = [
+    "ALL_EVENTS",
+    "CUT_STREAM",
     "ControllerCall",
     "FakeAgentController",
     "FakeBoltApp",

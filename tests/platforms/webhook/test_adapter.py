@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
-from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from collections.abc import Callable
 
 import httpx
 import pytest
-from fastapi import FastAPI
 
 from agent_bridge.bridge.events import (
     BridgeEvent,
@@ -20,107 +17,16 @@ from agent_bridge.bridge.events import (
     TextDelta,
     UserQuestion,
 )
-from agent_bridge.bridge.protocols import MessageRouter
-from agent_bridge.bridge.request import BridgeRequest
 from agent_bridge.platforms.webhook.adapter import WebhookAdapter
 from agent_bridge.platforms.webhook.config import WebhookConfig
 from tests.fakes import FakeBridge
-
-TOKEN = "test-webhook-token"
-AUTH = {"Authorization": f"Bearer {TOKEN}"}
-URL = "/platforms/webhook/v1/messages"
-CALLBACK_URL = "http://callbacks.test/result"
-
-
-@dataclass
-class Harness:
-    adapter: WebhookAdapter
-    callbacks: list[httpx.Request]
-    client: httpx.AsyncClient
-
-    async def post(
-        self, headers: dict[str, str] = AUTH, **overrides: object
-    ) -> httpx.Response:
-        body: dict[str, object] = {
-            "conversation_id": "conv-1",
-            "text": "hello",
-            "callback_url": CALLBACK_URL,
-            **overrides,
-        }
-        return await self.client.post(
-            URL, json={k: v for k, v in body.items() if v is not None}, headers=headers
-        )
-
-    def payloads(self) -> list[dict[str, object]]:
-        return [json.loads(request.content) for request in self.callbacks]
-
-
-@contextlib.asynccontextmanager
-async def webhook_harness(
-    bridge: MessageRouter | None = None,
-    *,
-    config: WebhookConfig | None = None,
-    respond: Callable[[httpx.Request], httpx.Response] | None = None,
-) -> AsyncIterator[Harness]:
-    received: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        received.append(request)
-        return respond(request) if respond is not None else httpx.Response(200)
-
-    adapter = WebhookAdapter(
-        config or WebhookConfig(token=TOKEN, callback_retry_delays=()),
-        bridge if bridge is not None else FakeBridge(),
-        callback_transport=httpx.MockTransport(handler),
-    )
-    app = FastAPI()
-    app.include_router(adapter.router)
-    client = httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://bridge.test"
-    )
-    await adapter.start()
-    try:
-        yield Harness(adapter, received, client)
-    finally:
-        await adapter.stop()
-        await client.aclose()
-
-
-async def _wait_until(
-    predicate: Callable[[], bool],
-    # Deadline for a sync-predicate poll loop; asyncio.timeout can't help here.
-    timeout: float = 5.0,  # noqa: ASYNC109
-) -> None:
-    deadline = asyncio.get_running_loop().time() + timeout
-    while not predicate():
-        if asyncio.get_running_loop().time() > deadline:
-            raise TimeoutError("condition not met within timeout")
-        await asyncio.sleep(0.01)
-
-
-class _BlockingBridge:
-    """Router whose turn parks until released — for in-flight assertions."""
-
-    def __init__(self) -> None:
-        self.release = asyncio.Event()
-        self.started = 0
-
-    async def handle_message(
-        self, request: BridgeRequest
-    ) -> AsyncIterator[BridgeEvent]:
-        self.started += 1
-        yield Processing()
-        await self.release.wait()
-        yield Completion(text="done")
-
-
-class _RaisingBridge:
-    async def handle_message(
-        self, request: BridgeRequest
-    ) -> AsyncIterator[BridgeEvent]:
-        yield Processing()
-        raise RuntimeError("controller exploded")
-
+from tests.platforms.webhook.harness import (
+    CALLBACK_URL,
+    TOKEN,
+    URL,
+    webhook_harness,
+)
+from tests.support import wait_until
 
 # --- auth ---
 
@@ -143,7 +49,7 @@ async def test_wrong_token_rejected():
 
 
 async def test_accepted_turn_delivers_completion_to_callback():
-    async with webhook_harness(bridge := FakeBridge()) as h:
+    async with webhook_harness() as h:
         response = await h.post()
         assert response.status_code == 202
         assert response.json() == {
@@ -154,7 +60,7 @@ async def test_accepted_turn_delivers_completion_to_callback():
         await h.adapter.drain()
 
         assert [str(r.url) for r in h.callbacks] == [CALLBACK_URL]
-        assert h.payloads() == [
+        assert h.output() == [
             {
                 "conversation_id": "conv-1",
                 "text": "ok",
@@ -164,7 +70,7 @@ async def test_accepted_turn_delivers_completion_to_callback():
             }
         ]
 
-    call = bridge.calls[0]
+    call = h.requests()[0]
     assert call.session_key == "webhook:default:conv-1"
     assert call.text == "hello"
     assert call.resumable is True
@@ -174,11 +80,11 @@ async def test_accepted_turn_delivers_completion_to_callback():
 
 
 async def test_sender_is_pretagged_into_text():
-    async with webhook_harness(bridge := FakeBridge()) as h:
+    async with webhook_harness() as h:
         await h.post(sender="kuan")
         await h.adapter.drain()
-    assert bridge.calls[0].text == "[kuan]: hello"
-    assert bridge.calls[0].context == {
+    assert h.requests()[0].text == "[kuan]: hello"
+    assert h.requests()[0].context == {
         "source": "webhook",
         "conversation_id": "conv-1",
         "sender": "kuan",
@@ -186,42 +92,41 @@ async def test_sender_is_pretagged_into_text():
 
 
 async def test_resumable_false_is_forwarded():
-    async with webhook_harness(bridge := FakeBridge()) as h:
+    async with webhook_harness() as h:
         response = await h.post(resumable=False)
         assert response.json()["resumable"] is False
         await h.adapter.drain()
-    assert bridge.calls[0].resumable is False
+    assert h.requests()[0].resumable is False
 
 
 async def test_no_callback_url_is_fire_and_forget():
-    async with webhook_harness(bridge := FakeBridge()) as h:
+    async with webhook_harness() as h:
         response = await h.post(callback_url=None)
         assert response.status_code == 202
         await h.adapter.drain()
         assert h.callbacks == []
-    assert len(bridge.calls) == 1
+    assert len(h.requests()) == 1
 
 
 # --- named agent routing ---
 
 
 async def test_agent_field_is_forwarded_to_bridge():
-    fake = FakeBridge(known_agents=frozenset({"fast"}))
-    async with webhook_harness(fake) as h:
+    async with webhook_harness(known_agents=frozenset({"fast"})) as h:
         response = await h.post(agent="fast")
         assert response.status_code == 202
         await h.adapter.drain()
-    call = fake.calls[0]
+    call = h.requests()[0]
     assert call.agent == "fast"
     assert call.context is not None
     assert call.context["agent"] == "fast"
 
 
 async def test_agent_omitted_routes_to_default():
-    async with webhook_harness(bridge := FakeBridge()) as h:
+    async with webhook_harness() as h:
         await h.post()
         await h.adapter.drain()
-    call = bridge.calls[0]
+    call = h.requests()[0]
     assert call.agent is None
     assert call.context is not None
     assert "agent" not in call.context
@@ -230,11 +135,11 @@ async def test_agent_omitted_routes_to_default():
 async def test_unknown_agent_error_arrives_via_callback():
     # Decision: no allowlist, no 4xx — the caller learns about a bad agent
     # name the same way it learns about every other turn outcome.
-    async with webhook_harness(FakeBridge(known_agents=frozenset())) as h:
+    async with webhook_harness(known_agents=frozenset()) as h:
         response = await h.post(agent="ghost")
         assert response.status_code == 202
         await h.adapter.drain()
-        (payload,) = h.payloads()
+        (payload,) = h.output()
     assert payload["is_error"] is True
     assert payload["error_code"] == "unknown_agent"
 
@@ -265,11 +170,11 @@ async def test_invalid_agent_name_rejected():
 
 
 async def test_second_turn_for_same_conversation_conflicts():
-    blocking = _BlockingBridge()
-    async with webhook_harness(blocking) as h:
+    blocked = FakeBridge(gate=asyncio.Event())
+    async with webhook_harness(blocked) as h:
         first = await h.post()
         assert first.status_code == 202
-        await _wait_until(lambda: blocking.started == 1)
+        await wait_until(lambda: len(blocked.calls) == 1)
 
         conflict = await h.post()
         assert conflict.status_code == 409
@@ -278,26 +183,26 @@ async def test_second_turn_for_same_conversation_conflicts():
         other = await h.post(conversation_id="conv-2")
         assert other.status_code == 202
 
-        blocking.release.set()
+        assert blocked.gate is not None
+        blocked.gate.set()
         await h.adapter.drain()
-        assert len(h.payloads()) == 2
+        assert len(h.output()) == 2
 
 
 async def test_conversation_is_free_again_after_turn_completes():
     async with webhook_harness() as h:
-        await h.post()
-        await h.adapter.drain()
+        await h.deliver()
         again = await h.post()
         assert again.status_code == 202
         await h.adapter.drain()
-        assert len(h.payloads()) == 2
+        assert len(h.output()) == 2
 
 
 async def test_stop_cancels_inflight_turn_and_frees_conversation():
-    blocking = _BlockingBridge()
-    async with webhook_harness(blocking) as h:
+    blocked = FakeBridge(gate=asyncio.Event())
+    async with webhook_harness(blocked) as h:
         await h.post()
-        await _wait_until(lambda: blocking.started == 1)
+        await wait_until(lambda: len(blocked.calls) == 1)
     # Harness exit ran adapter.stop(): the turn was cancelled, no callback
     # went out, and the conversation was not left wedged in `running`.
     assert h.callbacks == []
@@ -308,10 +213,9 @@ async def test_stop_cancels_inflight_turn_and_frees_conversation():
 
 
 async def test_capacity_rejection_is_reported_via_callback():
-    async with webhook_harness(FakeBridge(capacity_full=True)) as h:
-        await h.post()
-        await h.adapter.drain()
-        payload = h.payloads()[0]
+    async with webhook_harness(capacity_full=True) as h:
+        await h.deliver()
+        payload = h.output()[0]
     assert payload["is_error"] is True
     assert payload["error_code"] == "capacity_full"
 
@@ -322,19 +226,17 @@ async def test_stream_without_completion_reports_no_completion():
         TextDelta(text="partial"),
         StatusUpdate(status="tool", detail="Bash"),
     ]
-    async with webhook_harness(FakeBridge(events)) as h:
-        await h.post()
-        await h.adapter.drain()
-        payload = h.payloads()[0]
+    async with webhook_harness(events=events) as h:
+        await h.deliver()
+        payload = h.output()[0]
     assert payload["is_error"] is True
     assert payload["error_code"] == "no_completion"
 
 
 async def test_bridge_error_reports_internal_error_and_recovers():
-    async with webhook_harness(_RaisingBridge()) as h:
-        await h.post()
-        await h.adapter.drain()
-        payload = h.payloads()[0]
+    async with webhook_harness(events=[Processing()], raises=True) as h:
+        await h.deliver()
+        payload = h.output()[0]
         assert payload["is_error"] is True
         assert payload["error_code"] == "internal_error"
 
@@ -350,10 +252,9 @@ async def test_agent_questions_are_logged_loudly(caplog: pytest.LogCaptureFixtur
         UserQuestion(questions=[{"question": "Which env?"}]),
         Completion(text="done"),
     ]
-    async with webhook_harness(FakeBridge(events)) as h:
+    async with webhook_harness(events=events) as h:
         with caplog.at_level("WARNING"):
-            await h.post()
-            await h.adapter.drain()
+            await h.deliver()
     assert any("no one can answer" in message for message in caplog.messages)
 
 
@@ -375,16 +276,14 @@ def _fail_first(times: int) -> Callable[[httpx.Request], httpx.Response]:
 async def test_callback_retries_until_delivered():
     config = WebhookConfig(token=TOKEN, callback_retry_delays=(0.0,))
     async with webhook_harness(config=config, respond=_fail_first(1)) as h:
-        await h.post()
-        await h.adapter.drain()
+        await h.deliver()
     assert len(h.callbacks) == 2  # first attempt 500, retry 200
 
 
 async def test_retry_waits_its_configured_delay():
     config = WebhookConfig(token=TOKEN, callback_retry_delays=(0.001,))
     async with webhook_harness(config=config, respond=_fail_first(1)) as h:
-        await h.post()
-        await h.adapter.drain()
+        await h.deliver()
     assert len(h.callbacks) == 2
 
 
@@ -392,8 +291,7 @@ async def test_callback_gives_up_after_all_retries(caplog: pytest.LogCaptureFixt
     config = WebhookConfig(token=TOKEN, callback_retry_delays=(0.0,))
     async with webhook_harness(config=config, respond=_fail_first(99)) as h:
         with caplog.at_level("ERROR"):
-            await h.post()
-            await h.adapter.drain()
+            await h.deliver()
     assert len(h.callbacks) == 2
     assert any("failed after 2 attempts" in message for message in caplog.messages)
 
@@ -415,22 +313,31 @@ async def test_cleanup_purges_idle_conversations():
         token=TOKEN, callback_retry_delays=(), idle_state_seconds=0.001
     )
     async with webhook_harness(config=config) as h:
-        await h.post()
-        await h.adapter.drain()
+        await h.deliver()
         await asyncio.sleep(0.01)
         assert await h.adapter.cleanup() == 1
         assert await h.adapter.cleanup() == 0
 
 
 async def test_cleanup_keeps_running_conversations():
-    blocking = _BlockingBridge()
+    blocked = FakeBridge(gate=asyncio.Event())
     config = WebhookConfig(
         token=TOKEN, callback_retry_delays=(), idle_state_seconds=0.001
     )
-    async with webhook_harness(blocking, config=config) as h:
+    async with webhook_harness(blocked, config=config) as h:
         await h.post()
-        await _wait_until(lambda: blocking.started == 1)
+        await wait_until(lambda: len(blocked.calls) == 1)
         await asyncio.sleep(0.01)
         assert await h.adapter.cleanup() == 0
-        blocking.release.set()
+        assert blocked.gate is not None
+        blocked.gate.set()
         await h.adapter.drain()
+
+
+# --- the harness's own contract ---
+
+
+async def test_harness_json_output_matches_raw_callbacks():
+    async with webhook_harness() as h:
+        await h.deliver()
+        assert h.output() == [json.loads(r.content) for r in h.callbacks]

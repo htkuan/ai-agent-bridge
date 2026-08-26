@@ -15,7 +15,7 @@ from agent_bridge.platforms.base import (
     BridgeRequest,
     make_session_key,
 )
-from tests.fakes import FakeBridge
+from tests.fakes import ALL_EVENTS, FakeBridge
 
 type _Log = list[tuple[str, BridgeEvent | None]]
 
@@ -53,18 +53,9 @@ def _request() -> BridgeRequest:
     return BridgeRequest(session_key="test:scope:1", text="hi")
 
 
-_ALL_EVENTS: list[BridgeEvent] = [
-    Processing(),
-    TextDelta(text="hello"),
-    StatusUpdate(status="Using Bash...", detail="ls"),
-    UserQuestion(questions=[{"question": "which?"}]),
-    Completion(text="done"),
-]
-
-
 async def test_process_dispatches_each_event_to_its_hook():
     log: _Log = []
-    final = await RecordingAdapter(FakeBridge(list(_ALL_EVENTS))).process(
+    final = await RecordingAdapter(FakeBridge(list(ALL_EVENTS))).process(
         _request(), log
     )
     assert [name for name, _ in log] == [
@@ -75,8 +66,8 @@ async def test_process_dispatches_each_event_to_its_hook():
         "completion",
     ]
     # Hooks receive the whole event objects, unmodified.
-    assert [event for _, event in log] == _ALL_EVENTS
-    assert final is _ALL_EVENTS[-1]
+    assert [event for _, event in log] == ALL_EVENTS
+    assert final is ALL_EVENTS[-1]
 
 
 async def test_stream_without_completion_runs_stream_end():
@@ -95,8 +86,8 @@ async def test_stream_end_skipped_when_completion_arrived():
 
 async def test_default_hooks_route_to_on_event():
     log: _Log = []
-    await CatchAllAdapter(FakeBridge(list(_ALL_EVENTS))).process(_request(), log)
-    assert [event for _, event in log] == _ALL_EVENTS
+    await CatchAllAdapter(FakeBridge(list(ALL_EVENTS))).process(_request(), log)
+    assert [event for _, event in log] == ALL_EVENTS
 
 
 async def test_default_on_event_noops():

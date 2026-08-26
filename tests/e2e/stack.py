@@ -18,9 +18,7 @@ handle).
 
 from __future__ import annotations
 
-import asyncio
 import json
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -40,23 +38,22 @@ from agent_bridge.platforms.webhook.adapter import WebhookAdapter
 from agent_bridge.platforms.webhook.config import WebhookConfig
 from tests.fakes import FakeBoltApp, FakeClaudeCLI, FakeSlackClient, mention_event
 from tests.fakes.claude_cli import Step, install
+from tests.support import wait_until
+
+__all__ = [
+    "E2EStack",
+    "SlackStack",
+    "WebhookStack",
+    "build_stack",
+    "session_manager_for",
+    "wait_until",
+    "wire_slack",
+    "wire_webhook",
+]
 
 WEBHOOK_URL = "/platforms/webhook/v1/messages"
 WEBHOOK_TOKEN = "e2e-webhook-token"
 WEBHOOK_CALLBACK_URL = "http://callbacks.test/result"
-
-
-async def wait_until(
-    predicate: Callable[[], bool],
-    # Deadline for a sync-predicate poll loop; asyncio.timeout can't help here.
-    timeout: float = 5.0,  # noqa: ASYNC109
-) -> None:
-    """Poll until ``predicate()`` holds; fail the test on timeout."""
-    deadline = asyncio.get_running_loop().time() + timeout
-    while not predicate():
-        if asyncio.get_running_loop().time() > deadline:
-            raise TimeoutError("condition not met within timeout")
-        await asyncio.sleep(0.01)
 
 
 @dataclass

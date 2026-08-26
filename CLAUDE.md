@@ -220,15 +220,30 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
   `tests/e2e/test_live_claude.py`, `tests/e2e/test_live_webhook.py`) spawns
   the **real** agent CLIs (`claude`, `pi`, `codex`, `opencode`) and spends
   tokens. `test_live_controllers.py` drives every agent's bare
-  `CliAgentController` — prompt in → `BridgeEvent`s out, once per agent — so
-  each parser, resume path and sandbox knob is checked against the actual
-  CLI. Gated behind the `--live` flag (declared in `tests/conftest.py`, with
-  `--live-cli` / `--live-pi-cli` / `--live-codex-cli` /
-  `--live-opencode-cli` / `--live-timeout`), never run by CI:
+  `CliAgentController` — config in → `BridgeEvent`s out, no bridge and no
+  platform — so a failure points at the agent implementation or at the CLI
+  version, and nothing else. Gated behind the `--live` flag (declared in
+  `tests/conftest.py`, with `--live-cli` / `--live-pi-cli` /
+  `--live-codex-cli` / `--live-opencode-cli` / `--live-timeout` /
+  `--live-tier` / `--live-model`), never run by CI:
   `uv run pytest -m live --live --no-cov -v`. A missing CLI skips just that
-  agent's scenarios. Add a live scenario only for something the scripted CLI
-  cannot prove (the real stream shapes, session resume, actual tool use, a
-  real tool restriction).
+  agent's scenarios.
+- The controller layer is **declarative**: `tests/e2e/live_matrix.py` holds one
+  row set per agent, and `--live-tier` picks how much of it runs — tier 0
+  spends nothing (the CLI's version is recorded and its own `--help` must still
+  list every flag `build_command` emits, on both the new-session and the resume
+  branch), tier 1 is one turn per config knob, tier 2 is behaviour, tier 3 is
+  reserved for prompt-shape robustness. An untagged live scenario counts as
+  tier 2, so `--live-tier=0` can't quietly start a paid run. After upgrading an
+  agent CLI: `uv run pytest -m live --live --live-tier=0 --no-cov`.
+  Adding a knob to a config means adding a row, not writing a test function;
+  `tests/e2e/test_live_matrix_spec.py` enforces the matrix's own invariants in
+  CI (every agent has a flag spec, both command branches are probed, a
+  handle-mapping agent pins its degrade path, a missing restriction axis is
+  explained in `NO_RESTRICTION_AXIS`) — no CLI needed. Hand-write a live
+  scenario only when its assertions can't fit a row (claude's worktree
+  isolation) or when it drives a whole platform path
+  (`test_live_claude.py`, `test_live_webhook.py`).
 - Coverage runs on every pytest invocation (`addopts` in pyproject.toml) and
   gates at `fail_under = 98` — a ratchet floor at the measured baseline, raised
   as coverage improves, never lowered. A partial run (single file, `-k`, `-m`)

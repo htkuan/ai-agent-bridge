@@ -34,8 +34,10 @@ async def test_missing_cli_reports_and_keeps_the_bridge_alive(tmp_path: Path):
     # A terminal notice, not the ":hourglass_flowing_sand: Processing..."
     # placeholder the thread used to sit on forever: the spawn's
     # FileNotFoundError escaped the pipeline instead of completing the stream.
-    # And it carries the agent's own reason, not a blanket notice — the thread
-    # has to say *why* it failed, or an operator has nothing to act on.
+    # ":warning: <reason>", not the blanket ":no_entry:" — that one is the
+    # platform's own voice for capacity exhaustion, and every other failure
+    # shows what actually went wrong (see SlackAdapter._error_text), because a
+    # notice without a reason leaves an operator nothing to act on.
     first = stack.replies()
     assert len(first) == 1
     assert first[0].startswith(":warning:")

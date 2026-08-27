@@ -38,21 +38,48 @@ jobs:
       - name: Pin release branch to the triggering commit
         run: git reset --hard ${{ github.sha }}
 
+      # TEMPORARY (2026-08-27): the python-semantic-release and publish-action
+      # Docker actions build their image at run time from a requirements.txt
+      # that pins only PSR itself, so every run resolves `gitpython~=3.0` to
+      # whatever is newest on PyPI. GitPython 3.1.60 (2026-08-25) removed
+      # `Actor.name_email_regex`, which PSR still calls while loading config,
+      # so both actions now crash before doing any work -- on an unchanged
+      # workflow. Run the same CLI ourselves with GitPython pinned instead.
+      #   https://github.com/python-semantic-release/python-semantic-release/issues/1476
+      #   https://github.com/python-semantic-release/python-semantic-release/pull/1477
+      # Revert the next three steps back to the two `uses:` actions once a PSR
+      # release carrying that fix is out.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install python-semantic-release
+        run: |
+          python -m venv /tmp/psr
+          /tmp/psr/bin/pip install --quiet \
+            "python-semantic-release==10.5.3" "gitpython<3.1.60"
+          # Prepend so `semantic-release` resolves here, and so the configured
+          # build_command's `pip install uv` lands in this venv rather than the
+          # runner's externally-managed Python (PSR forwards PATH to it).
+          echo "/tmp/psr/bin" >> "$GITHUB_PATH"
+
       - name: Semantic version release
         id: release
-        # Pinned to a known-good tag; bump to the latest v10.x as needed.
-        uses: python-semantic-release/python-semantic-release@v10.5.3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          git_committer_name: "github-actions"
-          git_committer_email: "actions@users.noreply.github.com"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # What the action's git_committer_name/git_committer_email inputs set.
+          GIT_COMMIT_AUTHOR: "github-actions <actions@users.noreply.github.com>"
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          semantic-release -v version
 
       - name: Attach distributions to the GitHub Release
         if: steps.release.outputs.released == 'true'
-        uses: python-semantic-release/publish-action@v10.5.3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ steps.release.outputs.tag }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: semantic-release -v publish --tag "${{ steps.release.outputs.tag }}"
 
       - name: Upload distributions for the deploy job
         if: steps.release.outputs.released == 'true'

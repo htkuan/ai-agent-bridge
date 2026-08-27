@@ -33,8 +33,8 @@ reads, so each commit (not just the PR title) must conform.
 as the CI check, so what passes locally passes CI. Enable it once per clone:
 
 ```bash
-uv sync                    # installs the pre-commit tool (dev group)
-uv run pre-commit install  # writes .git/hooks/commit-msg (commit-msg stage)
+make install  # installs the pre-commit tool (dev group)
+make hooks    # writes .git/hooks/commit-msg (commit-msg stage) + pre-commit
 ```
 
 `pre-commit` refuses to install if `core.hooksPath` is set. If you hit

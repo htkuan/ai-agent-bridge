@@ -27,7 +27,7 @@ Currently supports: **Slack**, **Heartbeat**, **HTTP Webhook** + **Claude Code**
 ```bash
 git clone https://github.com/htkuan/ai-agent-bridge.git
 cd agent-bridge
-uv sync
+make install
 ```
 
 ### Configure
@@ -68,7 +68,7 @@ and the whole app is then built from that single `AppConfig`.
 ### Run
 
 ```bash
-uv run agent-bridge
+make run
 ```
 
 ## Usage
@@ -157,15 +157,18 @@ Neither change requires modifying the bridge, the other agent, or the other plat
 
 ## Development
 
+Every command lives in the `Makefile`, and each CI step runs a make target — so
+`make check` locally is exactly the gate a PR has to pass. `make help` lists
+them all.
+
 ```bash
-# Run tests
-uv run pytest tests/ -v
-
-# Run the live e2e against the real claude CLI (opt-in, spends tokens)
-uv run pytest -m live --live --no-cov -v
-
-# Run with debug logging
-AGENT_BRIDGE_LOG_LEVEL=DEBUG uv run agent-bridge
+make install    # uv sync --locked
+make check      # lint + typecheck + test + test-e2e (the merge gate)
+make test       # unit + integration, with the coverage gate
+make test-live  # opt-in: the real agent CLIs, spends tokens
+make format     # ruff autofix + format in place
+make audit      # pip-audit over the locked dependency set
+make run-debug  # start the bridge with debug logging
 ```
 
 Test layout, fakes and markers: [docs/testing.md](docs/testing.md).

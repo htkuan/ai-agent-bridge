@@ -67,8 +67,8 @@ tests/
 ├── platforms/heartbeat/
 └── e2e/                     # full-stack scenarios (real components + fake CLI)
     ├── stack.py             # the rigs: Slack/webhook adapter → Bridge → controller
-    ├── test_live_platforms.py   # platform over its REAL transport, FakeBridge behind it
     ├── conftest.py          # live_* fixtures: real claude/pi/codex/opencode CLIs
+    ├── test_live_platforms.py   # platform over its REAL transport, FakeBridge behind it
     ├── live_matrix.py       # the declarative live spec: FLAG_SPECS + LIVE_MATRIX
     ├── test_live_matrix_spec.py # the matrix's own invariants (CI, no CLI)
     ├── test_live_controllers.py # bare controller x every agent (opt-in, --live)
@@ -190,6 +190,12 @@ used one tier down on purpose: a failure here then has exactly one possible
 cause, which is that reality diverged from what the fakes claim.
 `tests/contracts/` pins *our* fakes to *our* implementations; nothing else
 pins a fake of somebody else's API.
+
+Not to be confused with `--live-tier=0` below. Both spend nothing, but they
+hold different halves fixed: tier 0 runs the **real agent CLI** without
+taking a turn, while `live_platform` runs the **real transport** with no
+agent behind it at all. "Tier" here means a rung on the ladder; in the
+`live` suite it means how much a scenario costs.
 
 **Webhook** needs no credentials — its external platform is HTTP, so both
 edges are hosted locally: inbound is a real `HttpServer` (embedded uvicorn,

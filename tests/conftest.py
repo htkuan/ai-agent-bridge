@@ -21,6 +21,8 @@ type FakePiFactory = Callable[..., FakePiCLI]
 
 _E2E_DIR = Path(__file__).parent / "e2e"
 _LAYER_MARKERS = ("unit", "integration", "e2e")
+# What a live scenario costs when it doesn't say: a real turn, i.e. money.
+_DEFAULT_LIVE_TIER = 2
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -67,6 +69,29 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         metavar="SECONDS",
         help="per-turn budget for --live scenarios (default: 300)",
     )
+    group.addoption(
+        "--live-tier",
+        type=int,
+        default=2,
+        metavar="N",
+        help=(
+            "highest live tier to run (default: 2). 0 = zero-token CLI checks "
+            "(version + flags still in --help), 1 = one turn per config knob, "
+            "2 = behaviour, 3 = prompt-shape robustness (opt-in). "
+            "See tests/e2e/live_matrix.py"
+        ),
+    )
+    group.addoption(
+        "--live-model",
+        action="append",
+        default=[],
+        metavar="AGENT=MODEL",
+        help=(
+            "run the model-override case for AGENT against MODEL, e.g. "
+            "--live-model codex=gpt-5.6. Repeatable; unset agents skip the "
+            "case, since model reachability is account-local"
+        ),
+    )
 
 
 def _live_skip(config: pytest.Config) -> pytest.MarkDecorator | None:
@@ -81,15 +106,35 @@ def _live_skip(config: pytest.Config) -> pytest.MarkDecorator | None:
     return None
 
 
+def _tier_skip(config: pytest.Config, item: pytest.Item) -> pytest.MarkDecorator | None:
+    """Skip a live scenario that costs more than ``--live-tier`` allows.
+
+    The tier rides on a ``live_tier(n)`` marker — on the function for the
+    hand-written scenarios, on the parametrization for the matrix rows in
+    ``tests/e2e/live_matrix.py`` — so one gate covers both. An untagged live
+    scenario counts as tier 2: every one of them spends tokens, so the
+    default has to be "costs money", or ``--live-tier=0`` would quietly run
+    the whole paid suite (the platform-path scenarios in test_live_claude.py
+    and test_live_webhook.py have no per-scenario tier of their own).
+    """
+    marker = item.get_closest_marker("live_tier")
+    tier: int = marker.args[0] if marker is not None else _DEFAULT_LIVE_TIER
+    max_tier: int = config.getoption("live_tier")
+    if tier <= max_tier:
+        return None
+    return pytest.mark.skip(reason=f"live tier {tier} needs --live-tier={tier}")
+
+
 def pytest_collection_modifyitems(
     config: pytest.Config, items: list[pytest.Item]
 ) -> None:
     """Auto-apply layer markers: tests/e2e/ → ``e2e``; unmarked → ``unit``.
-    Then gate anything marked ``live`` behind ``--live``.
+    Then gate anything marked ``live`` behind ``--live`` and its tier.
 
     ``integration`` is declared per module (``pytestmark``) where tests cross
     a process boundary, e.g. spawning the scripted claude CLI. ``live`` is an
-    opt-in flag on top of a layer, not a layer of its own.
+    opt-in flag on top of a layer, not a layer of its own; ``live_tier`` is
+    how expensive that scenario is (see tests/e2e/live_matrix.py).
     """
     skip_live = _live_skip(config)
     for item in items:
@@ -97,8 +142,14 @@ def pytest_collection_modifyitems(
             item.add_marker(pytest.mark.e2e)
         elif not any(item.get_closest_marker(name) for name in _LAYER_MARKERS):
             item.add_marker(pytest.mark.unit)
-        if skip_live is not None and item.get_closest_marker("live"):
+        if not item.get_closest_marker("live"):
+            continue
+        if skip_live is not None:
             item.add_marker(skip_live)
+            continue
+        skip_tier = _tier_skip(config, item)
+        if skip_tier is not None:
+            item.add_marker(skip_tier)
 
 
 @pytest.fixture

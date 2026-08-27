@@ -41,7 +41,8 @@ tests/
 │   ├── bridge.py            # FakeBridge — implements MessageRouter, capacity_full mode
 │   ├── platforms.py         # FakePlatformAdapter — lifecycle + cleanup recorder
 │   ├── slack.py             # FakeSlackClient / FakeBoltApp / event payload builders
-│   └── claude_cli.py        # scripted claude CLI stand-in + scenario schema
+│   ├── claude_cli.py        # scripted claude CLI stand-in + the shared step runner
+│   └── {pi,codex,opencode}_cli.py # the same runner, each CLI's own line builders
 ├── contracts/               # real implementation and its fake run the same suite
 │   ├── test_agent_controller.py
 │   ├── test_message_router.py
@@ -55,13 +56,16 @@ tests/
 ├── bridge/                  # core layer: test_router.py = bridge input→output spec,
 │   │                        # test_pipeline.py = compose/core, session/dedupe/stores/config
 │   └── middleware/          # each pipeline stage in isolation vs scripted downstreams
-├── agents/claude/           # controller + stream-json parser
+├── agents/                  # test_base.py: the CliAgentController engine itself
+├── agents/{claude,pi,codex,opencode}/ # config + controller + stream parser, per agent
 ├── platforms/               # test_base.py: BasePlatformAdapter's shared dispatch flow
 ├── platforms/slack/         # adapter behaviour, one concern per file
 ├── platforms/heartbeat/
 └── e2e/                     # full-stack scenarios (real components + fake CLI)
     ├── stack.py             # the rigs: Slack/webhook adapter → Bridge → controller
     ├── conftest.py          # live_* fixtures: real claude/pi/codex/opencode CLIs
+    ├── live_matrix.py       # the declarative live spec: FLAG_SPECS + LIVE_MATRIX
+    ├── test_live_matrix_spec.py # the matrix's own invariants (CI, no CLI)
     ├── test_live_controllers.py # bare controller x every agent (opt-in, --live)
     ├── test_live_claude.py  # live Slack-rig scenarios (opt-in, --live)
     └── test_live_webhook.py # live webhook scenarios, claude + pi (opt-in, --live)
@@ -155,6 +159,8 @@ agent's scenarios.
 | `--live-codex-cli PATH` | `codex` | which codex binary to spawn |
 | `--live-opencode-cli PATH` | `opencode` | which opencode binary to spawn |
 | `--live-timeout SECONDS` | `300` | per-turn budget |
+| `--live-tier N` | `2` | highest tier to run (see below); `0` spends nothing |
+| `--live-model AGENT=MODEL` | — | run the model-override row for that agent; repeatable |
 
 **A flag, not an env var.** The switch has to come from outside the test —
 but reading it from the environment would break the rule that no test reads
@@ -168,6 +174,61 @@ that agent's `live_*_config` fixture, so a missing `claude` doesn't take
 down the pi scenarios or vice versa — because `pytest --live` runs the whole
 suite and the rest is still worth reporting on. CI's e2e job runs
 `-m "e2e and not live"`, so the gate is belt-and-braces.
+
+### Tiers: how much of it runs
+
+Every live scenario carries a `live_tier(n)` marker — on the function for the
+hand-written ones, on the parametrization for the matrix rows — and
+`--live-tier` skips anything above it. An **untagged** live scenario counts as
+tier 2, because every one of them spends tokens: the default has to be "costs
+money", or `--live-tier=0` would quietly run the whole paid suite.
+
+| Tier | Cost | What it pins |
+|---|---|---|
+| 0 | none | the CLI exists, its version is recorded, and its own `--help` still lists every flag `build_command` emits — on the new-session *and* the resume branch |
+| 1 | one turn per row | one config knob flipped: the real CLI accepts the argv we build for it |
+| 2 | one or two turns | behaviour: the knob restricts what it claims to, the stream parses, resume reattaches, tool use surfaces |
+| 3 | several turns | prompt-shape robustness. Reserved; opt in with `--live-tier=3` |
+
+Tier 0 is the run to do after upgrading an agent CLI — it spends nothing and
+catches the drift class that has actually bitten us:
+
+```bash
+uv run pytest -m live --live --live-tier=0 --no-cov
+```
+
+It ends with a `live agent CLI versions` summary (`claude: 2.1.241 …`), so a
+failing live run can be blamed on — or cleared of — a version bump.
+
+### The matrix
+
+The controller layer is declarative: `tests/e2e/live_matrix.py` holds one row
+set per agent (`LIVE_MATRIX`) plus each agent's tier-0 spec (`FLAG_SPECS`), and
+`test_live_config_axis` runs every row. Adding a config knob means adding a
+row, not writing a test function. A row is `LiveCase(name, tier, …)`; unset
+fields mean "one accepted-argv turn against the `PONG` prompt", so the cheap
+default costs one line:
+
+```python
+LiveCase("effort_override_accepted", tier=1, mutate=lambda c: replace(c, effort="low"))
+```
+
+The fields that change the shape: `expect="no_write"` (the knob restricted the
+agent — `forbidden.txt` is absent), `strict_empty` (and nothing else appeared
+either), `is_new=False` (the resume branch), `base` (an alternative config
+fixture, for a world `replace()` can't build), `tolerate_error` (a CLI-side
+rejection skips rather than fails — model/variant reachability is
+account-local), and `model_from_option` (the row waits for `--live-model`).
+
+`tests/e2e/test_live_matrix_spec.py` enforces the matrix's own invariants —
+**in CI, with no CLI and no tokens**, since nothing behind `--live` can stop a
+new agent from shipping with an empty live spec: every agent has a flag spec
+and rows, both command branches are probed, an agent whose resume needs a
+stored handle also pins what happens when that handle is gone, and a missing
+restriction axis is a written entry in `NO_RESTRICTION_AXIS` rather than an
+oversight. It also unit-tests the two helpers tier 0 leans on, `build_flags`
+and `lists_flag` (a substring match would let tier 0 pass on a flag the CLI no
+longer has).
 
 The flags feed the `live_{agent}_config` / `live_{agent}_controller`
 fixtures and the rigs built on them (`live_controller_rig`, `live_stack`,
@@ -191,26 +252,39 @@ prompt in → `BridgeEvent`s out, no bridge or platform in between:
 | `..._system_prompt_reaches_the_model` | all | the platform-built system prompt is part of what the model reads — native flag (claude, pi) or stdin folding (codex, opencode) |
 | `..._tool_use_writes_in_work_dir_and_streams_status` | all | a real tool call runs, confined to the sandboxed work dir, and surfaces as a `StatusUpdate` mid-stream |
 
-The config-axis scenarios flip one knob each and assert the behaviour the
-real CLI enforces. Knobs pinning a *specific* model/provider/variant are
-deliberately not tested live — they depend on what the local account can
-reach (claude's `model="haiku"` is the exception: a stable CLI alias).
+Two more run once per agent and are hand-written because they don't fit a row:
+`..._timeout_kills_the_run_and_reports_error` (`timeout_seconds` against the
+real CLI: process tree killed at the deadline, stream still ends with exactly
+one error `Completion`) and `..._claude_worktree_mode_isolates_the_session`
+(`worktree_enabled`: the CLI builds the session worktree off `origin/HEAD`,
+files land there and not in the repo root, `cleanup_session` reclaims it).
 
-| Scenario | Agents | Pins |
-|---|---|---|
-| `..._timeout_kills_the_run_and_reports_error` | all | `timeout_seconds` against the real CLI: process tree killed at the deadline, stream still ends with exactly one (error) `Completion` |
-| `..._claude_default_permission_mode_blocks_writes` | claude | `permission_mode="default"` in print mode has no one to ask — the write is CLI-denied |
-| `..._claude_model_alias_is_accepted` | claude | `--model` carries a value the real CLI resolves |
-| `..._claude_worktree_mode_isolates_the_session` | claude | `worktree_enabled`: the CLI builds the session worktree off `origin/HEAD`, files land there (not the repo root), `cleanup_session` reclaims it |
-| `..._pi_exclude_tools_blocks_writes` | pi | `--exclude-tools` really restricts (the allowlist's other half; the allowlist itself is pinned through the webhook rig) |
-| `..._pi_thinking_flag_is_accepted` | pi | `--thinking` takes the levels our config validates |
-| `..._codex_readonly_sandbox_blocks_writes` | codex | `sandbox_mode="read-only"` really restricts: the file cannot appear, CLI-enforced |
-| `..._codex_effort_override_is_accepted` | codex | the `-c model_reasoning_effort="…"` spelling is one the real CLI accepts |
-| `..._codex_git_work_dir_needs_no_skip_flag` | codex | the production default (git work dir, no skip flag) passes codex's trusted-directory probe |
+Everything else on the config axis is a `LIVE_MATRIX` row, run by
+`test_live_config_axis[<agent>-<row>]`:
+
+| Row | Agents | Tier | Pins |
+|---|---|---|---|
+| `permission_mode_default_blocks_writes` | claude | 2 | `permission_mode="default"` in print mode has no one to ask — the write is CLI-denied |
+| `model_alias_accepted` | claude | 1 | `--model` carries a value the real CLI resolves (`haiku`: a stable alias, not a bet on the account) |
+| `skip_permissions_argv_accepted` | claude | 1 | the `--dangerously-skip-permissions` branch of `build_command` is argv the CLI takes |
+| `exclude_tools_blocks_writes` | pi | 2 | `--exclude-tools` really restricts (the allowlist's other half is pinned through the webhook rig) |
+| `thinking_level_accepted` | pi | 1 | `--thinking` takes the levels our config validates |
+| `readonly_sandbox_blocks_writes` | codex | 2 | `sandbox_mode="read-only"` really restricts: the file cannot appear, CLI-enforced |
+| `effort_override_accepted` | codex | 1 | the `-c model_reasoning_effort="…"` spelling is one the real CLI accepts |
+| `git_work_dir_needs_no_skip_flag` | codex | 1 | the production default (git work dir, no skip flag) passes codex's trusted-directory probe |
+| `variant_accepted` | opencode | 1 | `--variant` is argv the CLI takes (provider-specific, so a rejection skips) |
+| `resume_without_stored_handle` | codex, opencode | 2 | a resume with nothing in the handle map degrades to a fresh session instead of failing the turn |
+| `model_override_accepted` | all | 1 | `--model`/`-m` carries the model `--live-model <agent>=<model>` names; skipped without the flag |
+
+Opencode has no tier-2 restriction row: `opencode run` has no sandbox and
+`OpencodeConfig` exposes no permission knob, so there is nothing to flip. That
+absence is an entry in `NO_RESTRICTION_AXIS`, not a gap — the spec test fails
+if an agent has neither a restriction row nor a written reason.
 
 The suite has already earned its keep: its first run caught codex dropping
 `--skip-git-repo-check` on the resume branch — sessions could start in a
-non-git work dir but never resume there.
+non-git work dir but never resume there. Tier 0 now catches that same class of
+drift for free, from the CLI's own help.
 
 `test_live_claude.py` — the Slack rig on top of the bare controller, one
 scenario per thing the fake cannot prove:

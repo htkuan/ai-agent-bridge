@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-
-from agent_bridge.bridge.events import BridgeEvent, Completion, Processing, UserQuestion
+from agent_bridge.bridge.events import Completion, Processing, UserQuestion
 from agent_bridge.platforms.slack.adapter import _PendingMessage
 from agent_bridge.platforms.slack.config import SlackConfig
-from tests.fakes import dm_event, mention_event
+from tests.fakes import FakeBridge, dm_event, mention_event
 from tests.platforms.slack.harness import build_harness
 
 WAITING_PLACEHOLDER = ":hourglass: Waiting for previous task to finish..."
@@ -161,19 +159,10 @@ async def test_user_question_puts_session_in_waiting_state():
     assert "Which env?" in posted
 
 
-class _ExplodingBridge:
-    def handle_message(self, **_kwargs: object) -> AsyncIterator[BridgeEvent]:
-        async def boom() -> AsyncIterator[BridgeEvent]:
-            raise RuntimeError("boom")
-            yield Processing()  # makes this an async generator
-
-        return boom()
-
-
 async def test_error_resets_state_and_deletes_parked_placeholder():
     harness = build_harness()
     adapter = harness.adapter
-    adapter._bridge = _ExplodingBridge()
+    adapter._bridge = FakeBridge([Processing()], raises=True)
     state = adapter._get_state("slack:C123:1.0")
     placeholder = await harness.client.chat_postMessage(
         channel="C123", text=WAITING_PLACEHOLDER, thread_ts="1.0"

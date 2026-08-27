@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 
 from agent_bridge.bridge.events import BridgeEvent, Completion, Processing
@@ -10,14 +11,23 @@ class FakeBridge:
     """Scripted ``MessageRouter``: replays a fixed event sequence.
 
     Defaults to the minimal contract-compliant stream
-    (``Processing`` → ``Completion``). ``capacity_full`` mimics the real
-    bridge's rejection: a single error ``Completion`` with
-    ``metadata["error_code"] == "capacity_full"`` and nothing else.
-    ``known_agents`` mimics named-agent routing: when set, a call whose
-    ``request.agent`` is neither None nor listed gets the real bridge's
-    rejection — a single error ``Completion`` with
-    ``error_code == "unknown_agent"``. Every request is recorded in
-    ``calls`` verbatim.
+    (``Processing`` → ``Completion``). Every request is recorded in ``calls``
+    verbatim.
+
+    Rejections mirror the real bridge exactly. ``capacity_full`` yields a
+    single error ``Completion`` with ``error_code == "capacity_full"``;
+    ``known_agents`` mimics named-agent routing, so a call whose
+    ``request.agent`` is neither None nor listed gets a single error
+    ``Completion`` with ``error_code == "unknown_agent"``.
+
+    Two knobs model turns that misbehave, so no test needs its own router
+    double (one that drifts from the protocol signature is worse than none):
+
+    - ``gate`` — park the turn after its first event until the event is set,
+      which is how a test holds a turn "in flight".
+    - ``raises`` — blow up after the first event, the shape of any bug that
+      escapes the pipeline instead of arriving as an error ``Completion``.
+      With ``events=[]`` it raises before yielding anything.
     """
 
     def __init__(
@@ -26,6 +36,8 @@ class FakeBridge:
         *,
         capacity_full: bool = False,
         known_agents: frozenset[str] = frozenset(),
+        gate: asyncio.Event | None = None,
+        raises: bool = False,
     ) -> None:
         self.events: list[BridgeEvent] = (
             events
@@ -34,6 +46,8 @@ class FakeBridge:
         )
         self.capacity_full = capacity_full
         self.known_agents = known_agents
+        self.gate = gate
+        self.raises = raises
         self.calls: list[BridgeRequest] = []
 
     async def handle_message(
@@ -55,5 +69,13 @@ class FakeBridge:
                 metadata={"error_code": "capacity_full"},
             )
             return
-        for event in self.events:
+        remaining = iter(self.events)
+        first = next(remaining, None)
+        if first is not None:
+            yield first
+        if self.gate is not None:
+            await self.gate.wait()
+        if self.raises:
+            raise RuntimeError("fake bridge exploded")
+        for event in remaining:
             yield event

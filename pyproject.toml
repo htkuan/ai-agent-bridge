@@ -63,6 +63,7 @@ markers = [
     "e2e: full-stack scenario from tests/e2e (real components, faked edges)",
     "live: spawns a real agent CLI (claude/pi/codex/opencode); needs the --live flag",
     "live_tier(n): how expensive a live scenario is (0 = no tokens); gated by --live-tier",
+    "live_platform: drives a platform over its real transport (real sockets) with a scripted router behind it — no bridge, no agent, no tokens",
 ]
 
 [tool.coverage.report]
@@ -121,7 +122,18 @@ select = [
 "tests/*" = ["S101", "S105", "S106", "S603", "S607", "ASYNC221"]
 
 [tool.pyright]
-include = ["src", "tests/fakes", "tests/contracts"]
+# Test code joins strict typing where the types are the point: the shared
+# doubles, the contract suites, and the platform harnesses (whose whole job
+# is to implement one shape).
+include = [
+    "src",
+    "tests/fakes",
+    "tests/contracts",
+    "tests/support.py",
+    "tests/platforms/harness.py",
+    "tests/platforms/heartbeat/harness.py",
+    "tests/platforms/webhook/harness.py",
+]
 pythonVersion = "3.12"
 venvPath = "."
 venv = ".venv"

@@ -1,12 +1,12 @@
+"""HeartbeatAdapter: state file, the fire flow, scheduling, and log output."""
+
 from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-
-import pytest
 
 from agent_bridge.bridge.events import (
     BridgeEvent,
@@ -16,249 +16,192 @@ from agent_bridge.bridge.events import (
     TextDelta,
     UserQuestion,
 )
-from agent_bridge.bridge.request import BridgeRequest
-from agent_bridge.platforms.heartbeat.adapter import HeartbeatAdapter
-from agent_bridge.platforms.heartbeat.config import HeartbeatConfig
-
-# --- Stubs ---
-
-
-class _StubBridge:
-    def __init__(self, events: list[BridgeEvent] | None = None) -> None:
-        self.calls: list[dict] = []
-        self._events: list[BridgeEvent] = (
-            events if events is not None else [Completion(text="ok")]
-        )
-
-    async def handle_message(
-        self, request: BridgeRequest
-    ) -> AsyncIterator[BridgeEvent]:
-        self.calls.append(
-            {
-                "session_key": request.session_key,
-                "text": request.text,
-                "context": request.context,
-                "system_prompt": request.system_prompt,
-                "resumable": request.resumable,
-                "agent": request.agent,
-            }
-        )
-        for event in self._events:
-            yield event
-
-
-class _BoomBridge:
-    async def handle_message(
-        self, request: BridgeRequest
-    ) -> AsyncIterator[BridgeEvent]:
-        raise RuntimeError("boom")
-        yield  # unreachable; makes this an async generator
-
-
-# --- Fixtures ---
-
-
-@pytest.fixture()
-def make_adapter(tmp_path: Path):
-    def _make(
-        interval_minutes: int = 60,
-        prompt: str = "ping",
-        events: list[BridgeEvent] | None = None,
-        agent: str | None = None,
-    ) -> tuple[HeartbeatAdapter, _StubBridge, HeartbeatConfig]:
-        config = HeartbeatConfig(
-            interval_minutes=interval_minutes,
-            prompt=prompt,
-            state_path=tmp_path / "heartbeat.json",
-            agent=agent,
-        )
-        bridge = _StubBridge(events=events)
-        adapter = HeartbeatAdapter(config, bridge)  # type: ignore[arg-type]
-        return adapter, bridge, config
-
-    return _make
-
+from tests.platforms.heartbeat.harness import heartbeat_harness
 
 # --- State file I/O ---
 
 
-def test_read_last_run_returns_none_when_missing(make_adapter):
-    adapter, _, _ = make_adapter()
-    assert adapter._read_last_run() is None
+async def test_read_last_run_returns_none_when_missing(tmp_path: Path):
+    async with heartbeat_harness(tmp_path) as h:
+        assert h.adapter._read_last_run() is None
 
 
-def test_state_file_round_trip(make_adapter):
-    adapter, _, config = make_adapter()
-    when = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
-    adapter._write_last_run(when)
-    assert config.state_path.exists()
-    assert adapter._read_last_run() == when
+async def test_state_file_round_trip(tmp_path: Path):
+    async with heartbeat_harness(tmp_path) as h:
+        when = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+        h.adapter._write_last_run(when)
+        assert h.config.state_path.exists()
+        assert h.adapter._read_last_run() == when
 
 
-def test_read_last_run_returns_none_on_corrupt_file(make_adapter):
-    adapter, _, config = make_adapter()
-    config.state_path.write_text("{not json")
-    assert adapter._read_last_run() is None
+async def test_read_last_run_returns_none_on_corrupt_file(tmp_path: Path):
+    async with heartbeat_harness(tmp_path) as h:
+        h.config.state_path.write_text("{not json")
+        assert h.adapter._read_last_run() is None
 
 
 # --- Fire flow ---
 
 
-async def test_fire_once_calls_bridge_with_prompt_and_writes_state(make_adapter):
-    adapter, bridge, config = make_adapter(prompt="check tasks")
-    await adapter._fire_once()
+async def test_fire_once_calls_bridge_with_prompt_and_writes_state(tmp_path: Path):
+    async with heartbeat_harness(tmp_path, prompt="check tasks") as h:
+        await h.deliver()
 
-    assert len(bridge.calls) == 1
-    call = bridge.calls[0]
-    assert call["text"] == "check tasks"
-    assert call["session_key"].startswith("heartbeat:tick:")
-    assert call["context"]["source"] == "heartbeat"
-    assert "fired_at" in call["context"]
-    assert config.state_path.exists()
-
-
-async def test_fire_once_marks_session_non_resumable(make_adapter):
-    adapter, bridge, _ = make_adapter()
-    await adapter._fire_once()
-
-    # Heartbeat ticks are one-shot — same key must never resume the same session
-    assert bridge.calls[0]["resumable"] is False
+        (call,) = h.requests()
+        assert call.text == "check tasks"
+        assert call.session_key.startswith("heartbeat:tick:")
+        assert call.context is not None
+        assert call.context["source"] == "heartbeat"
+        assert "fired_at" in call.context
+        assert h.config.state_path.exists()
 
 
-async def test_fire_once_routes_to_configured_agent(make_adapter):
-    adapter, bridge, _ = make_adapter(agent="night-shift")
-    await adapter._fire_once()
-    assert bridge.calls[0]["agent"] == "night-shift"
+async def test_fire_once_marks_session_non_resumable(tmp_path: Path):
+    async with heartbeat_harness(tmp_path) as h:
+        await h.deliver()
+        # Heartbeat ticks are one-shot — the same key must never resume.
+        assert h.requests()[0].resumable is False
 
 
-async def test_fire_once_defaults_to_no_agent(make_adapter):
-    adapter, bridge, _ = make_adapter()
-    await adapter._fire_once()
-    assert bridge.calls[0]["agent"] is None
+async def test_fire_once_routes_to_configured_agent(tmp_path: Path):
+    async with heartbeat_harness(tmp_path, agent="night-shift") as h:
+        await h.deliver()
+        assert h.requests()[0].agent == "night-shift"
 
 
-async def test_fire_once_passes_heartbeat_flavored_system_prompt(make_adapter):
-    adapter, bridge, _ = make_adapter()
-    await adapter._fire_once()
+async def test_fire_once_defaults_to_no_agent(tmp_path: Path):
+    async with heartbeat_harness(tmp_path) as h:
+        await h.deliver()
+        assert h.requests()[0].agent is None
 
-    sp = bridge.calls[0]["system_prompt"]
-    assert sp is not None
-    # Adapter — not the agent — owns this phrasing. Two things must be present:
-    # the mechanism name and the fire time.
-    assert "heartbeat" in sp.lower()
-    assert bridge.calls[0]["context"]["fired_at"] in sp
+
+async def test_fire_once_passes_heartbeat_flavored_system_prompt(tmp_path: Path):
+    async with heartbeat_harness(tmp_path) as h:
+        await h.deliver()
+
+        call = h.requests()[0]
+        assert call.system_prompt is not None
+        assert call.context is not None
+        # The adapter — not the agent — owns this phrasing. Two things must be
+        # present: the mechanism name and the fire time.
+        assert "heartbeat" in call.system_prompt.lower()
+        assert call.context["fired_at"] in call.system_prompt
 
 
 async def test_fire_once_writes_state_even_on_bridge_error(tmp_path: Path):
-    config = HeartbeatConfig(
-        interval_minutes=60,
-        prompt="x",
-        state_path=tmp_path / "h.json",
-    )
-    adapter = HeartbeatAdapter(config, _BoomBridge())  # type: ignore[arg-type]
-
-    # Should not raise — error is caught and logged
-    await adapter._fire_once()
-    assert config.state_path.exists()
+    async with heartbeat_harness(tmp_path, events=[], raises=True) as h:
+        # Must not raise — the error is caught and logged.
+        await h.deliver()
+        assert h.config.state_path.exists()
 
 
-async def test_each_tick_uses_unique_session_key(make_adapter):
-    adapter, bridge, _ = make_adapter()
-    await adapter._fire_once()
-    # isoformat() includes microseconds, but force a clear gap to be safe
-    await asyncio.sleep(0.005)
-    await adapter._fire_once()
+async def test_each_tick_uses_unique_session_key(tmp_path: Path):
+    async with heartbeat_harness(tmp_path) as h:
+        await h.deliver()
+        # isoformat() includes microseconds, but force a clear gap to be safe
+        await asyncio.sleep(0.005)
+        await h.deliver()
 
-    keys = [c["session_key"] for c in bridge.calls]
-    assert len(set(keys)) == 2
+        keys = {call.session_key for call in h.requests()}
+        assert len(keys) == 2
 
 
 # --- Loop / restart catch-up ---
 
 
-async def test_loop_fires_immediately_when_state_missing(make_adapter):
-    adapter, bridge, _ = make_adapter(interval_minutes=60)
-    await adapter.start()
-    await asyncio.sleep(0.05)
-    await adapter.stop()
-    assert len(bridge.calls) >= 1
+async def test_loop_fires_immediately_when_state_missing(tmp_path: Path):
+    async with heartbeat_harness(tmp_path, interval_minutes=60) as h:
+        await h.adapter.start()
+        await asyncio.sleep(0.05)
+        await h.adapter.stop()
+        assert len(h.requests()) >= 1
 
 
-async def test_loop_skips_initial_fire_when_state_recent(make_adapter):
-    adapter, bridge, config = make_adapter(interval_minutes=60)
-    config.state_path.write_text(
-        json.dumps({"last_run": datetime.now(UTC).isoformat()})
+async def test_loop_skips_initial_fire_when_state_recent(tmp_path: Path):
+    async with heartbeat_harness(tmp_path, interval_minutes=60) as h:
+        h.config.state_path.write_text(
+            json.dumps({"last_run": datetime.now(UTC).isoformat()})
+        )
+        await h.adapter.start()
+        await asyncio.sleep(0.05)
+        await h.adapter.stop()
+        assert h.requests() == []
+
+
+async def test_loop_fires_immediately_when_state_stale(tmp_path: Path):
+    async with heartbeat_harness(tmp_path, interval_minutes=1) as h:
+        stale = datetime.now(UTC) - timedelta(minutes=10)
+        h.config.state_path.write_text(json.dumps({"last_run": stale.isoformat()}))
+        await h.adapter.start()
+        await asyncio.sleep(0.05)
+        await h.adapter.stop()
+        assert len(h.requests()) >= 1
+
+
+async def test_stop_during_sleep_returns_promptly(tmp_path: Path):
+    async with heartbeat_harness(tmp_path, interval_minutes=60) as h:
+        # Recent state → the loop will sleep ~60min before the next fire.
+        h.config.state_path.write_text(
+            json.dumps({"last_run": datetime.now(UTC).isoformat()})
+        )
+        await h.adapter.start()
+
+        # Stop must not block on the 60min sleep.
+        await asyncio.wait_for(h.adapter.stop(), timeout=1.0)
+
+
+# --- Rendering spec: what each event becomes in the log ---
+
+
+async def _render(tmp_path: Path, event: BridgeEvent) -> list[logging.LogRecord]:
+    """Drive one turn carrying just ``event`` and return what it logged."""
+    async with heartbeat_harness(tmp_path, events=[event]) as h:
+        await h.deliver()
+        return list(h.recorder.records)
+
+
+async def test_renders_processing_at_info(tmp_path: Path):
+    records = await _render(tmp_path, Processing())
+    assert any(
+        r.levelno == logging.INFO and "processing" in r.getMessage() for r in records
     )
-    await adapter.start()
-    await asyncio.sleep(0.05)
-    await adapter.stop()
-    assert bridge.calls == []
 
 
-async def test_loop_fires_immediately_when_state_stale(make_adapter):
-    adapter, bridge, config = make_adapter(interval_minutes=1)
-    stale = datetime.now(UTC) - timedelta(minutes=10)
-    config.state_path.write_text(json.dumps({"last_run": stale.isoformat()}))
-    await adapter.start()
-    await asyncio.sleep(0.05)
-    await adapter.stop()
-    assert len(bridge.calls) >= 1
-
-
-async def test_stop_during_sleep_returns_promptly(make_adapter):
-    adapter, _, config = make_adapter(interval_minutes=60)
-    # Recent state → loop will sleep ~60min before next fire
-    config.state_path.write_text(
-        json.dumps({"last_run": datetime.now(UTC).isoformat()})
+async def test_renders_status_update_at_info(tmp_path: Path):
+    records = await _render(tmp_path, StatusUpdate(status="thinking", detail="d"))
+    assert any(
+        r.levelno == logging.INFO and "thinking" in r.getMessage() for r in records
     )
-    await adapter.start()
-
-    # Stop must not block on the 60min sleep.
-    await asyncio.wait_for(adapter.stop(), timeout=1.0)
 
 
-# --- Event log dispatch ---
+async def test_renders_text_delta_at_debug_only(tmp_path: Path):
+    records = await _render(tmp_path, TextDelta(text="hello"))
+    deltas = [r for r in records if "text +" in r.getMessage()]
+    assert deltas
+    # An operator watching at INFO must not be drowned in token-level noise.
+    assert all(r.levelno == logging.DEBUG for r in deltas)
 
 
-def test_log_event_processing(make_adapter, caplog):
-    adapter, _, _ = make_adapter()
-    caplog.set_level("INFO", logger="agent_bridge.platforms.heartbeat.adapter")
-    adapter._log_event("k", Processing())
-    assert any("processing" in r.message for r in caplog.records)
+async def test_renders_user_question_as_a_warning(tmp_path: Path):
+    records = await _render(tmp_path, UserQuestion(questions=[{"question": "ok?"}]))
+    warnings = [r for r in records if r.levelno == logging.WARNING]
+    assert any("no human can answer" in r.getMessage() for r in warnings)
 
 
-def test_log_event_status_update(make_adapter, caplog):
-    adapter, _, _ = make_adapter()
-    caplog.set_level("INFO", logger="agent_bridge.platforms.heartbeat.adapter")
-    adapter._log_event("k", StatusUpdate(status="thinking", detail="d"))
-    assert any("thinking" in r.message for r in caplog.records)
+async def test_renders_error_completion_at_error(tmp_path: Path):
+    records = await _render(tmp_path, Completion(text="oops", is_error=True))
+    assert any(r.levelno == logging.ERROR for r in records)
 
 
-def test_log_event_text_delta_is_debug_only(make_adapter, caplog):
-    adapter, _, _ = make_adapter()
-    # INFO threshold → DEBUG-level TextDelta should NOT appear
-    caplog.set_level("INFO", logger="agent_bridge.platforms.heartbeat.adapter")
-    adapter._log_event("k", TextDelta(text="hello"))
-    assert not any("text +" in r.message for r in caplog.records)
+async def test_renders_successful_completion_with_the_final_reply(tmp_path: Path):
+    records = await _render(
+        tmp_path, Completion(text="all done", cost_usd=0.01, duration_ms=42)
+    )
+    assert any("all done" in r.getMessage() for r in records)
 
 
-def test_log_event_user_question_is_warning(make_adapter, caplog):
-    adapter, _, _ = make_adapter()
-    caplog.set_level("WARNING", logger="agent_bridge.platforms.heartbeat.adapter")
-    adapter._log_event("k", UserQuestion(questions=[{"question": "ok?"}]))
-    assert any(r.levelname == "WARNING" for r in caplog.records)
-    assert any("no human can answer" in r.message for r in caplog.records)
-
-
-def test_log_event_completion_error_is_error_level(make_adapter, caplog):
-    adapter, _, _ = make_adapter()
-    caplog.set_level("ERROR", logger="agent_bridge.platforms.heartbeat.adapter")
-    adapter._log_event("k", Completion(text="oops", is_error=True))
-    assert any(r.levelname == "ERROR" for r in caplog.records)
-
-
-def test_log_event_completion_success_logs_final_reply(make_adapter, caplog):
-    adapter, _, _ = make_adapter()
-    caplog.set_level("INFO", logger="agent_bridge.platforms.heartbeat.adapter")
-    adapter._log_event("k", Completion(text="all done", cost_usd=0.01, duration_ms=42))
-    assert any("all done" in r.message for r in caplog.records)
+async def test_renders_a_whole_turn_without_losing_events(tmp_path: Path):
+    async with heartbeat_harness(tmp_path) as h:
+        await h.deliver()
+        # The tick itself is announced before anything the agent sends back.
+        assert any("Heartbeat tick" in line for line in h.output())

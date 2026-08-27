@@ -20,6 +20,7 @@ from agent_bridge.bridge.events import (
 )
 from agent_bridge.platforms.slack.adapter import _RenderState
 from agent_bridge.platforms.slack.config import SlackConfig
+from tests.fakes import FakeBridge
 from tests.platforms.slack.harness import build_harness
 
 QUEUED_REJECTION = (
@@ -351,20 +352,11 @@ async def test_incomplete_stream_strips_tool_status(monkeypatch: pytest.MonkeyPa
 # --- turns that raise instead of completing ---
 
 
-class _RaisingBridge:
-    """``MessageRouter`` that blows up mid-stream — the shape of any bug that
-    escapes the pipeline instead of arriving as an error ``Completion``."""
-
-    async def handle_message(self, request: object):
-        yield Processing()
-        raise RuntimeError("boom")
-
-
 async def test_raised_turn_replaces_the_placeholder():
     harness = build_harness()
-    harness.adapter._bridge = _RaisingBridge()
+    harness.adapter._bridge = FakeBridge([Processing()], raises=True)
 
-    with pytest.raises(RuntimeError, match="boom"):
+    with pytest.raises(RuntimeError, match="exploded"):
         await harness.adapter._stream_response(
             "C1",
             "1.0",
@@ -386,14 +378,14 @@ async def test_raised_turn_reporting_never_masks_the_original_error(
     monkeypatch: pytest.MonkeyPatch,
 ):
     harness = build_harness()
-    harness.adapter._bridge = _RaisingBridge()
+    harness.adapter._bridge = FakeBridge([Processing()], raises=True)
 
     async def explode(*args: object, **kwargs: object) -> None:
         raise RuntimeError("slack is down")
 
     monkeypatch.setattr(harness.adapter, "_post_final", explode)
 
-    with pytest.raises(RuntimeError, match="boom"):
+    with pytest.raises(RuntimeError, match="exploded"):
         await harness.adapter._stream_response(
             "C1",
             "1.0",

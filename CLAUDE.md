@@ -216,6 +216,13 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 - Every test carries a layer marker (`unit` / `integration` / `e2e`) — mostly
   auto-applied; see `docs/testing.md`. CI runs `-m "not e2e"` across the
   version matrix and `-m "e2e and not live"` in a separate 3.12-only job.
+- The `live_platform` marker (`tests/e2e/test_live_platforms.py`) drives a
+  platform over its **real** transport with `FakeBridge` behind it — no
+  bridge, no agent, no tokens. It is what pins our fakes of third-party APIs
+  to reality. Webhook's rig needs no credentials (both HTTP edges hosted
+  locally on real sockets) and runs in CI; platforms needing credentials skip
+  themselves without them. See `docs/testing.md` and
+  `docs/design/platform-adapters.md`.
 - The `live` marker (`tests/e2e/test_live_controllers.py`,
   `tests/e2e/test_live_claude.py`, `tests/e2e/test_live_webhook.py`) spawns
   the **real** agent CLIs (`claude`, `pi`, `codex`, `opencode`) and spends
@@ -272,7 +279,13 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 6. Override `cleanup()` if the adapter keeps per-session state that can go stale — `app.py`'s periodic loop calls it on every adapter
 7. Implement `start()` / `stop()` for your platform's lifecycle (connect/disconnect, task spawn/cancel). HTTP-based platforms don't own a socket: expose an `APIRouter` (own prefix, e.g. `/platforms/{name}`) that `app.py` mounts on the shared `HttpServer` (`server/`), and keep `start()`/`stop()` for auxiliary resources only (see the webhook adapter)
 8. Wire up in `app.py`
-9. Add your adapter to `tests/contracts/test_platform_adapter.py` if its lifecycle is cheap to run in-process
+9. Add `tests/platforms/{name}/harness.py` implementing the shared `PlatformHarness`
+   shape (`adapter` / `deliver()` / `requests()` / `output()`, declared in
+   `tests/platforms/harness.py`) — never a router double local to a test module;
+   `FakeBridge` already covers scripted streams, rejections, `gate` and `raises`.
+   Add your adapter to `tests/contracts/test_platform_adapter.py` if its lifecycle
+   is cheap to run in-process, and — for self-connected or host-mounted platforms —
+   a rig in `tests/e2e/test_live_platforms.py` (real transport, `FakeBridge` behind it)
 10. Add documentation in `docs/platforms/{name}.md`
 
 ### Adding a new agent

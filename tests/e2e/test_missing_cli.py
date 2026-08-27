@@ -36,7 +36,8 @@ async def test_missing_cli_reports_and_keeps_the_bridge_alive(tmp_path: Path):
     # FileNotFoundError escaped the pipeline instead of completing the stream.
     # ":warning: <reason>", not the blanket ":no_entry:" — that one is the
     # platform's own voice for capacity exhaustion, and every other failure
-    # shows what actually went wrong (see SlackAdapter._error_text).
+    # shows what actually went wrong (see SlackAdapter._error_text), because a
+    # notice without a reason leaves an operator nothing to act on.
     first = stack.replies()
     assert len(first) == 1
     assert first[0].startswith(":warning:")

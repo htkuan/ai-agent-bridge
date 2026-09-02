@@ -99,12 +99,12 @@ it. `app.py` is the only module that knows all the pieces.
 
 - **Ruff** enforces lint + format (config: `pyproject.toml` `[tool.ruff]`; the CI
   lint job and pre-commit hooks run the same checks). Before committing:
-  `uv run ruff check --fix && uv run ruff format`
+  `make format` (autofix in place); `make lint` is the non-mutating check CI runs
 - Complexity is gated at C901 = 10 — no exemptions: the last `# noqa: C901`
   hotspots were refactored away. Decompose instead of suppressing.
 - Suppress a rule only with a targeted `# noqa: <code>` plus a one-line reason
   (see the `assert`/S101 narrowing sites) — never blanket-disable in config.
-- **Pyright strict** on `src/` (`uv run pyright`). slack-bolt is untyped: its
+- **Pyright strict** on `src/` (`make typecheck`). slack-bolt is untyped: its
   `Any`-ness is contained at the adapter boundary (params annotated `Any`;
   Unknown-type rules relaxed for the slack package only). Suppress only with
   targeted `# pyright: ignore[<rule>]` plus a reason.
@@ -202,7 +202,9 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 
 ### Testing
 
-- Run tests: `uv run pytest tests/ -v`
+- Run tests: `make test` (unit + integration, coverage gate) — see `## Running`
+  for the per-layer targets. Every CI job runs a make target, so `make check`
+  is the merge gate.
 - Tests drive behaviour by constructing config objects, never by setting env vars.
   Env parsing is covered separately, per config class, in `test_config.py` modules
   that pass explicit dicts to `from_env`.
@@ -214,8 +216,9 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 - Async tests run automatically (`asyncio_mode = "auto"`)
 - Test naming: `test_{feature}_{scenario}`
 - Every test carries a layer marker (`unit` / `integration` / `e2e`) — mostly
-  auto-applied; see `docs/testing.md`. CI runs `-m "not e2e"` across the
-  version matrix and `-m "e2e and not live"` in a separate 3.12-only job.
+  auto-applied; see `docs/testing.md`. CI runs `make test` (`-m "not e2e"`)
+  across the version matrix and `make test-e2e` (`-m "e2e and not live"`) in a
+  separate 3.12-only job.
 - The `live_platform` marker (`tests/e2e/test_live_platforms.py`) drives a
   platform over its **real** transport with `FakeBridge` behind it — no
   bridge, no agent, no tokens. It is what pins our fakes of third-party APIs
@@ -232,9 +235,8 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
   version, and nothing else. Gated behind the `--live` flag (declared in
   `tests/conftest.py`, with `--live-cli` / `--live-pi-cli` /
   `--live-codex-cli` / `--live-opencode-cli` / `--live-timeout` /
-  `--live-tier` / `--live-model`), never run by CI:
-  `uv run pytest -m live --live --no-cov -v`. A missing CLI skips just that
-  agent's scenarios.
+  `--live-tier` / `--live-model`), never run by CI: `make test-live`. A
+  missing CLI skips just that agent's scenarios.
 - The controller layer is **declarative**: `tests/e2e/live_matrix.py` holds one
   row set per agent, and `--live-tier` picks how much of it runs — tier 0
   spends nothing (the CLI's version is recorded and its own `--help` must still
@@ -242,7 +244,7 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
   branch), tier 1 is one turn per config knob, tier 2 is behaviour, tier 3 is
   reserved for prompt-shape robustness. An untagged live scenario counts as
   tier 2, so `--live-tier=0` can't quietly start a paid run. After upgrading an
-  agent CLI: `uv run pytest -m live --live --live-tier=0 --no-cov`.
+  agent CLI: `make test-live-free` (any tier: `make test-live LIVE_TIER=1`).
   Adding a knob to a config means adding a row, not writing a test function;
   `tests/e2e/test_live_matrix_spec.py` enforces the matrix's own invariants in
   CI (every agent has a flag spec, both command branches are probed, a
@@ -254,7 +256,8 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 - Coverage runs on every pytest invocation (`addopts` in pyproject.toml) and
   gates at `fail_under = 98` — a ratchet floor at the measured baseline, raised
   as coverage improves, never lowered. A partial run (single file, `-k`, `-m`)
-  undercounts coverage and trips the gate; add `--no-cov` for those.
+  undercounts coverage and trips the gate; add `--no-cov` for those — the
+  subset make targets already do.
 
 ### Commits
 
@@ -262,7 +265,7 @@ AppConfig            (src/agent_bridge/config.py)  ← app.py builds the system 
 - Optional scope in parens, imperative subject, no trailing period: `fix(slack): release dedupe slot on error`.
 - The type drives the automated release: `feat:` → MINOR, `fix:`/`perf:` → PATCH, `feat!:` or a `BREAKING CHANGE:` footer → breaking (MINOR while in 0.x). Other types cut no release.
 - The `commitlint` PR check rejects non-conforming commits. Since PRs merge with merge commits, **each commit on a branch** (not just the PR title) must conform.
-- Optional local guard: `uv run pre-commit install` wires a `commit-msg` hook that runs the same commitlint config before each commit (see `docs/releasing.md`).
+- Optional local guard: `make hooks` wires a `commit-msg` hook that runs the same commitlint config before each commit (see `docs/releasing.md`).
 - Releases are automated from these messages — never hand-edit `[project].version`. See `## Releasing` and `docs/releasing.md`.
 
 ### Adding a new platform adapter
@@ -309,31 +312,37 @@ When modifying any component, update the corresponding documentation:
 
 ## Running
 
+The `Makefile` is the single entry point for every command, local and in CI —
+each CI step runs a make target, so `make check` reproduces the merge gate
+exactly. `make help` lists everything; the targets that matter:
+
 ```bash
-# Install dependencies
-uv sync
+make install        # uv sync --locked (fails on a stale uv.lock)
+make run            # start the bridge (run-debug for DEBUG logging)
 
-# Run the bridge
-uv run agent-bridge
+make check          # the merge gate: lint + typecheck + test + test-e2e
+make lint           # ruff check + ruff format --check (non-mutating)
+make format         # ruff autofix + format in place
+make typecheck      # pyright, strict
 
-# Run tests
-uv run pytest tests/ -v
+make test           # -m "not e2e", the coverage gate applies
+make test-unit      # / test-integration / test-e2e / test-all
+make test-live      # opt-in: real agent CLIs, spends tokens (LIVE_TIER=n)
+make test-live-free # tier 0: real CLIs, zero tokens
 
-# Lint + format (same checks as CI and the pre-commit hooks)
-uv run ruff check --fix
-uv run ruff format
-
-# Type check (strict, src/ only)
-uv run pyright
-
-# Audit locked dependencies for known vulnerabilities (same scan as CI)
-uv export --format requirements-txt --no-emit-project -o requirements-audit.txt
-uvx pip-audit -r requirements-audit.txt --disable-pip
-
-# Scan git history for hardcoded secrets (the pre-commit hook covers the
-# staged diff automatically; CI re-scans commit history)
-gitleaks git --redact -v .
+make audit          # pip-audit over the locked dependency set
+make secrets        # gitleaks over commit history (pre-commit covers the staged diff)
+make check-all      # check + audit + secrets
 ```
+
+Every target goes through `uv run`; pass extra pytest flags with
+`PYTEST_ARGS`, e.g. `make test-unit PYTEST_ARGS="-k session -x"`. Rules the
+targets encode so you don't have to remember them: subset runs carry
+`--no-cov` (a narrowed run undercounts coverage and trips `fail_under`), and
+`lint` annotates the PR diff only when `GITHUB_ACTIONS` is set.
+
+Adding a command? Add it as a make target and have CI call the target — never
+inline the command in a workflow step.
 
 ## Releasing
 

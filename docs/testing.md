@@ -222,11 +222,13 @@ ids we resume are checked against the thing itself. It costs money and is
 not deterministic, so it is opt-in and excluded from CI:
 
 ```bash
-uv run pytest -m live --live --no-cov -v
+make test-live      # uv run pytest -m live --live --live-tier=2 --no-cov -v
 ```
 
 `--live` switches the scenarios on, `-m live` narrows the run to just them
-(`pytest --live` alone runs them alongside everything else). Requirements:
+(`pytest --live` alone runs them alongside everything else). Extra flags go
+through `PYTEST_ARGS`, e.g.
+`make test-live PYTEST_ARGS="--live-model codex=gpt-5.6"`. Requirements:
 each agent's CLI on PATH and authenticated — `claude login` /
 `ANTHROPIC_API_KEY`, `pi auth`, `codex login`, `opencode auth` — for that
 agent's scenarios.
@@ -274,7 +276,7 @@ Tier 0 is the run to do after upgrading an agent CLI — it spends nothing and
 catches the drift class that has actually bitten us:
 
 ```bash
-uv run pytest -m live --live --live-tier=0 --no-cov
+make test-live-free   # tier 0; any other tier: make test-live LIVE_TIER=1
 ```
 
 It ends with a `live agent CLI versions` summary (`claude: 2.1.241 …`), so a
@@ -409,8 +411,11 @@ assert on the model's prose.
   `live_platform` is also orthogonal to the layers but is *not* flag-gated —
   each platform's rig skips itself when its prerequisite is absent. Markers are
   registered in `pyproject.toml` and `--strict-markers` rejects typos.
-- **Running**: `uv run pytest -q` (full suite, coverage gate applies);
-  single files or `-m` subsets need `--no-cov`. In CI the version matrix runs
-  `-m "not e2e"` with the coverage gate; a separate 3.12-only job runs
-  `-m "e2e and not live"` without coverage. The `live` scenarios are never
-  run by CI.
+- **Running**: through the `Makefile`, which encodes the `--no-cov` rule so a
+  subset run can't trip the coverage gate — `make test` (`-m "not e2e"`, gate
+  applies), `make test-unit` / `test-integration` / `test-e2e` / `test-live` /
+  `test-live-free`, `make test-all` for the full suite. Ad-hoc selections still
+  need `--no-cov` by hand (`uv run pytest tests/bridge/test_session.py
+  --no-cov`), or pass them in: `make test PYTEST_ARGS="-k session"`. CI calls
+  the same targets: the version matrix runs `make test`, a separate 3.12-only
+  job runs `make test-e2e`. The `live` scenarios are never run by CI.

@@ -6,6 +6,9 @@ name: CI
 # the package claims to support (requires-python >= 3.12). Version-bump
 # commits pushed by python-semantic-release use GITHUB_TOKEN and therefore
 # do not re-trigger this workflow.
+#
+# Every step below runs a Makefile target, so `make check` locally is the same
+# gate as this workflow (see the Makefile).
 
 on:
   pull_request:
@@ -35,17 +38,16 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --locked
+        run: make install
 
-      - name: Ruff lint
-        # --output-format github annotates offending lines in the PR diff.
-        run: uv run ruff check --output-format github
-
-      - name: Ruff format
-        run: uv run ruff format --check
+      - name: Lint
+        # ruff check + ruff format --check. The Makefile switches ruff to
+        # --output-format github when GITHUB_ACTIONS is set, so offending
+        # lines are annotated in the PR diff.
+        run: make lint
 
       - name: Pyright
-        run: uv run pyright
+        run: make typecheck
 
   test:
     runs-on: ubuntu-latest
@@ -66,14 +68,15 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        # --locked fails if uv.lock is out of sync with pyproject.toml, so a
-        # stale lockfile is caught in CI instead of silently re-resolving.
-        run: uv sync --locked
+        # make install is `uv sync --locked`: --locked fails if uv.lock is out
+        # of sync with pyproject.toml, so a stale lockfile is caught in CI
+        # instead of silently re-resolving.
+        run: make install
 
       - name: Run tests
         # e2e scenarios run in their own 3.12-only job below. The coverage
         # gate (fail_under) is enforced here, on the unit+integration subset.
-        run: uv run pytest -m "not e2e"
+        run: make test
 
   test-e2e:
     runs-on: ubuntu-latest
@@ -88,7 +91,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --locked
+        run: make install
 
       - name: Run e2e scenarios
         # Full-stack scenarios spawn real subprocesses and are timing
@@ -96,6 +99,6 @@ jobs:
         # by the `test` job — the e2e subset alone would trip fail_under.
         # `not live` excludes the scenarios that spawn the real claude CLI:
         # they need credentials and spend tokens, so they stay opt-in and
-        # local (uv run pytest -m live --live --no-cov). Belt and braces —
+        # local (make test-live). Belt and braces —
         # without the --live flag they would skip themselves anyway.
-        run: uv run pytest -m "e2e and not live" --no-cov
+        run: make test-e2e

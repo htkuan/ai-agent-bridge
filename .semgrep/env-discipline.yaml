@@ -1,0 +1,30 @@
+rules:
+  - id: no-os-environ-outside-env
+    languages: [python]
+    severity: ERROR
+    message: >
+      Only src/agent_bridge/env.py reads the process environment. Use the
+      typed readers (env_str, env_bool, ...) via a from_env(env) classmethod
+      instead of touching os.environ directly.
+    patterns:
+      - pattern-either:
+          - pattern: os.environ
+          - pattern: os.getenv(...)
+          - pattern: os.putenv(...)
+      # Spreading the whole env into a child-process mapping is not a config
+      # read (agents/base.py builds the subprocess env this way).
+      - pattern-not-inside: "{**os.environ, ...}"
+    paths:
+      exclude:
+        - /src/agent_bridge/env.py
+
+  - id: load-dotenv-only-in-env
+    languages: [python]
+    severity: ERROR
+    message: >
+      load_dotenv() is called exactly once, by AppConfig.from_env via env.py.
+      Calling it elsewhere makes .env loading order-dependent.
+    pattern: load_dotenv(...)
+    paths:
+      exclude:
+        - /src/agent_bridge/env.py

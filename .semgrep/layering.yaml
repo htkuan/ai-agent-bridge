@@ -1,0 +1,61 @@
+# The three-layer rule: agents/ and platforms/ both depend on bridge/;
+# bridge/ depends on neither. server/ is shared HTTP infrastructure and
+# imports none of the layers. Only app.py knows all the pieces.
+rules:
+  - id: bridge-must-not-import-outer-layers
+    languages: [python]
+    severity: ERROR
+    message: >
+      bridge/ holds the shared contract; it must not know about agents/,
+      platforms/ or server/. Move the dependency outward or invert it
+      through a protocol in bridge/protocols.py.
+    pattern-either:
+      - pattern: import agent_bridge.agents
+      - pattern: import agent_bridge.platforms
+      - pattern: import agent_bridge.server
+    paths:
+      include:
+        - /src/agent_bridge/bridge/*
+        - /src/agent_bridge/bridge/**
+
+  - id: agents-must-not-import-platforms
+    languages: [python]
+    severity: ERROR
+    message: >
+      Agents are purely invoked and platform-agnostic — they may only depend
+      on bridge/. Platform-flavored data reaches an agent as opaque strings
+      (prompt, system_prompt) built by the adapter.
+    pattern-either:
+      - pattern: import agent_bridge.platforms
+      - pattern: import agent_bridge.server
+    paths:
+      include:
+        - /src/agent_bridge/agents/*
+        - /src/agent_bridge/agents/**
+
+  - id: platforms-must-not-import-agents
+    languages: [python]
+    severity: ERROR
+    message: >
+      Platform adapters route through the MessageRouter protocol and never
+      see a concrete agent. Select an agent by name via BridgeRequest.agent.
+    pattern: import agent_bridge.agents
+    paths:
+      include:
+        - /src/agent_bridge/platforms/*
+        - /src/agent_bridge/platforms/**
+
+  - id: server-must-not-import-layers
+    languages: [python]
+    severity: ERROR
+    message: >
+      server/ is layer-free HTTP infrastructure: HTTP platforms hand app.py
+      an APIRouter to mount, server/ never imports a layer package.
+    pattern-either:
+      - pattern: import agent_bridge.agents
+      - pattern: import agent_bridge.platforms
+      - pattern: import agent_bridge.bridge
+    paths:
+      include:
+        - /src/agent_bridge/server/*
+        - /src/agent_bridge/server/**

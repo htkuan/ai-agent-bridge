@@ -1,0 +1,12 @@
+rules:
+  - id: parametrize-default-factory
+    languages: [python]
+    severity: WARNING
+    message: >
+      Parametrize the factory — field(default_factory=list[str]), not
+      field(default_factory=list) — or pyright infers list[Unknown].
+    pattern-either:
+      - pattern: field(default_factory=list, ...)
+      - pattern: field(default_factory=dict, ...)
+      - pattern: field(default_factory=set, ...)
+      - pattern: field(default_factory=tuple, ...)

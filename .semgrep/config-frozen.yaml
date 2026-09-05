@@ -1,0 +1,24 @@
+rules:
+  - id: config-dataclass-must-be-frozen
+    languages: [python]
+    severity: ERROR
+    message: >
+      Config objects are frozen dataclasses — declare @dataclass(frozen=True)
+      so a built config can never be mutated after validation.
+    patterns:
+      - pattern-either:
+          - pattern: |
+              @dataclass
+              class $CONFIG:
+                  ...
+          - pattern: |
+              @dataclass(...)
+              class $CONFIG:
+                  ...
+      - pattern-not: |
+          @dataclass(frozen=True, ...)
+          class $CONFIG:
+              ...
+      - metavariable-regex:
+          metavariable: $CONFIG
+          regex: .*Config$
